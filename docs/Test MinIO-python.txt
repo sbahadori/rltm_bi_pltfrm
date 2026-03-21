@@ -1,0 +1,41 @@
+
+### Run these commands in Jupyter notbook to test minIO:
+
+Cell-1
+## !pip install boto3 --quiet
+import boto3
+from botocore.client import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="http://minio:9000",
+    aws_access_key_id="minio",
+    aws_secret_access_key="minio123",
+    config=Config(signature_version="s3v4"),
+    region_name="us-east-1",
+)
+
+print(s3.list_buckets())
+
+Cell-2
+
+bucket_name = "lakehouse"
+
+existing = [b["Name"] for b in s3.list_buckets().get("Buckets", [])]
+if bucket_name not in existing:
+    s3.create_bucket(Bucket=bucket_name)
+
+print([b["Name"] for b in s3.list_buckets()["Buckets"]])
+
+
+Cell-3
+from io import BytesIO
+
+data = b"hello minio"
+s3.upload_fileobj(BytesIO(data), "lakehouse", "test/hello.txt")
+print("uploaded")
+
+
+Cell-4
+resp = s3.list_objects_v2(Bucket="lakehouse", Prefix="test/")
+print(resp)

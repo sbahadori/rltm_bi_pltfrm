@@ -1,0 +1,70 @@
+
+run these in another jupyter notebook:
+
+Cell-1
+
+from pyspark.sql import SparkSession
+import warnings
+
+spark = (
+    SparkSession.builder
+    .appName("spark-minio-parquet-test")
+    .master("spark://spark-master:7077")
+    .config(
+        "spark.jars.packages",
+        ",".join([
+            "org.apache.hadoop:hadoop-aws:3.3.4",
+            "com.amazonaws:aws-java-sdk-bundle:1.12.262",
+        ])
+    )
+    .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000")
+    .config("spark.hadoop.fs.s3a.access.key", "minio")
+    .config("spark.hadoop.fs.s3a.secret.key", "minio123")
+    .config("spark.hadoop.fs.s3a.path.style.access", "true")
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    .getOrCreate()
+)
+
+spark
+
+Cell-2:
+data = [
+    ("XAUUSD", "2026-03-20 15:30:00", 3045.10),
+    ("XAUUSD", "2026-03-20 15:31:00", 3045.25),
+    ("XAUUSD", "2026-03-20 15:32:00", 3044.95),
+]
+
+df = spark.createDataFrame(data, ["symbol", "event_ts", "price_usd"])
+df.show()
+
+
+Cell-3:
+df.write.mode("overwrite").parquet("s3a://lakehouse/bronze/gold_ticks_parquet_test/")
+
+
+Cell-4:
+df2 = spark.read.parquet("s3a://lakehouse/bronze/gold_ticks_parquet_test/")
+df2.show()
+
+
+
+Cell-5:
+import boto3
+from botocore.client import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="http://minio:9000",
+    aws_access_key_id="minio",
+    aws_secret_access_key="minio123",
+    config=Config(signature_version="s3v4"),
+    region_name="us-east-1",
+)
+
+print(s3.list_buckets())
+
+
+Cell-6:
+resp = s3.list_objects_v2(Bucket="lakehouse", Prefix="bronze/gold_ticks_parquet_test/")
+resp

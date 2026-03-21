@@ -1,0 +1,19 @@
+# env
+.env
+
+# local runtime data
+minio_data/
+postgres_warehouse_data/
+
+# jupyter
+.ipynb_checkpoints/
+
+# python
+__pycache__/
+*.pyc
+
+# os / ide
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

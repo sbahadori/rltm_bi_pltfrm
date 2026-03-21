@@ -89,7 +89,7 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - ./notebooks:/opt/notebooks
+      - ./:/workspace/rltm_bi_pltfrm
       - ./jars:/opt/spark/jars-extra
   
 

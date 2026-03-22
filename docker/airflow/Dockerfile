@@ -1,14 +1,5 @@
-FROM apache/airflow:3.1.8-python3.11
-
-USER root
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends openjdk-17-jre-headless procps \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-
-USER airflow
-RUN pip install --no-cache-dir \
-    pyspark==3.5.1 \
-    delta-spark==3.2.0 \
-    requests==2.32.3
+FROM runtime:latest
+ENV PATH="${AIRFLOW_HOME}/.local/bin:${PATH}"
+# Airflow runtime is already provided by the base image.
+# Keep this image thin so scheduler, dag-processor, and api-server
+# all use the exact same Spark/Java/Python runtime.

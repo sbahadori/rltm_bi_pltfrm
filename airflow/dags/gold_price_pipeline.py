@@ -6,7 +6,7 @@ from airflow.providers.standard.operators.bash import BashOperator
 
 REPO_ROOT = os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")
 JOBS_ROOT = f"{REPO_ROOT}/jobs"
-SPARK_SUBMIT = os.getenv("SPARK_SUBMIT", "spark-submit")
+SPARK_SUBMIT = os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit")
 
 SPARK_PACKAGES = ",".join([
     "io.delta:delta-spark_2.12:3.2.0",
@@ -14,11 +14,6 @@ SPARK_PACKAGES = ",".join([
     "com.amazonaws:aws-java-sdk-bundle:1.12.262",
 ])
 
-SPARK_CONF = (
-    '--conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" '
-    '--conf "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" '
-    '--conf "spark.ui.showConsoleProgress=false" '
-)
 
 COMMON_ENV = {
     "PIPELINE_REPO_ROOT": REPO_ROOT,
@@ -26,6 +21,7 @@ COMMON_ENV = {
     "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", "minio"),
     "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", "minio123"),
     "AWS_REGION": os.getenv("AWS_REGION", "us-east-1"),
+    "PATH": f"/home/airflow/.local/bin:{os.getenv('PATH', '')}",
 }
 
 def spark_cmd(job_path: str, extra_args: str = "") -> str:
@@ -42,12 +38,12 @@ with DAG(
     dag_id="gold_price_pipeline",
     description="Phase 2 orchestration for the gold-price Bronze/Silver/Gold pipeline",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    schedule="*/5 * * * *",
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     default_args={
         "owner": "admin",
-        "retries": 1,
+        "retries": 0,
         "retry_delay": timedelta(minutes=1),
     },
     tags=["gold", "spark", "phase2", "airflow"],
@@ -58,7 +54,7 @@ with DAG(
         bash_command=spark_cmd(f"{JOBS_ROOT}/ingestion/ingest_to_bronze.py", "--run-once"),
         env=COMMON_ENV,
         append_env=True,
-        execution_timeout=timedelta(minutes=5),
+        execution_timeout=timedelta(minutes=10),
     )
 
     bronze_to_silver = BashOperator(
@@ -66,7 +62,7 @@ with DAG(
         bash_command=spark_cmd(f"{JOBS_ROOT}/bronze_to_silver/bronze_to_silver.py"),
         env=COMMON_ENV,
         append_env=True,
-        execution_timeout=timedelta(minutes=5),
+        execution_timeout=timedelta(minutes=10),
     )
 
     silver_to_gold_bars_1m = BashOperator(
@@ -74,7 +70,7 @@ with DAG(
         bash_command=spark_cmd(f"{JOBS_ROOT}/silver_to_gold/gold_bars_1m.py"),
         env=COMMON_ENV,
         append_env=True,
-        execution_timeout=timedelta(minutes=5),
+        execution_timeout=timedelta(minutes=10),
     )
 
     gold_bars_to_metrics = BashOperator(
@@ -82,7 +78,7 @@ with DAG(
         bash_command=spark_cmd(f"{JOBS_ROOT}/silver_to_gold/gold_price_metrics.py"),
         env=COMMON_ENV,
         append_env=True,
-        execution_timeout=timedelta(minutes=5),
+        execution_timeout=timedelta(minutes=10),
     )
 
     ingest_to_bronze >> bronze_to_silver >> silver_to_gold_bars_1m >> gold_bars_to_metrics

@@ -91,6 +91,7 @@ services:
     volumes:
       - ./:/workspace/rltm_bi_pltfrm
       - ./jars:/opt/spark/jars-extra
+
   
 
 volumes:

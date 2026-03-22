@@ -11,14 +11,26 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__PARALLELISM: "4"
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "4"
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    AIRFLOW__API__EXPOSE_CONFIG: "non-sensitive-only"
+
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
+
+    AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
+    AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
+
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: "/opt/airflow/simple_auth_manager_passwords.json"
+
     PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
     S3_ENDPOINT: http://minio:9000
     AWS_ACCESS_KEY_ID: minio
     AWS_SECRET_ACCESS_KEY: minio123
     AWS_REGION: us-east-1
+
+    PYSPARK_PYTHON: /usr/local/bin/python
+    PYSPARK_DRIVER_PYTHON: /usr/local/bin/python
+    SPARK_SUBMIT: /home/airflow/.local/bin/spark-submit
+    
   volumes:
     - ./:/workspace/rltm_bi_pltfrm
     - ./airflow/dags:/opt/airflow/dags
@@ -26,6 +38,7 @@ x-airflow-common: &airflow-common
     - ./airflow/config:/opt/airflow/config
     - ./airflow/plugins:/opt/airflow/plugins
     - ./airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
+
   depends_on:
     airflow-postgres:
       condition: service_healthy

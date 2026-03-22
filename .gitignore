@@ -7,12 +7,15 @@ postgres_warehouse_data/
 
 # airflow
 airflow/logs/
+airflow/logs/**
 
 # jupyter
 .ipynb_checkpoints/
+**/.ipynb_checkpoints/
 
 # python
 __pycache__/
+**/__pycache__/
 *.pyc
 
 # os / ide

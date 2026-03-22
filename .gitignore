@@ -5,6 +5,9 @@
 minio_data/
 postgres_warehouse_data/
 
+# airflow
+airflow/logs/
+
 # jupyter
 .ipynb_checkpoints/
 

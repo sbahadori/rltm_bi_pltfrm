@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>شبیه‌ساز فروشگاه اینترنتی</title>
+  <style>
+    body {
+      font-family: Tahoma, Arial, sans-serif;
+      margin: 0;
+      background: #f6f7fb;
+      color: #1f2937;
+    }
+    header {
+      background: white;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 16px 24px;
+      position: sticky;
+      top: 0;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .hero {
+      background: linear-gradient(135deg, #ef4444, #fb7185);
+      color: white;
+      padding: 24px;
+      border-radius: 18px;
+      margin-bottom: 24px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .meta-card, .card, .log-box {
+      background: white;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .product-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .price {
+      color: #dc2626;
+      font-weight: bold;
+      margin: 8px 0 16px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      background: #111827;
+      color: white;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .small {
+      font-size: 13px;
+      color: #4b5563;
+    }
+    @media (max-width: 900px) {
+      .grid, .layout, .meta {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>فروشگاه دمو برای شبیه‌سازی event pipeline</strong>
+  </header>
+
+  <div class="container">
+    <div class="hero">
+      <h1 style="margin-top:0;">شبیه‌سازی هم‌زمان frontend + cookie + backend event</h1>
+      <div class="small">
+        این دمو سه جریان را به collector می‌فرستد: رخداد فرانت، داده‌های کوکی/سشن، و رخداد ساختاریافته‌ی بک‌اند.
+      </div>
+    </div>
+
+    <div class="meta">
+      <div class="meta-card">
+        <div><strong>anonymous_id</strong></div>
+        <div class="small" id="anon">{{ anonymous_id }}</div>
+      </div>
+      <div class="meta-card">
+        <div><strong>session_id</strong></div>
+        <div class="small" id="sess">{{ session_id }}</div>
+      </div>
+    </div>
+
+    <div class="meta" style="margin-top: 12px;">
+      <div class="meta-card">
+        <div><strong>شبیه‌سازی هویت</strong></div>
+        <div class="actions" style="margin-top: 12px;">
+          <button class="secondary" onclick="simulateNewSession()">Simulate New Session</button>
+          <button onclick="simulateNewUser()">Simulate New User</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="product-title">لپ‌تاپ ProBook X</div>
+        <div class="small">sku_1001</div>
+        <div class="price">68,990,000 تومان</div>
+        <div class="actions">
+          <button onclick="sendFrontendEvent('product_view', { item_id: 'sku_1001', item_title: 'لپ‌تاپ ProBook X' })">مشاهده</button>
+          <button onclick="sendFrontendEvent('add_to_cart', { item_id: 'sku_1001', item_title: 'لپ‌تاپ ProBook X' })">افزودن به سبد</button>
+          <button class="secondary" onclick="sendBackendEvent('order_check', 'sku_1001', 'لپ‌تاپ ProBook X')">backend log</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="product-title">گوشی Nova S</div>
+        <div class="small">sku_1002</div>
+        <div class="price">32,990,000 تومان</div>
+        <div class="actions">
+          <button onclick="sendFrontendEvent('product_view', { item_id: 'sku_1002', item_title: 'گوشی Nova S' })">مشاهده</button>
+          <button onclick="sendFrontendEvent('add_to_cart', { item_id: 'sku_1002', item_title: 'گوشی Nova S' })">افزودن به سبد</button>
+          <button class="secondary" onclick="sendBackendEvent('inventory_check', 'sku_1002', 'گوشی Nova S')">backend log</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="product-title">هدفون AirSound Max</div>
+        <div class="small">sku_1003</div>
+        <div class="price">7,490,000 تومان</div>
+        <div class="actions">
+          <button onclick="sendFrontendEvent('product_view', { item_id: 'sku_1003', item_title: 'هدفون AirSound Max' })">مشاهده</button>
+          <button onclick="sendFrontendEvent('add_to_cart', { item_id: 'sku_1003', item_title: 'هدفون AirSound Max' })">افزودن به سبد</button>
+          <button class="secondary" onclick="sendBackendEvent('price_check', 'sku_1003', 'هدفون AirSound Max')">backend log</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="log-box">
+        <h3 style="margin-top:0;">رخدادهای محلی فرانت</h3>
+        <pre id="frontend-log">هنوز چیزی ثبت نشده است.</pre>
+      </div>
+
+      <div class="log-box">
+        <h3 style="margin-top:0;">وضعیت</h3>
+        <pre id="status-box">ready</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const COLLECTOR_URL = "{{ public_collector_url }}";
+    const ANONYMOUS_ID = "{{ anonymous_id }}";
+    const SESSION_ID = "{{ session_id }}";
+
+    function uuid() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return "id_" + Math.random().toString(36).slice(2) + "_" + Date.now();
+    }
+
+    function clearCookie(name) {
+      document.cookie = `${name}=; Max-Age=0; path=/`;
+    }
+
+    function simulateNewSession() {
+      clearCookie("session_id");
+
+      // اگر بعداً sessionStorage هم اضافه کردی، این خط کمک می‌کند
+      try {
+        sessionStorage.removeItem("demo_session_id");
+        sessionStorage.removeItem("demo_session_created_at");
+      } catch (e) {}
+
+      setStatus("session_id cleared. Reloading for a new session...");
+      setTimeout(() => {
+        window.location.reload();
+      }, 150);
+    }
+
+    function simulateNewUser() {
+      clearCookie("anonymous_id");
+      clearCookie("session_id");
+
+      // اگر بعداً localStorage/sessionStorage هم استفاده شد، این‌ها هم پاک شوند
+      try {
+        localStorage.removeItem("demo_anonymous_id");
+        sessionStorage.removeItem("demo_session_id");
+        sessionStorage.removeItem("demo_session_created_at");
+      } catch (e) {}
+
+      setStatus("anonymous_id and session_id cleared. Reloading for a new user...");
+      setTimeout(() => {
+        window.location.reload();
+      }, 150);
+    }
+
+    function appendLog(obj) {
+      const box = document.getElementById("frontend-log");
+      const oldText = box.textContent === "هنوز چیزی ثبت نشده است." ? "" : box.textContent;
+      box.textContent = JSON.stringify(obj, null, 2) + "\n\n" + oldText;
+    }
+
+    function setStatus(msg) {
+      document.getElementById("status-box").textContent = msg;
+    }
+
+    async function sendFrontendEvent(eventType, properties = {}) {
+      const payload = {
+        event_id: "evt_" + uuid(),
+        event_ts: new Date().toISOString(),
+        event_type: eventType,
+        source: "frontend",
+        anonymous_id: ANONYMOUS_ID,
+        session_id: SESSION_ID,
+        page_url: window.location.pathname,
+        cookies: {
+          anonymous_id: ANONYMOUS_ID,
+          session_id: SESSION_ID
+        },
+        properties: {
+          ...properties,
+          user_agent: navigator.userAgent,
+          language: navigator.language
+        }
+      };
+
+      appendLog(payload);
+
+      try {
+        const res = await fetch(COLLECTOR_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        setStatus("frontend event sent: " + JSON.stringify(data, null, 2));
+      } catch (err) {
+        setStatus("frontend send failed: " + err);
+      }
+    }
+
+    async function sendBackendEvent(backendEventName, itemId, itemTitle) {
+      try {
+        const res = await fetch("/api/backend-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            backend_event_name: backendEventName,
+            item_id: itemId,
+            item_title: itemTitle,
+            message: "structured backend event from web service"
+          })
+        });
+
+        const data = await res.json();
+        setStatus("backend event sent: " + JSON.stringify(data, null, 2));
+      } catch (err) {
+        setStatus("backend send failed: " + err);
+      }
+    }
+
+    window.addEventListener("load", async () => {
+      await sendFrontendEvent("page_view", {
+        title: document.title
+      });
+    });
+  </script>
+</body>
+</html>

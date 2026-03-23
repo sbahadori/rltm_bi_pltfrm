@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  collector:
+    build:
+      context: ./apps/collector
+    container_name: collector
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/collector:/data
+    environment:
+      STORAGE_FILE: /data/events.jsonl
+      ALLOWED_ORIGINS: http://localhost:8091,http://127.0.0.1:8091,http://localhost:8081,http://127.0.0.1:8081,http://localhost:8080,http://127.0.0.1:8080
+
+  web:
+    build:
+      context: ./apps/web
+    container_name: web
+    ports:
+      - "8091:8080"
+    environment:
+      COLLECTOR_URL: http://collector:8000/collect
+      PUBLIC_COLLECTOR_URL: http://localhost:8000/collect
+    depends_on:
+      - collector

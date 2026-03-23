@@ -98,5 +98,14 @@ services:
       airflow-api-server:
         condition: service_healthy
 
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-api-server:
+        condition: service_healthy
+
 volumes:
   airflow-postgres-data:

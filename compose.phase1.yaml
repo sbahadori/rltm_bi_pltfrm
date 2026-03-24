@@ -12,6 +12,8 @@ services:
       - "9001:9001"
     volumes:
       - ./minio_data:/data
+    networks:
+      - rltm_shared_net
 
   postgres-warehouse:
     image: postgres:16
@@ -24,6 +26,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_warehouse_data:/var/lib/postgresql/data
+    networks:
+      - rltm_shared_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 15s
@@ -40,6 +44,8 @@ services:
       - "5050:80"
     depends_on:
       - postgres-warehouse
+    networks:
+      - rltm_shared_net
 
   spark-master:
     image: apache/spark:3.5.1-python3
@@ -54,6 +60,8 @@ services:
     volumes:
       - ./jars:/opt/spark/jars-extra
       - ./spark_apps:/opt/spark/apps
+    networks:
+      - rltm_shared_net
 
   spark-worker:
     image: apache/spark:3.5.1-python3
@@ -71,6 +79,8 @@ services:
     volumes:
       - ./jars:/opt/spark/jars-extra
       - ./spark_apps:/opt/spark/apps
+    networks:
+      - rltm_shared_net
 
   jupyter:
     build:
@@ -91,8 +101,13 @@ services:
     volumes:
       - ./:/workspace/rltm_bi_pltfrm
       - ./jars:/opt/spark/jars-extra
-
+    networks:
+      - rltm_shared_net
   
 
 volumes:
   postgres_warehouse_data:
+
+networks:
+  rltm_shared_net:
+    external: true

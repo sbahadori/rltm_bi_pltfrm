@@ -4,40 +4,135 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
+import logging
+logger = logging.getLogger("collector")
+logging.basicConfig(level=logging.INFO)
 
+from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Collector")
+app = FastAPI(title="Kafka-ready Collector")
 
-allowed_origins = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://localhost:8091,http://127.0.0.1:8091"
-).split(",")
+BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "user_events")
+STORAGE_FILE_RAW = os.getenv("STORAGE_FILE", "/data/events.jsonl")
+STORAGE_FILE = Path(STORAGE_FILE_RAW) if STORAGE_FILE_RAW else None
+ENABLE_FILE_FALLBACK = os.getenv("ENABLE_FILE_FALLBACK", "true").lower() == "true"
+
+allowed_origins = [
+    x.strip()
+    for x in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://localhost:8091,http://127.0.0.1:8091",
+    ).split(",")
+    if x.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in allowed_origins if o.strip()],
+    allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-STORAGE_FILE = Path(os.getenv("STORAGE_FILE", "/data/events.jsonl"))
-WRITE_LOCK = asyncio.Lock()
+producer: AIOKafkaProducer | None = None
+producer_ready = False
+write_lock = asyncio.Lock()
+producer_lock = asyncio.Lock()
+reconnect_task: asyncio.Task | None = None
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def serialize_json(value: dict[str, Any]) -> bytes:
+    return json.dumps(value, ensure_ascii=False).encode("utf-8")
+
+
+async def write_event_to_file(event: dict[str, Any]) -> None:
+    if STORAGE_FILE is None:
+        return
+    STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    async with write_lock:
+        with STORAGE_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+async def connect_producer() -> bool:
+    global producer, producer_ready
+
+    async with producer_lock:
+        if producer_ready and producer is not None:
+            return True
+
+        try:
+            new_producer = AIOKafkaProducer(
+                bootstrap_servers=BOOTSTRAP_SERVERS,
+                value_serializer=serialize_json,
+                compression_type="gzip",
+            )
+            await new_producer.start()
+            producer = new_producer
+            producer_ready = True
+            return True
+        except Exception:
+            logger.exception("Failed to connect Kafka producer to %s", BOOTSTRAP_SERVERS)
+            producer = None
+            producer_ready = False
+            return False
+
+
+async def reconnect_loop() -> None:
+    while True:
+        if not producer_ready:
+            await connect_producer()
+        await asyncio.sleep(5)
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    global reconnect_task
+    await connect_producer()  # best effort only
+    reconnect_task = asyncio.create_task(reconnect_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    global producer, reconnect_task, producer_ready
+
+    if reconnect_task is not None:
+        reconnect_task.cancel()
+        try:
+            await reconnect_task
+        except asyncio.CancelledError:
+            pass
+
+    if producer is not None:
+        await producer.stop()
+
+    producer = None
+    producer_ready = False
+
+
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "kafka_bootstrap_servers": BOOTSTRAP_SERVERS,
+        "kafka_topic": KAFKA_TOPIC,
+        "producer_ready": producer_ready,
+        "file_fallback_enabled": ENABLE_FILE_FALLBACK,
+        "storage_file": str(STORAGE_FILE) if STORAGE_FILE else None,
+    }
 
 
 @app.post("/collect")
 async def collect(request: Request) -> dict[str, Any]:
+    global producer, producer_ready
+
     try:
         payload = await request.json()
     except Exception as exc:
@@ -46,7 +141,8 @@ async def collect(request: Request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Payload must be a JSON object")
 
-    if "event_type" not in payload:
+    event_type = payload.get("event_type")
+    if not event_type:
         raise HTTPException(status_code=400, detail="event_type is required")
 
     enriched = {
@@ -56,24 +152,48 @@ async def collect(request: Request) -> dict[str, Any]:
         "collector_user_agent": request.headers.get("user-agent"),
     }
 
-    STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    event_key_value = (
+        enriched.get("user_id")
+        or enriched.get("anonymous_id")
+        or enriched.get("session_id")
+        or enriched.get("event_type")
+    )
+    event_key = str(event_key_value).encode("utf-8")
 
-    async with WRITE_LOCK:
-        with STORAGE_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(enriched, ensure_ascii=False) + "\n")
+    kafka_written = False
+    kafka_error = None
+
+    if producer_ready and producer is not None:
+        try:
+            await producer.send_and_wait(KAFKA_TOPIC, value=enriched, key=event_key)
+            kafka_written = True
+        except Exception as exc:
+            kafka_error = str(exc)
+            producer_ready = False
+            producer = None
+
+    if ENABLE_FILE_FALLBACK:
+        await write_event_to_file(enriched)
+
+    if not kafka_written and not ENABLE_FILE_FALLBACK:
+        raise HTTPException(status_code=503, detail="Kafka unavailable and file fallback disabled")
 
     return {
         "ok": True,
-        "event_type": enriched.get("event_type"),
+        "event_type": event_type,
+        "kafka_topic": KAFKA_TOPIC,
+        "kafka_written": kafka_written,
+        "file_written": ENABLE_FILE_FALLBACK,
+        "kafka_error": kafka_error,
     }
 
 
 @app.get("/events")
 async def events(limit: int = 20) -> dict[str, Any]:
-    if not STORAGE_FILE.exists():
+    if STORAGE_FILE is None or not STORAGE_FILE.exists():
         return {"count": 0, "items": [], "bad_lines": 0}
 
-    items = []
+    items: list[dict[str, Any]] = []
     bad_lines = 0
 
     with STORAGE_FILE.open("r", encoding="utf-8") as f:
@@ -85,7 +205,6 @@ async def events(limit: int = 20) -> dict[str, Any]:
                 items.append(json.loads(line))
             except json.JSONDecodeError:
                 bad_lines += 1
-                continue
 
     return {
         "count": min(limit, len(items)),

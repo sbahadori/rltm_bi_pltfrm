@@ -218,6 +218,65 @@ services:
     networks:
       - rltm_shared_net
 
+
+  spark-silver-events:
+    image: apache/spark:3.5.1-python3
+    container_name: spark-silver-events
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      APP_NAME: bronze_to_silver_events
+
+      SPARK_MASTER_URL: spark://spark-master:7077
+
+      S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_REGION: us-east-1
+
+      BRONZE_PATH: s3a://lakehouse/bronze_delta/user_events
+      SILVER_PATH: s3a://lakehouse/silver_delta/user_events_clean
+      QUARANTINE_PATH: s3a://lakehouse/silver_delta/user_events_quarantine
+
+      CHECKPOINT_PATH: /tmp/checkpoints/bronze_to_silver_events
+
+      TRIGGER_INTERVAL: 30 seconds
+
+      HEARTBEAT_FILE: /tmp/health/silver_events_heartbeat.txt
+      HEARTBEAT_INTERVAL_SEC: "20"
+      HEARTBEAT_MAX_AGE_SEC: "90"
+
+      LOG_LEVEL: INFO
+
+    command: >
+      bash -lc "
+      mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
+      /opt/spark/bin/spark-submit
+      --master spark://spark-master:7077
+      --conf spark.jars.ivy=/tmp/.ivy2
+      --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4
+      /opt/spark/apps/bronze_to_silver_events.py
+      "
+    volumes:
+      - ./spark_apps:/opt/spark/apps
+      - ./spark_checkpoints/bronze_to_silver_events:/tmp/checkpoints/bronze_to_silver_events
+      - ./spark_ivy:/tmp/.ivy2
+      - ./spark_health:/tmp/health
+    depends_on:
+      - spark-bronze-ingest
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python - <<'PY'\nfrom pathlib import Path\nimport os, time, sys\np = Path(os.environ.get('HEARTBEAT_FILE', '/tmp/health/silver_events_heartbeat.txt'))\nmax_age = int(os.environ.get('HEARTBEAT_MAX_AGE_SEC', '90'))\nif not p.exists():\n    sys.exit(1)\nage = time.time() - p.stat().st_mtime\nsys.exit(0 if age <= max_age else 1)\nPY"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - rltm_shared_net
+
 volumes:
   airflow-postgres-data:
 

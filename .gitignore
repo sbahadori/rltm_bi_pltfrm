@@ -18,6 +18,19 @@ __pycache__/
 **/__pycache__/
 *.pyc
 
+# data
+data/
+**/data/
+
+# spark
+spark_checkpoints/
+**/spark_checkpoints/
+spark_health/
+**/spark_health/
+spark_ivy/
+**/spark_ivy/
+
+
 # os / ide
 .vscode/
 .idea/

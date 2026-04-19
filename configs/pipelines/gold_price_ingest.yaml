@@ -1,0 +1,10 @@
+name: gold_price_ingest
+domain: gold_price
+job_type: spark_batch
+entrypoint: jobs/gold_price/ingest_to_bronze.py
+args:
+  bronze_path: s3a://lakehouse/bronze/gold_price_events
+  api_url: https://api.gold-api.com/price/XAU
+  run_once: true
+dependencies: []
+schedule: manual

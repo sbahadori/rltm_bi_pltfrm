@@ -1,0 +1,10 @@
+name: clickstream_event_daily_metrics
+domain: clickstream
+job_type: spark_batch
+entrypoint: jobs/clickstream/build_event_daily_metrics.py
+args:
+  source_path: s3a://lakehouse/silver_delta/user_events_clean
+  target_path: s3a://lakehouse/gold_delta/event_daily_metrics
+dependencies:
+  - spark-silver-events
+schedule: daily

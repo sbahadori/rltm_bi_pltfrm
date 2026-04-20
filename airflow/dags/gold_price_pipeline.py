@@ -5,7 +5,7 @@ from airflow.sdk import DAG
 from airflow.providers.standard.operators.bash import BashOperator
 
 REPO_ROOT = os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")
-JOBS_ROOT = f"{REPO_ROOT}/jobs"
+JOBS_ROOT = f"{REPO_ROOT}/jobs/gold_price"
 SPARK_SUBMIT = os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit")
 
 SPARK_PACKAGES = ",".join([
@@ -51,7 +51,7 @@ with DAG(
 
     ingest_to_bronze = BashOperator(
         task_id="ingest_to_bronze",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/ingestion/ingest_to_bronze.py", "--run-once"),
+        bash_command=spark_cmd(f"{JOBS_ROOT}/ingest_to_bronze.py", "--run-once"),
         env=COMMON_ENV,
         append_env=True,
         execution_timeout=timedelta(minutes=10),
@@ -59,7 +59,7 @@ with DAG(
 
     bronze_to_silver = BashOperator(
         task_id="bronze_to_silver",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/bronze_to_silver/bronze_to_silver.py"),
+        bash_command=spark_cmd(f"{JOBS_ROOT}/bronze_to_silver.py"),
         env=COMMON_ENV,
         append_env=True,
         execution_timeout=timedelta(minutes=10),
@@ -67,7 +67,7 @@ with DAG(
 
     silver_to_gold_bars_1m = BashOperator(
         task_id="silver_to_gold_bars_1m",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/silver_to_gold/gold_bars_1m.py"),
+        bash_command=spark_cmd(f"{JOBS_ROOT}/gold_bars_1m.py"),
         env=COMMON_ENV,
         append_env=True,
         execution_timeout=timedelta(minutes=10),
@@ -75,7 +75,7 @@ with DAG(
 
     gold_bars_to_metrics = BashOperator(
         task_id="gold_price_metrics",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/silver_to_gold/gold_price_metrics.py"),
+        bash_command=spark_cmd(f"{JOBS_ROOT}/gold_price_metrics.py"),
         env=COMMON_ENV,
         append_env=True,
         execution_timeout=timedelta(minutes=10),

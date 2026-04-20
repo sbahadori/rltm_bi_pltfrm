@@ -196,7 +196,7 @@ services:
       --master spark://spark-master:7077
       --conf spark.jars.ivy=/tmp/.ivy2
       --packages io.delta:delta-spark_2.12:3.2.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.apache.hadoop:hadoop-aws:3.3.4
-      /opt/spark/apps/kafka_to_bronze.py
+      /opt/spark/apps/streaming/kafka_to_bronze.py
       "
     volumes:
       - ./spark_apps:/opt/spark/apps
@@ -255,7 +255,7 @@ services:
       --master spark://spark-master:7077
       --conf spark.jars.ivy=/tmp/.ivy2
       --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4
-      /opt/spark/apps/bronze_to_silver_events.py
+      /opt/spark/apps/streaming/bronze_to_silver_events.py
       "
     volumes:
       - ./spark_apps:/opt/spark/apps

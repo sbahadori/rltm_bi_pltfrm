@@ -1,0 +1,10 @@
+name: clickstream_session_summary
+domain: clickstream
+job_type: spark_batch
+entrypoint: jobs/clickstream/build_session_summary.py
+args:
+  source_path: s3a://lakehouse/silver_delta/user_events_clean
+  target_path: s3a://lakehouse/gold_delta/session_summary
+dependencies: []
+schedule: manual
+execution_timeout_minutes: 10

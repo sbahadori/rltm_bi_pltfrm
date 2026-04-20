@@ -8,3 +8,4 @@ args:
 dependencies:
   - gold_price_ingest
 schedule: manual
+execution_timeout_minutes: 10

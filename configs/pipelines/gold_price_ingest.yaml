@@ -8,3 +8,4 @@ args:
   run_once: true
 dependencies: []
 schedule: manual
+execution_timeout_minutes: 10

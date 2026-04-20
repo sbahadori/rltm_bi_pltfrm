@@ -1,0 +1,11 @@
+name: gold_price_metrics
+domain: gold_price
+job_type: spark_batch
+entrypoint: jobs/gold_price/gold_price_metrics.py
+args:
+  gold_path: s3a://lakehouse/gold/gold_price_bars_1m
+  metrics_path: s3a://lakehouse/gold/gold_price_metrics
+dependencies:
+  - gold_price_bars_1m
+schedule: manual
+execution_timeout_minutes: 10

@@ -1,7 +1,7 @@
 services:
   web:
     build:
-      context: ./apps/web
+      context: ../apps/web
       dockerfile: Dockerfile
     container_name: web
     ports:

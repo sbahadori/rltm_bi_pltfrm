@@ -1,42 +1,30 @@
 import os
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from airflow.sdk import DAG
-from airflow.providers.standard.operators.bash import BashOperator
 
-REPO_ROOT = os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")
-JOBS_ROOT = f"{REPO_ROOT}/jobs/gold_price"
-SPARK_SUBMIT = os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit")
+REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
+AIRFLOW_APP_ROOT = REPO_ROOT / "airflow"
 
-SPARK_PACKAGES = ",".join([
-    "io.delta:delta-spark_2.12:3.2.0",
-    "org.apache.hadoop:hadoop-aws:3.3.4",
-    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
-])
+if str(AIRFLOW_APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(AIRFLOW_APP_ROOT))
+
+from lib.pipeline_runner import build_tasks_from_configs  # noqa: E402
 
 
-COMMON_ENV = {
-    "PIPELINE_REPO_ROOT": REPO_ROOT,
-    "S3_ENDPOINT": os.getenv("S3_ENDPOINT", "http://minio:9000"),
-    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", "minio"),
-    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", "minio123"),
-    "AWS_REGION": os.getenv("AWS_REGION", "us-east-1"),
-    "PATH": f"/home/airflow/.local/bin:{os.getenv('PATH', '')}",
-}
+GOLD_PRICE_CONFIGS = [
+    "configs/pipelines/gold_price_ingest.yaml",
+    "configs/pipelines/gold_price_silver.yaml",
+    "configs/pipelines/gold_price_bars_1m.yaml",
+    "configs/pipelines/gold_price_metrics.yaml",
+]
 
-def spark_cmd(job_path: str, extra_args: str = "") -> str:
-    return (
-        f'{SPARK_SUBMIT} '
-        f'--packages {SPARK_PACKAGES} '
-        f'--conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" '
-        f'--conf "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" '
-        f'--conf "spark.ui.showConsoleProgress=false" '
-        f'{job_path} {extra_args}'
-    ).strip()
 
 with DAG(
     dag_id="gold_price_pipeline",
-    description="Phase 2 orchestration for the gold-price Bronze/Silver/Gold pipeline",
+    description="Config-driven orchestration for the gold-price Bronze/Silver/Gold pipeline",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     schedule=None,
     catchup=False,
@@ -46,39 +34,9 @@ with DAG(
         "retries": 0,
         "retry_delay": timedelta(minutes=1),
     },
-    tags=["gold", "spark", "phase2", "airflow"],
+    tags=["gold_price", "spark", "config_driven", "airflow"],
 ) as dag:
-
-    ingest_to_bronze = BashOperator(
-        task_id="ingest_to_bronze",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/ingest_to_bronze.py", "--run-once"),
-        env=COMMON_ENV,
-        append_env=True,
-        execution_timeout=timedelta(minutes=10),
+    build_tasks_from_configs(
+        dag=dag,
+        config_paths=GOLD_PRICE_CONFIGS,
     )
-
-    bronze_to_silver = BashOperator(
-        task_id="bronze_to_silver",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/bronze_to_silver.py"),
-        env=COMMON_ENV,
-        append_env=True,
-        execution_timeout=timedelta(minutes=10),
-    )
-
-    silver_to_gold_bars_1m = BashOperator(
-        task_id="silver_to_gold_bars_1m",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/gold_bars_1m.py"),
-        env=COMMON_ENV,
-        append_env=True,
-        execution_timeout=timedelta(minutes=10),
-    )
-
-    gold_bars_to_metrics = BashOperator(
-        task_id="gold_price_metrics",
-        bash_command=spark_cmd(f"{JOBS_ROOT}/gold_price_metrics.py"),
-        env=COMMON_ENV,
-        append_env=True,
-        execution_timeout=timedelta(minutes=10),
-    )
-
-    ingest_to_bronze >> bronze_to_silver >> silver_to_gold_bars_1m >> gold_bars_to_metrics

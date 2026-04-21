@@ -232,7 +232,6 @@ services:
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
       python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_bronze_to_silver_events.yaml
       "
-    
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps

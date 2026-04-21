@@ -7,7 +7,7 @@ from typing import Iterable
 
 from airflow.providers.standard.operators.bash import BashOperator
 
-from lib.spark_submit_utils import build_spark_submit_command, get_repo_root, load_pipeline_config
+from shared.lib.spark_submit_utils import build_spark_submit_command, get_repo_root, load_pipeline_config
 
 
 def build_common_env() -> dict[str, str]:

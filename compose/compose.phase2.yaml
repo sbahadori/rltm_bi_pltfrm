@@ -178,12 +178,14 @@ services:
       FAIL_ON_DATA_LOSS: "false"
       HEARTBEAT_FILE: /tmp/health/bronze_heartbeat.txt
       HEARTBEAT_MAX_AGE_SEC: "90"
+      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
       python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_kafka_to_bronze.yaml
       "
     volumes:
+      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
       - ${PROJECT_ROOT}/spark_checkpoints/kafka_to_bronze_user_events_delta:/tmp/checkpoints/kafka_to_bronze_user_events_delta
       - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
@@ -224,6 +226,7 @@ services:
       HEARTBEAT_INTERVAL_SEC: "20"
       HEARTBEAT_MAX_AGE_SEC: "90"
       LOG_LEVEL: INFO
+      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
@@ -231,6 +234,7 @@ services:
       "
     
     volumes:
+      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
       - ${PROJECT_ROOT}/spark_checkpoints/bronze_to_silver_events:/tmp/checkpoints/bronze_to_silver_events
       - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2

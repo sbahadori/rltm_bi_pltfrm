@@ -2,9 +2,9 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import time
 from datetime import datetime, timezone
+
 import requests
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import dayofmonth, hour, month, year
@@ -75,7 +75,7 @@ def parse_ts(value):
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def fetch_row(api_url: str, request_timeout: int, max_retries: int = 3):
+def fetch_payload(api_url: str, request_timeout: int, max_retries: int = 3):
     last_exc = None
 
     for attempt in range(1, max_retries + 1):
@@ -102,6 +102,28 @@ def fetch_row(api_url: str, request_timeout: int, max_retries: int = 3):
     print(f"No data fetched after {max_retries} attempts. Last error: {last_exc}")
     return None
 
+
+def build_bronze_row(payload: dict) -> dict:
+    source_event_ts = parse_ts(payload.get("updatedAt"))
+    ingestion_ts = datetime.now(timezone.utc)
+    payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    raw_key = f"{SOURCE_NAME}|{payload.get('symbol', SYMBOL)}|{payload.get('updatedAt')}|{payload.get('price')}"
+    event_id = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    return {
+        "event_id": event_id,
+        "symbol": payload.get("symbol", SYMBOL),
+        "source_name": SOURCE_NAME,
+        "source_event_ts": source_event_ts,
+        "ingestion_ts": ingestion_ts,
+        "price_usd": float(payload["price"]) if payload.get("price") is not None else None,
+        "currency": payload.get("currency", CURRENCY),
+        "payload_json": payload_json,
+        "api_status": "success",
+    }
+
+
 def write_row(spark, bronze_path, row):
     df = spark.createDataFrame([row], schema=SCHEMA)
     df = (
@@ -125,12 +147,13 @@ def main():
 
     try:
         while True:
-            row = fetch_row(args.api_url, args.request_timeout)
+            payload = fetch_payload(args.api_url, args.request_timeout)
 
-            if row is None:
+            if payload is None:
                 print("Skipping bronze ingest because source API is temporarily unavailable or rate-limited.")
                 return
 
+            row = build_bronze_row(payload)
             write_row(spark, args.bronze_path, row)
             print(f"Wrote 1 row to {args.bronze_path} | symbol={row['symbol']} | price_usd={row['price_usd']}")
 

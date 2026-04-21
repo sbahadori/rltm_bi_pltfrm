@@ -142,9 +142,9 @@ def build_spark_session() -> SparkSession:
 def s3_path_exists(spark: SparkSession, path: str) -> bool:
     jvm = spark._jvm
     hadoop_conf = spark._jsc.hadoopConfiguration()
-    fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
-    return fs.exists(jvm.org.apache.hadoop.fs.Path(path))
-
+    j_path = jvm.org.apache.hadoop.fs.Path(path)
+    fs = j_path.getFileSystem(hadoop_conf)
+    return fs.exists(j_path)
 
 def build_silver_transform(bronze_df: DataFrame) -> DataFrame:
     parsed = (
@@ -250,6 +250,7 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
                 valid_df.write
                 .format("delta")
                 .mode("append")
+                .option("mergeSchema", "true")
                 .partitionBy("event_date")
                 .save(SILVER_PATH)
             )
@@ -260,6 +261,7 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
                 invalid_df.write
                 .format("delta")
                 .mode("append")
+                .option("mergeSchema", "true")
                 .save(QUARANTINE_PATH)
             )
             logger.info("[silver] batch_id=%s wrote invalid rows to %s", batch_id, QUARANTINE_PATH)

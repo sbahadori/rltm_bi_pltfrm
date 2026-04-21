@@ -181,8 +181,7 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
-      python /opt/spark/apps/runners/run_configured_pipeline.py
-      --config configs/pipelines/stream_kafka_to_bronze.yaml
+      python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_kafka_to_bronze.yaml
       "
     volumes:
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
@@ -228,8 +227,7 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
-      python /opt/spark/apps/runners/run_configured_pipeline.py
-      --config configs/pipelines/stream_bronze_to_silver_events.yaml
+      python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_bronze_to_silver_events.yaml
       "
     
     volumes:

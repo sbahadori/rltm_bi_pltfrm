@@ -159,7 +159,9 @@ services:
       - rltm_shared_net
 
   spark-bronze-ingest:
-    image: apache/spark:3.5.1-python3
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/spark/Dockerfile
     container_name: spark-bronze-ingest
     restart: unless-stopped
     stop_grace_period: 30s
@@ -179,6 +181,7 @@ services:
       HEARTBEAT_FILE: /tmp/health/bronze_heartbeat.txt
       HEARTBEAT_MAX_AGE_SEC: "90"
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+      SPARK_SUBMIT: /opt/spark/bin/spark-submit
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
@@ -206,7 +209,9 @@ services:
       - rltm_shared_net
 
   spark-silver-events:
-    image: apache/spark:3.5.1-python3
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/spark/Dockerfile
     container_name: spark-silver-events
     restart: unless-stopped
     stop_grace_period: 30s
@@ -227,6 +232,7 @@ services:
       HEARTBEAT_MAX_AGE_SEC: "90"
       LOG_LEVEL: INFO
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+      SPARK_SUBMIT: /opt/spark/bin/spark-submit
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&

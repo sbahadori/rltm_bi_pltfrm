@@ -185,7 +185,7 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
-      python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_kafka_to_bronze.yaml
+      python3 /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_kafka_to_bronze.yaml
       "
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
@@ -240,7 +240,7 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
-      python /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_bronze_to_silver_events.yaml
+      python3 /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_bronze_to_silver_events.yaml
       "
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
@@ -258,7 +258,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python - <<'PY'\nfrom pathlib import Path\nimport os, time, sys\np = Path(os.environ.get('HEARTBEAT_FILE', '/tmp/health/silver_events_heartbeat.txt'))\nmax_age = int(os.environ.get('HEARTBEAT_MAX_AGE_SEC', '90'))\nif not p.exists():\n    sys.exit(1)\nage = time.time() - p.stat().st_mtime\nsys.exit(0 if age <= max_age else 1)\nPY"
+          "python3 - <<'PY'\nfrom pathlib import Path\nimport os, time, sys\np = Path(os.environ.get('HEARTBEAT_FILE', '/tmp/health/silver_events_heartbeat.txt'))\nmax_age = int(os.environ.get('HEARTBEAT_MAX_AGE_SEC', '90'))\nif not p.exists():\n    sys.exit(1)\nage = time.time() - p.stat().st_mtime\nsys.exit(0 if age <= max_age else 1)\nPY"
         ]
       interval: 30s
       timeout: 10s

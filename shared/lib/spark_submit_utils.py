@@ -72,6 +72,14 @@ def build_cli_args(args: dict[str, Any]) -> list[str]:
     return cli_args
 
 
+def merge_spark_packages(config_packages: list[str] | None) -> list[str]:
+    merged: list[str] = []
+    for package in DEFAULT_SPARK_PACKAGES + list(config_packages or []):
+        if package not in merged:
+            merged.append(package)
+    return merged
+
+
 def build_spark_submit_command(
     config: dict[str, Any],
     *,
@@ -84,8 +92,10 @@ def build_spark_submit_command(
 
     entrypoint = Path(config["entrypoint"])
     entrypoint_path = entrypoint if entrypoint.is_absolute() else (repo_root_path / entrypoint).resolve()
+    if not entrypoint_path.exists():
+        raise FileNotFoundError(f"Spark entrypoint not found: {entrypoint_path}")
 
-    packages = config.get("packages", DEFAULT_SPARK_PACKAGES)
+    packages = merge_spark_packages(config.get("packages"))
     spark_conf = {**DEFAULT_SPARK_CONF, **config.get("spark_conf", {})}
     args = build_cli_args(config.get("args", {}))
 

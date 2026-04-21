@@ -195,6 +195,10 @@ services:
       - ${PROJECT_ROOT}/spark_health:/tmp/health
     depends_on:
       - kafka
+      - spark-master
+      - spark-worker
+      - spark-worker-2
+
     healthcheck:
       test:
         [
@@ -246,6 +250,10 @@ services:
       - ${PROJECT_ROOT}/spark_health:/tmp/health
     depends_on:
       - spark-bronze-ingest
+      - spark-master
+      - spark-worker
+      - spark-worker-2
+
     healthcheck:
       test:
         [

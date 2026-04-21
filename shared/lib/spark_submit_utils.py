@@ -79,7 +79,7 @@ def build_spark_submit_command(
     spark_submit: str | None = None,
 ) -> str:
     repo_root_path = Path(repo_root).resolve() if repo_root else get_repo_root()
-    spark_submit_bin = spark_submit or os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit")
+    spark_submit_bin = spark_submit or os.getenv("SPARK_SUBMIT", "/opt/spark/bin/spark-submit")
     spark_master = config.get("spark_master") or os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
 
     entrypoint = Path(config["entrypoint"])

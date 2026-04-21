@@ -20,16 +20,15 @@ def get_repo_root() -> Path:
 
 def bootstrap_import_path() -> None:
     repo_root = get_repo_root()
-    airflow_root = repo_root / "airflow"
-    if str(airflow_root) not in sys.path:
-        sys.path.insert(0, str(airflow_root))
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
 
 def main() -> None:
     bootstrap_import_path()
 
-    from lib.spark_submit_utils import build_spark_submit_command, load_pipeline_config  # noqa: E402
-
+    from shared.lib.spark_submit_utils import build_spark_submit_command, load_pipeline_config
+    
     args = parse_args()
     config = load_pipeline_config(args.config)
     cmd = build_spark_submit_command(config)

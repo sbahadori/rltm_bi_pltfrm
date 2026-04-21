@@ -5,7 +5,6 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
-
 import requests
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import dayofmonth, hour, month, year
@@ -76,43 +75,32 @@ def parse_ts(value):
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def fetch_row(api_url, timeout):
-    r = requests.get(api_url, headers={"Accept": "application/json"}, timeout=timeout)
-    r.raise_for_status()
-    payload = r.json()
+def fetch_row(api_url: str, request_timeout: int, max_retries: int = 3):
+    last_exc = None
 
-    if not isinstance(payload, dict):
-        raise ValueError("API response must be a JSON object")
+    for attempt in range(1, max_retries + 1):
+        try:
+            r = requests.get(api_url, timeout=request_timeout)
 
-    source_event_ts = parse_ts(payload.get("updatedAt"))
-    ingestion_ts = datetime.now(timezone.utc)
-    price_usd = float(payload["price"]) if payload.get("price") is not None else None
-    symbol = payload.get("symbol") or SYMBOL
+            if r.status_code == 429:
+                wait_sec = 5 * attempt
+                print(f"Rate limited by API (429). Retry {attempt}/{max_retries} after {wait_sec}s")
+                time.sleep(wait_sec)
+                last_exc = RuntimeError("429 Too Many Requests")
+                continue
 
-    payload_json = json.dumps(
-        {"provider": SOURCE_NAME, "raw_payload": payload},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
+            r.raise_for_status()
+            return r.json()
 
-    event_id = hashlib.sha256(
-        f"{symbol}|{SOURCE_NAME}|{CURRENCY}|{source_event_ts}|{price_usd}|{payload_json}".encode("utf-8")
-    ).hexdigest()
+        except requests.RequestException as exc:
+            last_exc = exc
+            wait_sec = 5 * attempt
+            print(f"Request failed on attempt {attempt}/{max_retries}: {exc}")
+            if attempt < max_retries:
+                time.sleep(wait_sec)
 
-    return {
-        "event_id": event_id,
-        "symbol": symbol,
-        "source_name": SOURCE_NAME,
-        "source_event_ts": source_event_ts,
-        "ingestion_ts": ingestion_ts,
-        "price_usd": price_usd,
-        "currency": CURRENCY,
-        "payload_json": payload_json,
-        "api_status": "OK",
-    }
-
+    print(f"No data fetched after {max_retries} attempts. Last error: {last_exc}")
+    return None
 
 def write_row(spark, bronze_path, row):
     df = spark.createDataFrame([row], schema=SCHEMA)
@@ -138,6 +126,11 @@ def main():
     try:
         while True:
             row = fetch_row(args.api_url, args.request_timeout)
+
+            if row is None:
+                print("Skipping bronze ingest because source API is temporarily unavailable or rate-limited.")
+                return
+
             write_row(spark, args.bronze_path, row)
             print(f"Wrote 1 row to {args.bronze_path} | symbol={row['symbol']} | price_usd={row['price_usd']}")
 

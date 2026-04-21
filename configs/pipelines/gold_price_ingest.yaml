@@ -6,6 +6,7 @@ args:
   bronze_path: s3a://lakehouse/bronze/gold_price_events
   api_url: https://api.gold-api.com/price/XAU
   run_once: true
+  request_timeout: 20
 dependencies: []
 schedule: manual
 execution_timeout_minutes: 10

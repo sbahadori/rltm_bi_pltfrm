@@ -1,6 +1,6 @@
 x-airflow-common: &airflow-common
   build:
-    context: ..
+    context: ${PROJECT_ROOT}
     dockerfile: docker/airflow/Dockerfile
   user: "${AIRFLOW_UID:-50000}:0"
   environment: &airflow-common-env
@@ -14,7 +14,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__API__EXPOSE_CONFIG: "non-sensitive-only"
 
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
-
     AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
     AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
 
@@ -36,12 +35,12 @@ x-airflow-common: &airflow-common
     EVENT_TOPIC: user_events
 
   volumes:
-    - ../:/workspace/rltm_bi_pltfrm
-    - ../airflow/dags:/opt/airflow/dags
-    - ../airflow/logs:/opt/airflow/logs
-    - ../airflow/config:/opt/airflow/config
-    - ../airflow/plugins:/opt/airflow/plugins
-    - ../airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
+    - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
+    - ${PROJECT_ROOT}/airflow/dags:/opt/airflow/dags
+    - ${PROJECT_ROOT}/airflow/logs:/opt/airflow/logs
+    - ${PROJECT_ROOT}/airflow/config:/opt/airflow/config
+    - ${PROJECT_ROOT}/airflow/plugins:/opt/airflow/plugins
+    - ${PROJECT_ROOT}/airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
   networks:
     - rltm_shared_net
 
@@ -140,7 +139,7 @@ services:
 
   collector:
     build:
-      context: ../apps/collector
+      context: ${PROJECT_ROOT}/apps/collector
       dockerfile: Dockerfile
     container_name: collector
     restart: unless-stopped
@@ -153,7 +152,7 @@ services:
       ENABLE_FILE_FALLBACK: "true"
       ALLOWED_ORIGINS: "http://localhost:8091,http://127.0.0.1:8091"
     volumes:
-      - ../data/collector:/data
+      - ${PROJECT_ROOT}/data/collector:/data
     depends_on:
       - kafka
     networks:
@@ -182,17 +181,14 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
-      /opt/spark/bin/spark-submit
-      --master spark://spark-master:7077
-      --conf spark.jars.ivy=/tmp/.ivy2
-      --packages io.delta:delta-spark_2.12:3.2.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.apache.hadoop:hadoop-aws:3.3.4
-      /opt/spark/apps/streaming/kafka_to_bronze.py
+      python /opt/spark/apps/runners/run_configured_pipeline.py
+      --config configs/pipelines/stream_kafka_to_bronze.yaml
       "
     volumes:
-      - ../spark_apps:/opt/spark/apps
-      - ../spark_checkpoints/kafka_to_bronze_user_events_delta:/tmp/checkpoints/kafka_to_bronze_user_events_delta
-      - ../spark_ivy:/tmp/.ivy2
-      - ../spark_health:/tmp/health
+      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
+      - ${PROJECT_ROOT}/spark_checkpoints/kafka_to_bronze_user_events_delta:/tmp/checkpoints/kafka_to_bronze_user_events_delta
+      - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
+      - ${PROJECT_ROOT}/spark_health:/tmp/health
     depends_on:
       - kafka
     healthcheck:
@@ -232,17 +228,15 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
-      /opt/spark/bin/spark-submit
-      --master spark://spark-master:7077
-      --conf spark.jars.ivy=/tmp/.ivy2
-      --packages io.delta:delta-spark_2.12:3.2.0,org.apache.hadoop:hadoop-aws:3.3.4
-      /opt/spark/apps/streaming/bronze_to_silver_events.py
+      python /opt/spark/apps/runners/run_configured_pipeline.py
+      --config configs/pipelines/stream_bronze_to_silver_events.yaml
       "
+    
     volumes:
-      - ../spark_apps:/opt/spark/apps
-      - ../spark_checkpoints/bronze_to_silver_events:/tmp/checkpoints/bronze_to_silver_events
-      - ../spark_ivy:/tmp/.ivy2
-      - ../spark_health:/tmp/health
+      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
+      - ${PROJECT_ROOT}/spark_checkpoints/bronze_to_silver_events:/tmp/checkpoints/bronze_to_silver_events
+      - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
+      - ${PROJECT_ROOT}/spark_health:/tmp/health
     depends_on:
       - spark-bronze-ingest
     healthcheck:

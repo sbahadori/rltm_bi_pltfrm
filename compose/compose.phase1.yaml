@@ -11,7 +11,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - ../minio_data:/data
+      - ${PROJECT_ROOT}/minio_data:/data
     networks:
       - rltm_shared_net
 
@@ -58,8 +58,8 @@ services:
       - "7077:7077"
       - "8080:8080"
     volumes:
-      - ../jars:/opt/spark/jars-extra
-      - ../spark_apps:/opt/spark/apps
+      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
 
@@ -77,14 +77,33 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ../jars:/opt/spark/jars-extra
-      - ../spark_apps:/opt/spark/apps
+      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
+    networks:
+      - rltm_shared_net
+
+  spark-worker-2:
+    image: apache/spark:3.5.1-python3
+    container_name: spark-worker-2
+    depends_on:
+      - spark-master
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      SPARK_NO_DAEMONIZE: "true"
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "2G"
+    ports:
+      - "8082:8081"
+    volumes:
+      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
 
   jupyter:
     build:
-      context: ..
+      context: ${PROJECT_ROOT}
       dockerfile: docker/jupyter/Dockerfile
     container_name: jupyter
     depends_on:
@@ -99,8 +118,8 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - ../:/workspace/rltm_bi_pltfrm
-      - ../jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
+      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
     networks:
       - rltm_shared_net
 

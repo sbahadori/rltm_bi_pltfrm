@@ -1,7 +1,7 @@
 services:
   web:
     build:
-      context: ../apps/web
+      context: ${PROJECT_ROOT}/apps/web
       dockerfile: Dockerfile
     container_name: web
     ports:

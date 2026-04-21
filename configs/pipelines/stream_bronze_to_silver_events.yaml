@@ -6,6 +6,7 @@ spark_master: spark://spark-master:7077
 packages:
   - io.delta:delta-spark_2.12:3.2.0
   - org.apache.hadoop:hadoop-aws:3.3.4
+  - com.amazonaws:aws-java-sdk-bundle:1.12.262
 spark_conf:
   spark.jars.ivy: /tmp/.ivy2
   spark.executor.cores: "1"

@@ -8,6 +8,9 @@ from airflow.sdk import DAG
 REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
 AIRFLOW_APP_ROOT = REPO_ROOT / "airflow"
 
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 if str(AIRFLOW_APP_ROOT) not in sys.path:
     sys.path.insert(0, str(AIRFLOW_APP_ROOT))
 

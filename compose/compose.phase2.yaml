@@ -2,8 +2,9 @@ x-airflow-common: &airflow-common
   build:
     context: ${PROJECT_ROOT}
     dockerfile: docker/airflow/Dockerfile
-  user: "${AIRFLOW_UID:-50000}:0"
-  environment: &airflow-common-env
+  env_file:
+    - ${PROJECT_ROOT}/.env
+  environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
@@ -25,28 +26,61 @@ x-airflow-common: &airflow-common
     AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
     AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
     AWS_REGION: us-east-1
-
-    PYSPARK_PYTHON: /usr/local/bin/python
-    PYSPARK_DRIVER_PYTHON: /usr/local/bin/python
-    SPARK_SUBMIT: /home/airflow/.local/bin/spark-submit
-    SPARK_MASTER_URL: spark://spark-master:7077
-
-    KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-    EVENT_TOPIC: user_events
-
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
     - ${PROJECT_ROOT}/airflow/dags:/opt/airflow/dags
+    - ${PROJECT_ROOT}/airflow/lib:/opt/airflow/lib
     - ${PROJECT_ROOT}/airflow/logs:/opt/airflow/logs
     - ${PROJECT_ROOT}/airflow/config:/opt/airflow/config
     - ${PROJECT_ROOT}/airflow/plugins:/opt/airflow/plugins
     - ${PROJECT_ROOT}/airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
-  networks:
-    - rltm_shared_net
-
   depends_on:
     airflow-postgres:
       condition: service_healthy
+  networks:
+    - rltm_shared_net
+
+x-spark-stream-base: &spark-stream-base
+  build:
+    context: ${PROJECT_ROOT}
+    dockerfile: docker/spark/Dockerfile
+  env_file:
+    - ${PROJECT_ROOT}/.env
+  environment:
+    PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+    SPARK_SUBMIT: /opt/spark/bin/spark-submit
+    SPARK_MASTER_URL: spark://spark-master:7077
+    S3_ENDPOINT: http://minio:9000
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
+    AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
+
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: "/opt/airflow/simple_auth_manager_passwords.json"
+
+
+
+
+    AWS_REGION: us-east-1
+  volumes:
+    - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
+    - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
+    - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
+    - ${PROJECT_ROOT}/spark_health:/tmp/health
+    - ${PROJECT_ROOT}/spark_checkpoints:/tmp/checkpoints
+  depends_on:
+    - spark-master
+    - spark-worker
+    - spark-worker-2
+    - kafka
+  restart: unless-stopped
+  stop_grace_period: 30s
+  networks:
+    - rltm_shared_net
+
 
 services:
   airflow-postgres:
@@ -55,24 +89,29 @@ services:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     volumes:
-      - airflow-postgres-data:/var/lib/postgresql/data
+      - airflow_postgres_data:/var/lib/postgresql/data
     networks:
       - rltm_shared_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
     command: >
-      -c "
-      set -e &&
-      mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/config /opt/airflow/plugins &&
-      airflow db migrate
+      -lc "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Admin
+      --lastname User
+      --role Admin
+      --email admin@example.com || true
       "
 
   airflow-api-server:
@@ -81,38 +120,22 @@ services:
     ports:
       - "8090:8080"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
-      interval: 15s
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/health || exit 1"]
+      interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 30s
+      retries: 5
 
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
-    depends_on:
-      airflow-postgres:
-        condition: service_healthy
-      airflow-api-server:
-        condition: service_healthy
 
   airflow-dag-processor:
     <<: *airflow-common
     command: dag-processor
-    depends_on:
-      airflow-postgres:
-        condition: service_healthy
-      airflow-api-server:
-        condition: service_healthy
 
   airflow-triggerer:
     <<: *airflow-common
     command: triggerer
-    depends_on:
-      airflow-postgres:
-        condition: service_healthy
-      airflow-api-server:
-        condition: service_healthy
 
   kafka:
     image: apache/kafka:3.9.2
@@ -158,117 +181,30 @@ services:
     networks:
       - rltm_shared_net
 
-  spark-bronze-ingest:
-    build:
-      context: ${PROJECT_ROOT}
-      dockerfile: docker/spark/Dockerfile
-    container_name: spark-bronze-ingest
-    restart: unless-stopped
-    stop_grace_period: 30s
-    environment:
-      SPARK_MASTER_URL: spark://spark-master:7077
-      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-      EVENT_TOPIC: user_events
-      S3_ENDPOINT: http://minio:9000
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-      AWS_REGION: us-east-1
-      BRONZE_PATH: s3a://lakehouse/bronze_delta/user_events
-      CHECKPOINT_PATH: /tmp/checkpoints/kafka_to_bronze_user_events_delta
-      TRIGGER_INTERVAL: 15 seconds
-      STARTING_OFFSETS: latest
-      FAIL_ON_DATA_LOSS: "false"
-      HEARTBEAT_FILE: /tmp/health/bronze_heartbeat.txt
-      HEARTBEAT_MAX_AGE_SEC: "90"
-      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
-      SPARK_SUBMIT: /opt/spark/bin/spark-submit
+
+  spark-stream-supervisor:
+    <<: *spark-stream-base
+    container_name: spark-stream-supervisor
     command: >
       bash -lc "
-      mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/kafka_to_bronze_user_events_delta /tmp/health &&
-      python3 /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_kafka_to_bronze.yaml
+      mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&
+      python3 /opt/spark/apps/runners/stream_supervisor.py
+      --registry configs/streaming/stream_registry.yaml
+      --status-file /tmp/health/stream_supervisor_status.json
       "
-    volumes:
-      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
-      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
-      - ${PROJECT_ROOT}/spark_checkpoints/kafka_to_bronze_user_events_delta:/tmp/checkpoints/kafka_to_bronze_user_events_delta
-      - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
-      - ${PROJECT_ROOT}/spark_health:/tmp/health
-    depends_on:
-      - kafka
-      - spark-master
-      - spark-worker
-      - spark-worker-2
-
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python - <<'PY'\nfrom pathlib import Path\nimport os, time, sys\np = Path(os.environ.get('HEARTBEAT_FILE', '/tmp/health/bronze_heartbeat.txt'))\nmax_age = int(os.environ.get('HEARTBEAT_MAX_AGE_SEC', '90'))\nif not p.exists():\n    sys.exit(1)\nage = time.time() - p.stat().st_mtime\nsys.exit(0 if age <= max_age else 1)\nPY"
+          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\np = Path('/tmp/health/stream_supervisor_status.json')\nif not p.exists():\n    sys.exit(1)\ndata = json.loads(p.read_text(encoding='utf-8'))\nif not data.get('streams'):\n    sys.exit(1)\nif time.time() - p.stat().st_mtime > 120:\n    sys.exit(1)\nsys.exit(0)\nPY"
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 90s
-    networks:
-      - rltm_shared_net
-
-  spark-silver-events:
-    build:
-      context: ${PROJECT_ROOT}
-      dockerfile: docker/spark/Dockerfile
-    container_name: spark-silver-events
-    restart: unless-stopped
-    stop_grace_period: 30s
-    environment:
-      APP_NAME: bronze_to_silver_events
-      SPARK_MASTER_URL: spark://spark-master:7077
-      S3_ENDPOINT: http://minio:9000
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-      AWS_REGION: us-east-1
-      BRONZE_PATH: s3a://lakehouse/bronze_delta/user_events
-      SILVER_PATH: s3a://lakehouse/silver_delta/user_events_clean
-      QUARANTINE_PATH: s3a://lakehouse/silver_delta/user_events_quarantine
-      CHECKPOINT_PATH: /tmp/checkpoints/bronze_to_silver_events
-      TRIGGER_INTERVAL: 30 seconds
-      HEARTBEAT_FILE: /tmp/health/silver_events_heartbeat.txt
-      HEARTBEAT_INTERVAL_SEC: "20"
-      HEARTBEAT_MAX_AGE_SEC: "90"
-      LOG_LEVEL: INFO
-      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
-      SPARK_SUBMIT: /opt/spark/bin/spark-submit
-    command: >
-      bash -lc "
-      mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints/bronze_to_silver_events /tmp/health &&
-      python3 /opt/spark/apps/runners/run_configured_pipeline.py --config configs/pipelines/stream_bronze_to_silver_events.yaml
-      "
-    volumes:
-      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
-      - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
-      - ${PROJECT_ROOT}/spark_checkpoints/bronze_to_silver_events:/tmp/checkpoints/bronze_to_silver_events
-      - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
-      - ${PROJECT_ROOT}/spark_health:/tmp/health
-    depends_on:
-      - spark-bronze-ingest
-      - spark-master
-      - spark-worker
-      - spark-worker-2
-
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python3 - <<'PY'\nfrom pathlib import Path\nimport os, time, sys\np = Path(os.environ.get('HEARTBEAT_FILE', '/tmp/health/silver_events_heartbeat.txt'))\nmax_age = int(os.environ.get('HEARTBEAT_MAX_AGE_SEC', '90'))\nif not p.exists():\n    sys.exit(1)\nage = time.time() - p.stat().st_mtime\nsys.exit(0 if age <= max_age else 1)\nPY"
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
-    networks:
-      - rltm_shared_net
+      retries: 5
+      start_period: 120s
 
 volumes:
-  airflow-postgres-data:
+  airflow_postgres_data:
 
 networks:
   rltm_shared_net:

@@ -1,0 +1,18 @@
+streams:
+  - name: stream_kafka_to_bronze
+    pipeline_config: configs/pipelines/stream_kafka_to_bronze.yaml
+    enabled: true
+    checkpoint_dir: /tmp/checkpoints/kafka_to_bronze_user_events_delta
+    heartbeat_file: /tmp/health/bronze_heartbeat.txt
+    restart_policy:
+      max_retries: 10
+      backoff_seconds: 10
+
+  - name: stream_bronze_to_silver_events
+    pipeline_config: configs/pipelines/stream_bronze_to_silver_events.yaml
+    enabled: true
+    checkpoint_dir: /tmp/checkpoints/bronze_to_silver_events
+    heartbeat_file: /tmp/health/silver_events_heartbeat.txt
+    restart_policy:
+      max_retries: 10
+      backoff_seconds: 10

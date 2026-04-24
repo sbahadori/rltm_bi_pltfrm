@@ -171,23 +171,42 @@ services:
     networks:
       - rltm_shared_net
 
+  kafka-init-topics:
+    image: apache/kafka:3.9.2
+    container_name: kafka-init-topics
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic user_events --partitions 3 --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic user_events
+      "
+    networks:
+      - rltm_shared_net
 
   spark-stream-supervisor:
     <<: *spark-stream-base
     container_name: spark-stream-supervisor
+    depends_on:
+      - spark-master
+      - spark-worker
+      - spark-worker-2
+      - kafka
+      - kafka-init-topics
     user: "0:0"
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&
       python3 /opt/spark/apps/runners/stream_supervisor.py
-      --registry configs/streaming/stream_registry.yaml
+      --registry configs/streaming/stream_registry.json
       --status-file /tmp/health/stream_supervisor_status.json
       "
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\np = Path('/tmp/health/stream_supervisor_status.json')\nif not p.exists():\n    sys.exit(1)\ndata = json.loads(p.read_text(encoding='utf-8'))\nstreams = data.get('streams', {})\nif not streams:\n    sys.exit(1)\nif all(v.get('pid') is None for v in streams.values()):\n    sys.exit(1)\nif time.time() - p.stat().st_mtime > 120:\n    sys.exit(1)\nsys.exit(0)\nPY"
+          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\nstatus_p = Path('/tmp/health/stream_supervisor_status.json')\nif not status_p.exists():\n    sys.exit(1)\nif time.time() - status_p.stat().st_mtime > 120:\n    sys.exit(1)\ndata = json.loads(status_p.read_text(encoding='utf-8'))\nunits = data.get('units', {})\nif not units:\n    sys.exit(1)\nfor name, u in units.items():\n    if not u.get('enabled', True):\n        continue\n    if u.get('pid') is None:\n        sys.exit(1)\n    if u.get('returncode') is not None:\n        sys.exit(1)\n    hb = u.get('heartbeat') or {}\n    if hb.get('status') == 'error':\n        sys.exit(1)\nsys.exit(0)\nPY"
         ]
       interval: 30s
       timeout: 10s

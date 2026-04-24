@@ -6,205 +6,252 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-import yaml
+def _bootstrap_repo_path() -> Path:
+    repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    return repo_root
 
-STOP = False
-PROCS: dict[str, subprocess.Popen] = {}
-LOG_THREADS: dict[str, threading.Thread] = {}
-RETRY_META: dict[str, dict] = {}
+REPO_ROOT = _bootstrap_repo_path()
 
+from shared.lib.stream_spec_utils import load_stream_registry, resolve_repo_path
 
-def get_repo_root() -> Path:
-    return Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
-
-
-def resolve_repo_path(path_str: str | Path) -> Path:
-    path = Path(path_str)
-    if path.is_absolute():
-        return path
-    return (get_repo_root() / path).resolve()
+POLL_INTERVAL_SEC = 5
 
 
-def load_registry(path: str | Path) -> dict:
-    registry_path = resolve_repo_path(path)
-    if not registry_path.exists():
-        raise FileNotFoundError(f"Stream registry not found: {registry_path}")
-
-    with registry_path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def enabled_streams(registry: dict) -> list[dict]:
-    return [s for s in registry.get("streams", []) if s.get("enabled", True)]
-
-
-def build_cmd(stream_name: str, registry_path: str) -> list[str]:
-    return [
-        "python3",
-        "/opt/spark/apps/runners/run_stream_service.py",
-        "--registry",
-        registry_path,
-        "--stream-name",
-        stream_name,
-    ]
+@dataclass
+class UnitState:
+    unit_name: str
+    stream_name: str
+    layer: str  # bronze | silver
+    enabled: bool
+    pid: int | None = None
+    returncode: int | None = None
+    retries: int = 0
+    max_retries: int = 10
+    backoff_seconds: int = 10
+    heartbeat_file: str | None = None
+    checkpoint_dir: str | None = None
+    last_start_ts_epoch: int | None = None
+    next_retry_ts_epoch: int | None = None
 
 
-def stream_output(name: str, pipe) -> None:
-    try:
-        for line in iter(pipe.readline, ""):
-            if not line:
+class StreamSupervisor:
+    def __init__(self, registry_path: str, status_file: str) -> None:
+        self.registry_path = registry_path
+        self.status_file = Path(status_file)
+        self.stop_requested = False
+
+        self.processes: dict[str, subprocess.Popen[str]] = {}
+        self.states: dict[str, UnitState] = {}
+
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+
+    def _handle_shutdown(self, *_args: Any) -> None:
+        self.stop_requested = True
+        self._terminate_all()
+
+    def _load_units(self) -> None:
+        registry = load_stream_registry(self.registry_path)
+        streams = registry.get("streams", [])
+
+        new_states: dict[str, UnitState] = {}
+
+        for stream in streams:
+            stream_name = stream["name"]
+            enabled = bool(stream.get("enabled", True))
+            restart_policy = stream.get("restart_policy", {})
+            max_retries = int(restart_policy.get("max_retries", 10))
+            backoff_seconds = int(restart_policy.get("backoff_seconds", 10))
+
+            for layer in ("bronze", "silver"):
+                layer_spec = stream.get(layer)
+                if not layer_spec:
+                    continue
+
+                unit_name = f"{stream_name}_{layer}"
+
+                previous = self.states.get(unit_name)
+                state = UnitState(
+                    unit_name=unit_name,
+                    stream_name=stream_name,
+                    layer=layer,
+                    enabled=enabled,
+                    pid=previous.pid if previous else None,
+                    returncode=previous.returncode if previous else None,
+                    retries=previous.retries if previous else 0,
+                    max_retries=max_retries,
+                    backoff_seconds=backoff_seconds,
+                    heartbeat_file=layer_spec.get("heartbeat_file"),
+                    checkpoint_dir=layer_spec.get("checkpoint_dir"),
+                    last_start_ts_epoch=previous.last_start_ts_epoch if previous else None,
+                    next_retry_ts_epoch=previous.next_retry_ts_epoch if previous else None,
+                )
+                new_states[unit_name] = state
+
+        self.states = new_states
+
+    def _build_command(self, stream_name: str, layer: str) -> list[str]:
+        return [
+            "python3",
+            "/opt/spark/apps/runners/run_stream_service.py",
+            "--registry",
+            self.registry_path,
+            "--stream-name",
+            stream_name,
+            "--layer",
+            layer,
+        ]
+
+    def _start_unit(self, state: UnitState) -> None:
+        cmd = self._build_command(state.stream_name, state.layer)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True,
+            env=os.environ.copy(),
+        )
+        self.processes[state.unit_name] = proc
+        state.pid = proc.pid
+        state.returncode = None
+        state.last_start_ts_epoch = int(time.time())
+        state.next_retry_ts_epoch = None
+
+    def _terminate_all(self) -> None:
+        for unit_name, proc in list(self.processes.items()):
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                pass
+
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            alive = [p for p in self.processes.values() if p.poll() is None]
+            if not alive:
                 break
-            print(f"[{name}] {line.rstrip()}", flush=True)
-    finally:
-        try:
-            pipe.close()
-        except Exception:
-            pass
+            time.sleep(0.5)
 
+        for proc in self.processes.values():
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+            except Exception:
+                pass
 
-def write_status_file(streams: list[dict], status_path: Path) -> None:
-    payload = {
-        "ts_epoch": int(time.time()),
-        "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "streams": {},
-    }
+    def _refresh_process_states(self) -> None:
+        for unit_name, proc in list(self.processes.items()):
+            rc = proc.poll()
+            if rc is None:
+                state = self.states.get(unit_name)
+                if state:
+                    state.pid = proc.pid
+                    state.returncode = None
+                continue
 
-    for s in streams:
-        name = s["name"]
-        proc = PROCS.get(name)
-        meta = RETRY_META.get(name, {})
-        payload["streams"][name] = {
-            "enabled": s.get("enabled", True),
-            "pid": proc.pid if proc and proc.poll() is None else None,
-            "returncode": proc.poll() if proc else None,
-            "retries": meta.get("retries", 0),
-            "max_retries": meta.get("max_retries", 0),
-            "backoff_seconds": meta.get("backoff_seconds", 0),
-            "heartbeat_file": s.get("heartbeat_file"),
-            "checkpoint_dir": s.get("checkpoint_dir"),
+            state = self.states.get(unit_name)
+            if state:
+                state.pid = None
+                state.returncode = rc
+                state.next_retry_ts_epoch = int(time.time()) + state.backoff_seconds
+
+            del self.processes[unit_name]
+
+    def _maybe_start_units(self) -> None:
+        now = int(time.time())
+
+        for unit_name, state in self.states.items():
+            if not state.enabled:
+                continue
+
+            if unit_name in self.processes:
+                continue
+
+            if state.returncode is None and state.pid is not None:
+                continue
+
+            if state.returncode is not None:
+                if state.retries >= state.max_retries:
+                    print(f"[supervisor] '{unit_name}' exceeded max_retries; not restarting", flush=True)
+                    continue
+
+                if state.next_retry_ts_epoch is not None and now < state.next_retry_ts_epoch:
+                    continue
+
+                state.retries += 1
+
+            print(f"[supervisor] starting '{unit_name}'", flush=True)
+            self._start_unit(state)
+
+    def _health_of_unit(self, state: UnitState) -> dict[str, Any]:
+        heartbeat_data: dict[str, Any] | None = None
+
+        if state.heartbeat_file:
+            p = Path(state.heartbeat_file)
+            if p.exists():
+                try:
+                    heartbeat_data = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    heartbeat_data = {"parse_error": True}
+
+        return {
+            "enabled": state.enabled,
+            "pid": state.pid,
+            "returncode": state.returncode,
+            "retries": state.retries,
+            "max_retries": state.max_retries,
+            "backoff_seconds": state.backoff_seconds,
+            "heartbeat_file": state.heartbeat_file,
+            "checkpoint_dir": state.checkpoint_dir,
+            "last_start_ts_epoch": state.last_start_ts_epoch,
+            "next_retry_ts_epoch": state.next_retry_ts_epoch,
+            "heartbeat": heartbeat_data,
         }
 
-    status_path.parent.mkdir(parents=True, exist_ok=True)
-    status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    def _write_status(self) -> None:
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
+
+        payload = {
+            "ts_epoch": int(time.time()),
+            "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "units": {
+                unit_name: self._health_of_unit(state)
+                for unit_name, state in sorted(self.states.items())
+            },
+        }
+
+        self.status_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def run(self) -> None:
+        while not self.stop_requested:
+            self._load_units()
+            self._refresh_process_states()
+            self._maybe_start_units()
+            self._write_status()
+            time.sleep(POLL_INTERVAL_SEC)
+
+        self._write_status()
 
 
-def launch_stream(stream: dict, registry_path: str) -> subprocess.Popen:
-    name = stream["name"]
-    cmd = build_cmd(name, registry_path)
-
-    print(f"[supervisor] launching stream '{name}'")
-    print(f"[supervisor] cmd={' '.join(cmd)}")
-
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    PROCS[name] = proc
-
-    t = threading.Thread(target=stream_output, args=(name, proc.stdout), daemon=True)
-    t.start()
-    LOG_THREADS[name] = t
-
-    return proc
-
-
-def shutdown_handler(signum, frame) -> None:
-    global STOP
-    STOP = True
-    print(f"[supervisor] shutdown signal received: {signum}", flush=True)
-
-    for name, proc in PROCS.items():
-        if proc.poll() is None:
-            print(f"[supervisor] terminating '{name}'", flush=True)
-            proc.terminate()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--registry", required=True)
+    parser.add_argument("--status-file", required=True)
+    return parser.parse_args()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--registry", default="configs/streaming/stream_registry.yaml")
-    parser.add_argument("--status-file", default="/tmp/health/stream_supervisor_status.json")
-    parser.add_argument("--poll-seconds", type=int, default=2)
-    args = parser.parse_args()
-
+    args = parse_args()
     registry_path = str(resolve_repo_path(args.registry))
-    status_path = Path(args.status_file)
-
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    signal.signal(signal.SIGINT, shutdown_handler)
-
-    registry = load_registry(registry_path)
-    streams = enabled_streams(registry)
-
-    for s in streams:
-        rp = s.get("restart_policy", {}) or {}
-        RETRY_META[s["name"]] = {
-            "retries": 0,
-            "max_retries": int(rp.get("max_retries", 5)),
-            "backoff_seconds": int(rp.get("backoff_seconds", 10)),
-        }
-
-    for s in streams:
-        launch_stream(s, registry_path)
-
-    try:
-        while not STOP:
-            for s in streams:
-                name = s["name"]
-                proc = PROCS.get(name)
-                if proc is None:
-                    continue
-
-                rc = proc.poll()
-                if rc is None:
-                    continue
-
-                meta = RETRY_META[name]
-                if meta["retries"] >= meta["max_retries"]:
-                    print(f"[supervisor] '{name}' exceeded max_retries; not restarting", flush=True)
-                    continue
-
-                meta["retries"] += 1
-                backoff = meta["backoff_seconds"]
-                print(
-                    f"[supervisor] '{name}' exited rc={rc}; retry {meta['retries']}/{meta['max_retries']} "
-                    f"after {backoff}s",
-                    flush=True,
-                )
-                time.sleep(backoff)
-                launch_stream(s, registry_path)
-
-            write_status_file(streams, status_path)
-            time.sleep(args.poll_seconds)
-
-    finally:
-        for name, proc in PROCS.items():
-            if proc.poll() is None:
-                try:
-                    proc.terminate()
-                except Exception:
-                    pass
-
-        deadline = time.time() + 20
-        for name, proc in PROCS.items():
-            if proc.poll() is None:
-                remaining = max(1, int(deadline - time.time()))
-                try:
-                    proc.wait(timeout=remaining)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-
-        write_status_file(streams, status_path)
-        print("[supervisor] stopped", flush=True)
+    supervisor = StreamSupervisor(registry_path=registry_path, status_file=args.status_file)
+    supervisor.run()
 
 
 if __name__ == "__main__":

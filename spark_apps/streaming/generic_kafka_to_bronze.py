@@ -255,6 +255,8 @@ def main() -> None:
         "trigger_interval": bronze.get("trigger_interval", "15 seconds"),
         "partition_by": bronze.get("partition_by", []),
         "derived_fields": bronze.get("derived_fields", {}),
+        "startup_wait_seconds": source.get("startup_wait_seconds", 60),
+        "metadata_retry_interval_seconds": source.get("metadata_retry_interval_seconds", 5),
     }
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)

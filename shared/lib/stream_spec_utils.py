@@ -102,20 +102,6 @@ def validate_stream_spec(spec: dict[str, Any]) -> None:
     plugin = silver.get("transform_plugin")
     if plugin is not None:
         if not isinstance(plugin, str) or ":" not in plugin:
-            raise ValueError(f"silver.transform_plugin must be 'module:function' for stream '{stream_name}'")    missing_top = [k for k in required_top if k not in spec]
-    if missing_top:
-        raise ValueError(f"Missing top-level keys for stream '{spec.get('name', '?')}': {missing_top}")
-
-    source_required = ["type", "bootstrap_servers", "topic"]
-    bronze_required = ["engine", "app_name", "path", "checkpoint_dir", "heartbeat_file"]
-    silver_required = ["engine", "app_name", "bronze_path", "path", "quarantine_path", "checkpoint_dir", "heartbeat_file"]
-
-    for section_name, required_keys in {
-        "source": source_required,
-        "bronze": bronze_required,
-        "silver": silver_required,
-    }.items():
-        section = spec.get(section_name, {})
-        missing = [k for k in required_keys if k not in section]
-        if missing:
-            raise ValueError(f"Missing keys in section '{section_name}' for stream '{spec['name']}': {missing}")
+            raise ValueError(
+                f"silver.transform_plugin must be 'module:function' for stream '{stream_name}'"
+            )

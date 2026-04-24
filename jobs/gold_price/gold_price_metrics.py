@@ -3,24 +3,10 @@ import os
 
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import (
-    abs,
-    avg,
-    col,
-    lag,
-    lit,
-    stddev_samp,
-    when,
-)
+from pyspark.sql.functions import abs, avg, col, lag, lit, stddev_samp, when
 from pyspark.sql.types import (
-    BooleanType,
-    DoubleType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
+    StructType, StructField, StringType, TimestampType, DoubleType, BooleanType
 )
-
 
 SCHEMA = StructType([
     StructField("symbol", StringType(), False),
@@ -49,8 +35,8 @@ def parse_args():
 
 def build_spark():
     endpoint = os.getenv("S3_ENDPOINT", "http://minio:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio"))
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123"))
+    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio")
+    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")
     region = os.getenv("AWS_REGION", "us-east-1")
 
     spark = (
@@ -78,6 +64,7 @@ def ensure_table(spark, path):
         return
 
     spark.createDataFrame([], SCHEMA).write.format("delta").mode("overwrite").save(path)
+
 
 def build_metrics(gold_df):
     base = (
@@ -127,6 +114,7 @@ def build_metrics(gold_df):
         )
         .drop("prev_close_1", "prev_close_5", "price_std_60")
     )
+
 
 def merge_metrics(spark, path, metrics_df):
     ensure_table(spark, path)

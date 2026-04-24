@@ -13,7 +13,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "4"
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
     AIRFLOW__API__EXPOSE_CONFIG: "non-sensitive-only"
-
+    SPARK_SUBMIT: /home/airflow/.local/bin/spark-submit
+    SPARK_MASTER_URL: spark://spark-master:7077
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
     AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
     AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
@@ -53,17 +54,6 @@ x-spark-stream-base: &spark-stream-base
     S3_ENDPOINT: http://minio:9000
     AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
     AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-
-    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
-    AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
-    AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
-
-    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
-    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: "/opt/airflow/simple_auth_manager_passwords.json"
-
-
-
-
     AWS_REGION: us-east-1
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm

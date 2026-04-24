@@ -2,21 +2,16 @@ import argparse
 import hashlib
 import json
 import os
-import time
 from datetime import datetime, timezone
-
+from pyspark import SparkContext
 import requests
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import dayofmonth, hour, month, year
 from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-    TimestampType,
-    DoubleType,
+    StructType, StructField, StringType, TimestampType, DoubleType
 )
 
-SOURCE_NAME = "gold_api_com"
+SOURCE_NAME = "metalpriceapi"
 SYMBOL = "XAU"
 CURRENCY = "USD"
 
@@ -36,22 +31,35 @@ SCHEMA = StructType([
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bronze-path", default="s3a://lakehouse/bronze/gold_price_events")
-    parser.add_argument("--api-url", default="https://api.gold-api.com/price/XAU")
-    parser.add_argument("--poll-seconds", type=int, default=60)
-    parser.add_argument("--request-timeout", type=int, default=15)
+    parser.add_argument("--api-base-url", default="https://api.metalpriceapi.com/v1/latest")
+    parser.add_argument("--request-timeout", type=int, default=20)
     parser.add_argument("--run-once", action="store_true")
     return parser.parse_args()
 
 
 def build_spark():
     endpoint = os.getenv("S3_ENDPOINT", "http://minio:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio"))
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123"))
+    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio")
+    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")
     region = os.getenv("AWS_REGION", "us-east-1")
+
+    # پاک کردن session/context قبلی اگر stop شده یا stale مانده باشد
+    try:
+        active_session = SparkSession.getActiveSession()
+        if active_session is not None:
+            try:
+                active_session.stop()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    SparkSession._instantiatedSession = None
+    SparkContext._active_spark_context = None
 
     spark = (
         SparkSession.builder
-        .appName("ingest_gold_api_to_bronze")
+        .appName("gold_price_ingest_to_bronze")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .config("spark.sql.session.timeZone", "UTC")
@@ -69,57 +77,63 @@ def build_spark():
     return spark
 
 
-def parse_ts(value):
-    if not value:
+def build_api_url(api_base_url: str) -> str:
+    api_key = os.getenv("METALPRICE_API_KEY")
+    if not api_key:
+        raise ValueError("METALPRICE_API_KEY is not set")
+
+    return f"{api_base_url}?api_key={api_key}&base=XAU&currencies=USD"
+
+
+def fetch_payload(api_url: str, timeout: int) -> dict | None:
+    try:
+        r = requests.get(api_url, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"API request failed: {e}")
         return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def fetch_payload(api_url: str, request_timeout: int, max_retries: int = 3):
-    last_exc = None
+def validate_payload(payload: dict) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("API payload is not a JSON object")
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            r = requests.get(api_url, timeout=request_timeout)
+    if not payload.get("success", False):
+        raise ValueError(f"API returned error payload: {json.dumps(payload, ensure_ascii=False)}")
 
-            if r.status_code == 429:
-                wait_sec = 5 * attempt
-                print(f"Rate limited by API (429). Retry {attempt}/{max_retries} after {wait_sec}s")
-                time.sleep(wait_sec)
-                last_exc = RuntimeError("429 Too Many Requests")
-                continue
+    if "timestamp" not in payload:
+        raise ValueError(f"API payload has no 'timestamp'. Payload keys: {list(payload.keys())}")
 
-            r.raise_for_status()
-            return r.json()
+    if "rates" not in payload:
+        raise ValueError(f"API payload has no 'rates'. Payload keys: {list(payload.keys())}")
 
-        except requests.RequestException as exc:
-            last_exc = exc
-            wait_sec = 5 * attempt
-            print(f"Request failed on attempt {attempt}/{max_retries}: {exc}")
-            if attempt < max_retries:
-                time.sleep(wait_sec)
-
-    print(f"No data fetched after {max_retries} attempts. Last error: {last_exc}")
-    return None
+    if "USD" not in payload["rates"]:
+        raise ValueError(f"API payload has no 'rates[\"USD\"]'. Payload keys: {list(payload['rates'].keys())}")
 
 
-def build_bronze_row(payload: dict) -> dict:
-    source_event_ts = parse_ts(payload.get("updatedAt"))
+def extract_price_usd(payload: dict) -> float:
+    return float(payload["rates"]["USD"])
+
+
+def build_row(payload: dict) -> dict:
+    ts_value = payload["timestamp"]
+    source_event_ts = datetime.fromtimestamp(int(ts_value), tz=timezone.utc)
     ingestion_ts = datetime.now(timezone.utc)
-    payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    price_usd = extract_price_usd(payload)
 
-    raw_key = f"{SOURCE_NAME}|{payload.get('symbol', SYMBOL)}|{payload.get('updatedAt')}|{payload.get('price')}"
+    raw_key = f"{SOURCE_NAME}|{SYMBOL}|{ts_value}|{price_usd}"
     event_id = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     return {
         "event_id": event_id,
-        "symbol": payload.get("symbol", SYMBOL),
+        "symbol": SYMBOL,
         "source_name": SOURCE_NAME,
         "source_event_ts": source_event_ts,
         "ingestion_ts": ingestion_ts,
-        "price_usd": float(payload["price"]) if payload.get("price") is not None else None,
-        "currency": payload.get("currency", CURRENCY),
-        "payload_json": payload_json,
+        "price_usd": price_usd,
+        "currency": CURRENCY,
+        "payload_json": json.dumps(payload, ensure_ascii=False),
         "api_status": "success",
     }
 
@@ -143,26 +157,25 @@ def write_row(spark, bronze_path, row):
 
 def main():
     args = parse_args()
-    spark = build_spark()
+    spark = None
+
 
     try:
-        while True:
-            payload = fetch_payload(args.api_url, args.request_timeout)
+        spark = build_spark()
+        api_url = build_api_url(args.api_base_url)
 
-            if payload is None:
-                print("Skipping bronze ingest because source API is temporarily unavailable or rate-limited.")
-                return
+        payload = fetch_payload(api_url, args.request_timeout)
+        if payload is None:
+            print("No data fetched.")
+            return
 
-            row = build_bronze_row(payload)
-            write_row(spark, args.bronze_path, row)
-            print(f"Wrote 1 row to {args.bronze_path} | symbol={row['symbol']} | price_usd={row['price_usd']}")
-
-            if args.run_once:
-                break
-
-            time.sleep(args.poll_seconds)
+        validate_payload(payload)
+        row = build_row(payload)
+        write_row(spark, args.bronze_path, row)
+        print(f"Wrote Bronze row to {args.bronze_path} | price_usd={row['price_usd']}")
     finally:
-        spark.stop()
+        if spark is not None:
+            spark.stop()
 
 
 if __name__ == "__main__":

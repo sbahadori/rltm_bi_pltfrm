@@ -36,3 +36,7 @@ spark_ivy/
 .idea/
 Thumbs.db
 .DS_Store
+
+# downloads
+downloads/
+downloads/**

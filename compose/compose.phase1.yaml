@@ -48,12 +48,16 @@ services:
       - rltm_shared_net
 
   spark-master:
-    image: apache/spark:3.5.1-python3
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/spark/Dockerfile
     container_name: spark-master
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
       SPARK_NO_DAEMONIZE: "true"
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
     ports:
       - "7077:7077"
       - "8080:8080"
@@ -64,7 +68,9 @@ services:
       - rltm_shared_net
 
   spark-worker:
-    image: apache/spark:3.5.1-python3
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/spark/Dockerfile
     container_name: spark-worker
     depends_on:
       - spark-master
@@ -74,6 +80,8 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_MEMORY: "2G"
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
     ports:
       - "8081:8081"
     volumes:
@@ -83,7 +91,9 @@ services:
       - rltm_shared_net
 
   spark-worker-2:
-    image: apache/spark:3.5.1-python3
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/spark/Dockerfile
     container_name: spark-worker-2
     depends_on:
       - spark-master
@@ -93,6 +103,8 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_MEMORY: "2G"
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
     ports:
       - "8082:8081"
     volumes:

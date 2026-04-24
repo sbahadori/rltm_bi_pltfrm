@@ -5,12 +5,7 @@ from delta.tables import DeltaTable
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import col, lit, row_number, to_date, when
 from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-    TimestampType,
-    DoubleType,
-    DateType,
+    StructType, StructField, StringType, TimestampType, DoubleType, DateType
 )
 
 SCHEMA = StructType([
@@ -35,8 +30,8 @@ def parse_args():
 
 def build_spark():
     endpoint = os.getenv("S3_ENDPOINT", "http://minio:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minio"))
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minio123"))
+    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio")
+    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")
     region = os.getenv("AWS_REGION", "us-east-1")
 
     spark = (
@@ -75,7 +70,7 @@ def ensure_table(spark, path):
 def build_silver(bronze_df):
     df = (
         bronze_df
-        .filter(col("api_status") == "OK")
+        .filter(col("api_status") == "success")
         .select(
             "event_id",
             "symbol",
@@ -89,7 +84,7 @@ def build_silver(bronze_df):
             "quality_flag",
             when(col("event_ts_utc").isNull(), lit("NULL_EVENT_TS"))
             .when(col("price_usd").isNull(), lit("NULL_PRICE"))
-            .when(col("price_usd") <= 0, lit("NEGATIVE_PRICE"))
+            .when(col("price_usd") <= 0, lit("NON_POSITIVE_PRICE"))
             .otherwise(lit("OK"))
         )
         .withColumn("processing_date", to_date("ingestion_ts"))
@@ -100,8 +95,8 @@ def build_silver(bronze_df):
 
     return (
         df.withColumn("rn", row_number().over(w))
-        .filter(col("rn") == 1)
-        .drop("rn")
+          .filter(col("rn") == 1)
+          .drop("rn")
     )
 
 

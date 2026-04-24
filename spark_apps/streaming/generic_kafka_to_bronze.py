@@ -50,11 +50,9 @@ def wait_for_kafka_topic(spark: SparkSession) -> None:
                 .format("kafka")
                 .option("kafka.bootstrap.servers", _runtime["bootstrap_servers"])
                 .option("subscribe", _runtime["topic"])
-                .option("startingOffsets", "latest")
-                .option("failOnDataLoss", "false")
+                .option("startingOffsets", "earliest")
                 .load()
             )
-            # metadata resolution trigger
             df.limit(0).collect()
             write_heartbeat("running", {"topic_ready": True})
             return

@@ -199,7 +199,7 @@ services:
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&
       python3 /opt/spark/apps/runners/stream_supervisor.py
-      --registry configs/streaming/stream_registry.yaml
+      --registry configs/streaming/stream_registry.json
       --status-file /tmp/health/stream_supervisor_status.json
       "
     healthcheck:

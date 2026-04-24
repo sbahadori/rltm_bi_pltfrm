@@ -19,6 +19,8 @@ COPY downloads/spark-3.5.1-bin-hadoop3.tgz /tmp/spark.tgz
 
 RUN tar -xzf /tmp/spark.tgz -C /opt  && mv /opt/spark-3.5.1-bin-hadoop3 /opt/spark  && rm -f /tmp/spark.tgz
 
+COPY downloads/jars/hadoop-aws-3.3.4.jar /opt/spark/jars/
+COPY downloads/jars/aws-java-sdk-bundle-1.12.262.jar /opt/spark/jars/
 
 RUN pip install --no-cache-dir pyyaml==6.0.2 requests==2.32.3 boto3==1.34.162 delta-spark==3.2.0 --quiet
 

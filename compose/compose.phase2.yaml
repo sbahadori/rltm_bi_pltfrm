@@ -175,6 +175,7 @@ services:
   spark-stream-supervisor:
     <<: *spark-stream-base
     container_name: spark-stream-supervisor
+    user: "0:0"
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&
@@ -186,7 +187,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\np = Path('/tmp/health/stream_supervisor_status.json')\nif not p.exists():\n    sys.exit(1)\ndata = json.loads(p.read_text(encoding='utf-8'))\nif not data.get('streams'):\n    sys.exit(1)\nif time.time() - p.stat().st_mtime > 120:\n    sys.exit(1)\nsys.exit(0)\nPY"
+          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\np = Path('/tmp/health/stream_supervisor_status.json')\nif not p.exists():\n    sys.exit(1)\ndata = json.loads(p.read_text(encoding='utf-8'))\nstreams = data.get('streams', {})\nif not streams:\n    sys.exit(1)\nif all(v.get('pid') is None for v in streams.values()):\n    sys.exit(1)\nif time.time() - p.stat().st_mtime > 120:\n    sys.exit(1)\nsys.exit(0)\nPY"
         ]
       interval: 30s
       timeout: 10s

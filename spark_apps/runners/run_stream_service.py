@@ -4,9 +4,18 @@ import argparse
 import os
 import shlex
 import subprocess
+import sys
+from pathlib import Path
+
+def _bootstrap_repo_path() -> Path:
+    repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    return repo_root
+
+REPO_ROOT = _bootstrap_repo_path()
 
 from shared.lib.stream_spec_utils import get_repo_root, get_stream_spec, validate_stream_spec
-
 
 ENGINE_ENTRYPOINTS = {
     "generic_kafka_to_bronze": "spark_apps/streaming/generic_kafka_to_bronze.py",

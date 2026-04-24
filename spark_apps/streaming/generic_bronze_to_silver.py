@@ -9,13 +9,22 @@ import os
 import signal
 import threading
 import time
+import sys
 from pathlib import Path
 from typing import Optional
 
+def _bootstrap_repo_path() -> Path:
+    repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    return repo_root
+
+REPO_ROOT = _bootstrap_repo_path()
+
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, expr, get_json_object, lit, to_timestamp, when
-
 from shared.lib.stream_spec_utils import get_stream_spec, validate_stream_spec
+
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(

@@ -171,10 +171,29 @@ services:
     networks:
       - rltm_shared_net
 
+  kafka-init-topics:
+    image: apache/kafka:3.9.2
+    container_name: kafka-init-topics
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic user_events --partitions 3 --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic user_events
+      "
+    networks:
+      - rltm_shared_net
 
   spark-stream-supervisor:
     <<: *spark-stream-base
     container_name: spark-stream-supervisor
+    depends_on:
+      - spark-master
+      - spark-worker
+      - spark-worker-2
+      - kafka
+      - kafka-init-topics
     user: "0:0"
     command: >
       bash -lc "

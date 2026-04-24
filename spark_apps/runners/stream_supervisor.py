@@ -7,11 +7,19 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from shared.lib.stream_spec_utils import get_stream_spec, load_stream_registry, resolve_repo_path
+def _bootstrap_repo_path() -> Path:
+    repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    return repo_root
+
+REPO_ROOT = _bootstrap_repo_path()
+
+from shared.lib.stream_spec_utils import load_stream_registry, resolve_repo_path
 
 POLL_INTERVAL_SEC = 5
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import argparse
 import json
 import logging
 import os
@@ -13,54 +14,40 @@ from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, current_timestamp, expr, get_json_object
 
-
-APP_NAME = os.getenv("APP_NAME", "kafka_to_bronze_user_events_delta")
-
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:19092")
-EVENT_TOPIC = os.getenv("EVENT_TOPIC", "user_events")
-
-S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://minio:9000")
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "minio")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-
-BRONZE_PATH = os.getenv("BRONZE_PATH", "s3a://lakehouse/bronze_delta/user_events")
-CHECKPOINT_PATH = os.getenv(
-    "CHECKPOINT_PATH",
-    "/tmp/checkpoints/kafka_to_bronze_user_events_delta",
-)
-
-TRIGGER_INTERVAL = os.getenv("TRIGGER_INTERVAL", "15 seconds")
-STARTING_OFFSETS = os.getenv("STARTING_OFFSETS", "latest")
-FAIL_ON_DATA_LOSS = os.getenv("FAIL_ON_DATA_LOSS", "false").lower()
-
-HEARTBEAT_FILE = os.getenv("HEARTBEAT_FILE", "/tmp/health/bronze_heartbeat.txt")
-HEARTBEAT_INTERVAL_SEC = int(os.getenv("HEARTBEAT_INTERVAL_SEC", "20"))
+from shared.lib.stream_spec_utils import get_stream_spec, validate_stream_spec
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
-logger = logging.getLogger(APP_NAME)
+logger = logging.getLogger("generic_kafka_to_bronze")
 
 _stop_event = threading.Event()
 _query: Optional[object] = None
 _spark: Optional[SparkSession] = None
+_runtime: dict = {}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--registry", required=True)
+    parser.add_argument("--stream-name", required=True)
+    return parser.parse_args()
 
 
 def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> None:
-    p = Path(HEARTBEAT_FILE)
+    p = Path(_runtime["heartbeat_file"])
     p.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "app": APP_NAME,
+        "app": _runtime["app_name"],
+        "stream_name": _runtime["stream_name"],
         "status": status,
         "ts_epoch": int(time.time()),
         "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "topic": EVENT_TOPIC,
-        "bronze_path": BRONZE_PATH,
+        "topic": _runtime["topic"],
+        "bronze_path": _runtime["bronze_path"],
     }
     if extra:
         payload.update(extra)
@@ -74,19 +61,18 @@ def heartbeat_loop() -> None:
             write_heartbeat("running")
         except Exception as exc:
             logger.warning("Failed to write heartbeat: %s", exc)
-        _stop_event.wait(HEARTBEAT_INTERVAL_SEC)
+        _stop_event.wait(20)
 
 
 def stop_runtime() -> None:
     global _query, _spark
-
     _stop_event.set()
 
     try:
         if _query is not None and _query.isActive:
             _query.stop()
     except Exception as exc:
-        logger.warning("Failed to stop streaming query cleanly: %s", exc)
+        logger.warning("Failed to stop query cleanly: %s", exc)
 
     try:
         if _spark is not None:
@@ -109,21 +95,18 @@ signal.signal(signal.SIGTERM, shutdown_handler)
 signal.signal(signal.SIGINT, shutdown_handler)
 
 
-def build_spark_session() -> SparkSession:
+def build_spark_session(app_name: str) -> SparkSession:
     spark = (
         SparkSession.builder
-        .appName(APP_NAME)
+        .appName(app_name)
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.hadoop.fs.s3a.endpoint", S3_ENDPOINT)
-        .config("spark.hadoop.fs.s3a.access.key", AWS_ACCESS_KEY_ID)
-        .config("spark.hadoop.fs.s3a.secret.key", AWS_SECRET_ACCESS_KEY)
+        .config("spark.hadoop.fs.s3a.endpoint", os.getenv("S3_ENDPOINT", "http://minio:9000"))
+        .config("spark.hadoop.fs.s3a.access.key", os.getenv("AWS_ACCESS_KEY_ID", "minio"))
+        .config("spark.hadoop.fs.s3a.secret.key", os.getenv("AWS_SECRET_ACCESS_KEY", "minio123"))
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        .config(
-            "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
-        )
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", "2")
@@ -133,18 +116,33 @@ def build_spark_session() -> SparkSession:
     return spark
 
 
+def apply_derived_fields(df: DataFrame, derived_fields: dict) -> DataFrame:
+    out = df
+    for field_name, spec in derived_fields.items():
+        kind = spec["kind"]
+        if kind == "json":
+            out = out.withColumn(field_name, get_json_object(col("raw_json"), spec["path"]))
+        elif kind == "json_timestamp":
+            out = out.withColumn(field_name, expr(f"to_timestamp(get_json_object(raw_json, '{spec['path']}'))"))
+        elif kind == "sql":
+            out = out.withColumn(field_name, expr(spec["expr"]))
+        else:
+            raise ValueError(f"Unsupported derived field kind: {kind}")
+    return out
+
+
 def build_bronze_df(spark: SparkSession) -> DataFrame:
     raw_kafka = (
         spark.readStream
         .format("kafka")
-        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
-        .option("subscribe", EVENT_TOPIC)
-        .option("startingOffsets", STARTING_OFFSETS)
-        .option("failOnDataLoss", FAIL_ON_DATA_LOSS)
+        .option("kafka.bootstrap.servers", _runtime["bootstrap_servers"])
+        .option("subscribe", _runtime["topic"])
+        .option("startingOffsets", _runtime["starting_offsets"])
+        .option("failOnDataLoss", _runtime["fail_on_data_loss"])
         .load()
     )
 
-    return (
+    base = (
         raw_kafka
         .selectExpr(
             "CAST(key AS STRING) AS kafka_key",
@@ -156,31 +154,25 @@ def build_bronze_df(spark: SparkSession) -> DataFrame:
             "timestampType AS kafka_timestamp_type",
         )
         .withColumn("bronze_ingest_ts", current_timestamp())
-        .withColumn("event_type", get_json_object(col("raw_json"), "$.event_type"))
-        .withColumn("anonymous_id", get_json_object(col("raw_json"), "$.anonymous_id"))
-        .withColumn("session_id", get_json_object(col("raw_json"), "$.session_id"))
-        .withColumn("event_ts", expr("to_timestamp(get_json_object(raw_json, '$.event_ts'))"))
-        .withColumn("event_date", expr("coalesce(to_date(event_ts), to_date(kafka_timestamp))"))
     )
+
+    return apply_derived_fields(base, _runtime["derived_fields"])
 
 
 def write_batch(batch_df: DataFrame, batch_id: int) -> None:
     try:
         if batch_df.isEmpty():
-            logger.info("[bronze] batch_id=%s empty", batch_id)
             write_heartbeat("running", {"last_batch_id": batch_id, "last_batch_rows": 0})
             return
 
         row_count = batch_df.count()
-        logger.info("[bronze] batch_id=%s row_count=%s writing to %s", batch_id, row_count, BRONZE_PATH)
 
-        (
-            batch_df.write
-            .format("delta")
-            .mode("append")
-            .partitionBy("event_date")
-            .save(BRONZE_PATH)
-        )
+        writer = batch_df.write.format("delta").mode("append")
+        partition_cols = _runtime["partition_by"]
+        if partition_cols:
+            writer = writer.partitionBy(*partition_cols)
+
+        writer.save(_runtime["bronze_path"])
 
         write_heartbeat(
             "running",
@@ -190,74 +182,64 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
                 "last_write_ok": True,
             },
         )
-        logger.info("[bronze] batch_id=%s write complete", batch_id)
-
     except Exception as exc:
         logger.exception("[bronze] batch_id=%s write failed: %s", batch_id, exc)
-        write_heartbeat(
-            "error",
-            {
-                "last_batch_id": batch_id,
-                "last_error": str(exc),
-            },
-        )
+        write_heartbeat("error", {"last_batch_id": batch_id, "last_error": str(exc)})
         raise
 
 
 def main() -> None:
-    global _query, _spark
+    global _query, _spark, _runtime
+
+    args = parse_args()
+    spec = get_stream_spec(args.registry, args.stream_name)
+    validate_stream_spec(spec)
+
+    bronze = spec["bronze"]
+    source = spec["source"]
+
+    _runtime = {
+        "stream_name": spec["name"],
+        "app_name": bronze["app_name"],
+        "bootstrap_servers": source["bootstrap_servers"],
+        "topic": source["topic"],
+        "starting_offsets": source.get("starting_offsets", "latest"),
+        "fail_on_data_loss": str(source.get("fail_on_data_loss", False)).lower(),
+        "bronze_path": bronze["path"],
+        "checkpoint_path": bronze["checkpoint_dir"],
+        "heartbeat_file": bronze["heartbeat_file"],
+        "trigger_interval": bronze.get("trigger_interval", "15 seconds"),
+        "partition_by": bronze.get("partition_by", []),
+        "derived_fields": bronze.get("derived_fields", {}),
+    }
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
     heartbeat_thread.start()
 
     try:
         write_heartbeat("starting")
-
-        logger.info(
-            "Starting stream bootstrap: topic=%s, bootstrap=%s, bronze=%s, checkpoint=%s",
-            EVENT_TOPIC,
-            KAFKA_BOOTSTRAP_SERVERS,
-            BRONZE_PATH,
-            CHECKPOINT_PATH,
-        )
-
-        _spark = build_spark_session()
+        _spark = build_spark_session(_runtime["app_name"])
         bronze_df = build_bronze_df(_spark)
 
         _query = (
             bronze_df.writeStream
-            .queryName(APP_NAME)
+            .queryName(_runtime["app_name"])
             .outputMode("append")
-            .option("checkpointLocation", CHECKPOINT_PATH)
-            .trigger(processingTime=TRIGGER_INTERVAL)
+            .option("checkpointLocation", _runtime["checkpoint_path"])
+            .trigger(processingTime=_runtime["trigger_interval"])
             .foreachBatch(write_batch)
             .start()
         )
 
-        logger.info(
-            "Streaming query started successfully: topic=%s, bronze=%s, checkpoint=%s",
-            EVENT_TOPIC,
-            BRONZE_PATH,
-            CHECKPOINT_PATH,
-        )
-
         write_heartbeat("running", {"query_started": True})
         _query.awaitTermination()
-
     except Exception as exc:
-        logger.exception("Bronze streaming app failed during startup/runtime: %s", exc)
+        logger.exception("Generic bronze stream failed: %s", exc)
         try:
-            write_heartbeat(
-                "error",
-                {
-                    "last_error": str(exc),
-                    "query_started": bool(_query is not None),
-                },
-            )
+            write_heartbeat("error", {"last_error": str(exc), "query_started": bool(_query is not None)})
         except Exception:
             pass
         raise
-
     finally:
         _stop_event.set()
         heartbeat_thread.join(timeout=2)

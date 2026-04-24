@@ -8,6 +8,8 @@ streams:
       topic: user_events
       starting_offsets: latest
       fail_on_data_loss: false
+      startup_wait_seconds: 60
+      metadata_retry_interval_seconds: 5
 
     bronze:
       engine: generic_kafka_to_bronze

@@ -11,6 +11,7 @@ import time
 import sys
 from pathlib import Path
 from typing import Optional
+from pyspark.sql.utils import StreamingQueryException
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -36,6 +37,41 @@ _query: Optional[object] = None
 _spark: Optional[SparkSession] = None
 _runtime: dict = {}
 
+def wait_for_kafka_topic(spark: SparkSession) -> None:
+    wait_seconds = int(_runtime.get("startup_wait_seconds", 60))
+    retry_interval = int(_runtime.get("metadata_retry_interval_seconds", 5))
+    deadline = time.time() + wait_seconds
+    last_error = None
+
+    while time.time() < deadline:
+        try:
+            df = (
+                spark.read
+                .format("kafka")
+                .option("kafka.bootstrap.servers", _runtime["bootstrap_servers"])
+                .option("subscribe", _runtime["topic"])
+                .option("startingOffsets", "latest")
+                .option("failOnDataLoss", "false")
+                .load()
+            )
+            # metadata resolution trigger
+            df.limit(0).collect()
+            write_heartbeat("running", {"topic_ready": True})
+            return
+        except Exception as exc:
+            last_error = str(exc)
+            write_heartbeat(
+                "waiting_for_topic",
+                {
+                    "topic_ready": False,
+                    "last_error": last_error,
+                },
+            )
+            time.sleep(retry_interval)
+
+    raise RuntimeError(
+        f"Kafka topic '{_runtime['topic']}' not ready after {wait_seconds}s. Last error: {last_error}"
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -227,6 +263,7 @@ def main() -> None:
     try:
         write_heartbeat("starting")
         _spark = build_spark_session(_runtime["app_name"])
+        wait_for_kafka_topic(_spark)
         bronze_df = build_bronze_df(_spark)
 
         _query = (

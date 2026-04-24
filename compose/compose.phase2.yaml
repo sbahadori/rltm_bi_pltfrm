@@ -206,7 +206,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\nstatus_p = Path('/tmp/health/stream_supervisor_status.json')\nif not status_p.exists():\n    sys.exit(1)\nif time.time() - status_p.stat().st_mtime > 120:\n    sys.exit(1)\ndata = json.loads(status_p.read_text(encoding='utf-8'))\nunits = data.get('units', {})\nrequired = ['clickstream_user_events_bronze', 'clickstream_user_events_silver']\nfor name in required:\n    u = units.get(name)\n    if not u:\n        sys.exit(1)\n    if u.get('pid') is None:\n        sys.exit(1)\n    if u.get('returncode') is not None:\n        sys.exit(1)\n    hb = u.get('heartbeat') or {}\n    if hb.get('status') == 'error':\n        sys.exit(1)\nsys.exit(0)\nPY"
+          "python3 - <<'PY'\nfrom pathlib import Path\nimport json, sys, time\nstatus_p = Path('/tmp/health/stream_supervisor_status.json')\nif not status_p.exists():\n    sys.exit(1)\nif time.time() - status_p.stat().st_mtime > 120:\n    sys.exit(1)\ndata = json.loads(status_p.read_text(encoding='utf-8'))\nunits = data.get('units', {})\nif not units:\n    sys.exit(1)\nfor name, u in units.items():\n    if not u.get('enabled', True):\n        continue\n    if u.get('pid') is None:\n        sys.exit(1)\n    if u.get('returncode') is not None:\n        sys.exit(1)\n    hb = u.get('heartbeat') or {}\n    if hb.get('status') == 'error':\n        sys.exit(1)\nsys.exit(0)\nPY"
         ]
       interval: 30s
       timeout: 10s

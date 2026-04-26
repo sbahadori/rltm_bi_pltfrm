@@ -5,8 +5,6 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 
 DEFAULT_SPARK_PACKAGES = [
     "io.delta:delta-spark_2.12:3.2.0",
@@ -30,22 +28,6 @@ def resolve_repo_path(path_str: str) -> Path:
     if path.is_absolute():
         return path
     return (get_repo_root() / path).resolve()
-
-
-def load_pipeline_config(config_path: str | Path) -> dict[str, Any]:
-    path = resolve_repo_path(str(config_path))
-    if not path.exists():
-        raise FileNotFoundError(f"Pipeline config not found: {path}")
-
-    with path.open("r", encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
-
-    required = ["name", "domain", "job_type", "entrypoint", "args", "dependencies", "schedule"]
-    missing = [key for key in required if key not in config]
-    if missing:
-        raise ValueError(f"Missing required keys in {path}: {missing}")
-
-    return config
 
 
 def build_cli_args(args: dict[str, Any]) -> list[str]:
@@ -81,23 +63,25 @@ def merge_spark_packages(config_packages: list[str] | None) -> list[str]:
 
 
 def build_spark_submit_command(
-    config: dict[str, Any],
+    job_spec: dict[str, Any],
     *,
     repo_root: str | Path | None = None,
     spark_submit: str | None = None,
 ) -> str:
     repo_root_path = Path(repo_root).resolve() if repo_root else get_repo_root()
     spark_submit_bin = spark_submit or os.getenv("SPARK_SUBMIT", "/opt/spark/bin/spark-submit")
-    spark_master = config.get("spark_master") or os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
 
-    entrypoint = Path(config["entrypoint"])
+    spark_cfg = job_spec.get("spark", {}) or {}
+    spark_master = spark_cfg.get("master") or os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
+
+    entrypoint = Path(job_spec["entrypoint"])
     entrypoint_path = entrypoint if entrypoint.is_absolute() else (repo_root_path / entrypoint).resolve()
     if not entrypoint_path.exists():
         raise FileNotFoundError(f"Spark entrypoint not found: {entrypoint_path}")
 
-    packages = merge_spark_packages(config.get("packages"))
-    spark_conf = {**DEFAULT_SPARK_CONF, **config.get("spark_conf", {})}
-    args = build_cli_args(config.get("args", {}))
+    packages = merge_spark_packages(spark_cfg.get("packages"))
+    spark_conf = {**DEFAULT_SPARK_CONF, **spark_cfg.get("conf", {})}
+    args = build_cli_args(job_spec.get("args", {}))
 
     cmd: list[str] = [spark_submit_bin, "--master", spark_master]
 

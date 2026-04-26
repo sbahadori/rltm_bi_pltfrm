@@ -22,56 +22,158 @@
         {
           "name": "gold_price_ingest",
           "enabled": true,
-          "job_type": "spark_batch",
+          "job_type": "generic_api_to_bronze",
           "source_type": "api",
-          "entrypoint": "jobs/gold_price/ingest_to_bronze.py",
-          "args": {
-            "bronze_path": "s3a://lakehouse/bronze/gold_price_events",
-            "api_base_url": "https://api.metalpriceapi.com/v1/latest",
-            "request_timeout": 20,
-            "run_once": true
-          },
           "dependencies": [],
-          "execution_timeout_minutes": 10
+          "execution_timeout_minutes": 10,
+          "retries": 0,
+          "retry_delay_minutes": 1,
+          "tags": ["gold_price", "api", "bronze"],
+          "spec": {
+            "source": {
+              "base_url": "https://api.metalpriceapi.com/v1/latest",
+              "method": "GET",
+              "timeout_seconds": 20
+            },
+            "auth": {
+              "type": "query_param",
+              "param_name": "api_key",
+              "secret_env": "METALPRICE_API_KEY"
+            },
+            "request": {
+              "query_params": {
+                "base": "XAU",
+                "currencies": "USD"
+              },
+              "headers": {},
+              "body": null
+            },
+            "response": {
+              "format": "json",
+              "root_path": "$",
+              "record_mode": "single_object"
+            },
+            "validation": {
+              "required_paths": [
+                "$.success",
+                "$.timestamp",
+                "$.rates.USD"
+              ],
+              "rules": [
+                {
+                  "type": "equals",
+                  "path": "$.success",
+                  "value": true
+                }
+              ]
+            },
+            "mapping": {
+              "constants": {
+                "source_name": "metalpriceapi",
+                "symbol": "XAU",
+                "currency": "USD"
+              },
+              "fields": {
+                "source_event_ts": {
+                  "kind": "unix_ts",
+                  "path": "$.timestamp"
+                },
+                "price_usd": {
+                  "kind": "float",
+                  "path": "$.rates.USD"
+                }
+              }
+            },
+            "bronze_write": {
+              "target_path": "s3a://lakehouse/bronze/gold_price_events",
+              "mode": "append",
+              "partition_by": [
+                "ingest_year",
+                "ingest_month",
+                "ingest_day",
+                "ingest_hour"
+              ],
+              "include_raw_payload": true
+            },
+            "runtime_policy": {
+              "max_retries": 3,
+              "backoff_seconds": 10
+            },
+            "spark": {
+              "master": null,
+              "packages": [],
+              "conf": {}
+            }
+          }
         },
         {
           "name": "gold_price_silver",
           "enabled": true,
           "job_type": "spark_batch",
           "source_type": "api",
-          "entrypoint": "jobs/gold_price/bronze_to_silver.py",
-          "args": {
-            "bronze_path": "s3a://lakehouse/bronze/gold_price_events",
-            "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean"
-          },
           "dependencies": ["gold_price_ingest"],
-          "execution_timeout_minutes": 10
+          "execution_timeout_minutes": 10,
+          "retries": 0,
+          "retry_delay_minutes": 1,
+          "tags": ["gold_price", "silver"],
+          "spec": {
+            "entrypoint": "jobs/gold_price/bronze_to_silver.py",
+            "args": {
+              "bronze_path": "s3a://lakehouse/bronze/gold_price_events",
+              "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean"
+            },
+            "spark": {
+              "master": null,
+              "packages": [],
+              "conf": {}
+            }
+          }
         },
         {
           "name": "gold_price_bars_1m",
           "enabled": true,
           "job_type": "spark_batch",
           "source_type": "api",
-          "entrypoint": "jobs/gold_price/gold_bars_1m.py",
-          "args": {
-            "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean",
-            "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m"
-          },
           "dependencies": ["gold_price_silver"],
-          "execution_timeout_minutes": 10
+          "execution_timeout_minutes": 10,
+          "retries": 0,
+          "retry_delay_minutes": 1,
+          "tags": ["gold_price", "gold", "bars"],
+          "spec": {
+            "entrypoint": "jobs/gold_price/gold_bars_1m.py",
+            "args": {
+              "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean",
+              "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m"
+            },
+            "spark": {
+              "master": null,
+              "packages": [],
+              "conf": {}
+            }
+          }
         },
         {
           "name": "gold_price_metrics",
           "enabled": true,
           "job_type": "spark_batch",
           "source_type": "api",
-          "entrypoint": "jobs/gold_price/gold_price_metrics.py",
-          "args": {
-            "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m",
-            "metrics_path": "s3a://lakehouse/gold/gold_price_metrics"
-          },
           "dependencies": ["gold_price_bars_1m"],
-          "execution_timeout_minutes": 10
+          "execution_timeout_minutes": 10,
+          "retries": 0,
+          "retry_delay_minutes": 1,
+          "tags": ["gold_price", "gold", "metrics"],
+          "spec": {
+            "entrypoint": "jobs/gold_price/gold_price_metrics.py",
+            "args": {
+              "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m",
+              "metrics_path": "s3a://lakehouse/gold/gold_price_metrics"
+            },
+            "spark": {
+              "master": null,
+              "packages": [],
+              "conf": {}
+            }
+          }
         }
       ]
     }

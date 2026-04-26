@@ -1,10 +1,4 @@
-# وظیفه این فایل
-# registry را بخواند
-# برای هر job یک Airflow task بسازد
-# dependencyها را وصل کند
-# command مناسب را با reusable runner بسازد
-
-
+## Build Airflow batch tasks from catalog-defined pipeline specifications.
 from __future__ import annotations
 
 import os
@@ -41,26 +35,40 @@ def build_common_env() -> dict[str, str]:
     }
 
 
-def build_airflow_task_from_job(job: dict, dag, common_env: dict[str, str] | None = None) -> BashOperator:
+def build_airflow_task_from_job(
+    job: dict,
+    pipeline_spec: dict,
+    catalog_path: str,
+    dag,
+    common_env: dict[str, str] | None = None,
+) -> BashOperator:
     env = build_common_env()
     if common_env:
         env.update(common_env)
 
-    legacy_like_config = {
-        "name": job["name"],
-        "domain": job.get("domain", "batch_api"),
-        "job_type": job["job_type"],
-        "entrypoint": job["entrypoint"],
-        "args": job.get("args", {}),
-        "dependencies": job.get("dependencies", []),
-        "schedule": "catalog",
-        "execution_timeout_minutes": job.get("execution_timeout_minutes", 30),
-        "spark_master": job.get("spark_master"),
-        "packages": job.get("packages", []),
-        "spark_conf": job.get("spark_conf", {}),
-    }
+    job_type = job["job_type"]
+    spec = job["spec"]
 
-    cmd = build_spark_submit_command(legacy_like_config)
+    if job_type == "spark_batch":
+        spark_job_config = {
+            "entrypoint": spec["entrypoint"],
+            "args": spec.get("args", {}),
+            "spark": spec.get("spark", {}),
+        }
+    elif job_type == "generic_api_to_bronze":
+        spark_job_config = {
+            "entrypoint": "jobs/batch/generic_api_to_bronze.py",
+            "args": {
+                "catalog_path": catalog_path,
+                "pipeline_name": pipeline_spec["name"],
+                "job_name": job["name"],
+            },
+            "spark": spec.get("spark", {}),
+        }
+    else:
+        raise ValueError(f"Unsupported job_type: {job_type}")
+
+    cmd = build_spark_submit_command(spark_job_config)
 
     return BashOperator(
         task_id=job["name"],
@@ -68,6 +76,8 @@ def build_airflow_task_from_job(job: dict, dag, common_env: dict[str, str] | Non
         env=env,
         append_env=True,
         execution_timeout=timedelta(minutes=job.get("execution_timeout_minutes", 30)),
+        retries=job.get("retries", 0),
+        retry_delay=timedelta(minutes=job.get("retry_delay_minutes", 1)),
         dag=dag,
     )
 
@@ -76,13 +86,29 @@ def build_tasks_from_pipeline_spec(
     *,
     dag,
     pipeline_spec: dict,
+    catalog_path: str,
     common_env: dict[str, str] | None = None,
 ) -> dict[str, BashOperator]:
     jobs = [job for job in pipeline_spec["jobs"] if job.get("enabled", True)]
+    enabled_job_names = {job["name"] for job in jobs}
+
+    for job in jobs:
+        for dep in job.get("dependencies", []):
+            if dep not in enabled_job_names:
+                raise ValueError(
+                    f"Enabled job '{job['name']}' depends on disabled or missing job '{dep}' "
+                    f"in pipeline '{pipeline_spec['name']}'"
+                )
 
     tasks: dict[str, BashOperator] = {}
     for job in jobs:
-        tasks[job["name"]] = build_airflow_task_from_job(job, dag, common_env=common_env)
+        tasks[job["name"]] = build_airflow_task_from_job(
+            job,
+            pipeline_spec,
+            catalog_path,
+            dag,
+            common_env=common_env,
+        )
 
     for job in jobs:
         for dep in job.get("dependencies", []):

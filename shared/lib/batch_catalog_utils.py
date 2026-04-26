@@ -103,10 +103,9 @@ def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
         "name",
         "enabled",
         "job_type",
-        "entrypoint",
-        "args",
         "dependencies",
         "execution_timeout_minutes",
+        "spec",
     ]
     missing = [k for k in required if k not in job]
     if missing:
@@ -114,20 +113,109 @@ def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
             f"Job in pipeline '{pipeline_name}' missing required keys: {missing}"
         )
 
-    if job["job_type"] != "spark_batch":
-        raise ValueError(
-            f"Unsupported job_type '{job['job_type']}' in pipeline '{pipeline_name}'. "
-            f"Current step supports only 'spark_batch'."
-        )
-
-    if not isinstance(job["args"], dict):
-        raise ValueError(
-            f"Job '{job['name']}' in pipeline '{pipeline_name}' must have args as an object"
-        )
-
     if not isinstance(job["dependencies"], list):
         raise ValueError(
             f"Job '{job['name']}' in pipeline '{pipeline_name}' must have dependencies as a list"
+        )
+
+    if not isinstance(job["spec"], dict):
+        raise ValueError(
+            f"Job '{job['name']}' in pipeline '{pipeline_name}' must have spec as an object"
+        )
+
+    job_type = job["job_type"]
+    if job_type == "spark_batch":
+        validate_spark_batch_spec(pipeline_name, job)
+    elif job_type == "generic_api_to_bronze":
+        validate_generic_api_to_bronze_spec(pipeline_name, job)
+    else:
+        raise ValueError(
+            f"Unsupported job_type '{job_type}' in pipeline '{pipeline_name}'"
+        )
+
+
+def validate_spark_batch_spec(pipeline_name: str, job: dict[str, Any]) -> None:
+    spec = job["spec"]
+    required = ["entrypoint", "args", "spark"]
+    missing = [k for k in required if k not in spec]
+    if missing:
+        raise ValueError(
+            f"spark_batch job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
+        )
+
+    if not isinstance(spec["args"], dict):
+        raise ValueError(
+            f"spark_batch job '{job['name']}' in pipeline '{pipeline_name}' must have spec.args as an object"
+        )
+
+    if not isinstance(spec["spark"], dict):
+        raise ValueError(
+            f"spark_batch job '{job['name']}' in pipeline '{pipeline_name}' must have spec.spark as an object"
+        )
+
+    entrypoint_path = resolve_repo_path(spec["entrypoint"])
+    if not entrypoint_path.exists():
+        raise ValueError(
+            f"spark_batch job '{job['name']}' in pipeline '{pipeline_name}' entrypoint does not exist: {entrypoint_path}"
+        )
+
+
+def validate_generic_api_to_bronze_spec(pipeline_name: str, job: dict[str, Any]) -> None:
+    spec = job["spec"]
+    required = [
+        "source",
+        "auth",
+        "request",
+        "response",
+        "validation",
+        "mapping",
+        "bronze_write",
+        "runtime_policy",
+        "spark",
+    ]
+    missing = [k for k in required if k not in spec]
+    if missing:
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
+        )
+
+    for section_name in required:
+        if not isinstance(spec[section_name], dict):
+            raise ValueError(
+                f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' "
+                f"must have spec.{section_name} as an object"
+            )
+
+    source_required = ["base_url", "method", "timeout_seconds"]
+    missing_source = [k for k in source_required if k not in spec["source"]]
+    if missing_source:
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing source keys: {missing_source}"
+        )
+
+    auth_required = ["type", "secret_env"]
+    missing_auth = [k for k in auth_required if k not in spec["auth"]]
+    if missing_auth:
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing auth keys: {missing_auth}"
+        )
+
+    if spec["auth"]["type"] == "query_param" and "param_name" not in spec["auth"]:
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"requires auth.param_name for query_param auth"
+        )
+
+    if spec["response"].get("format") != "json":
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' currently supports only JSON responses"
+        )
+
+    if "target_path" not in spec["bronze_write"]:
+        raise ValueError(
+            f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' missing bronze_write.target_path"
         )
 
 
@@ -142,3 +230,13 @@ def get_pipeline_by_name(catalog_path: str | Path, pipeline_name: str) -> dict[s
         if pipeline["name"] == pipeline_name:
             return pipeline
     raise ValueError(f"Enabled pipeline '{pipeline_name}' not found in batch catalog")
+
+
+def get_job_by_name(catalog_path: str | Path, pipeline_name: str, job_name: str) -> dict[str, Any]:
+    pipeline = get_pipeline_by_name(catalog_path, pipeline_name)
+    for job in pipeline["jobs"]:
+        if job["name"] == job_name and job.get("enabled", True):
+            return job
+    raise ValueError(
+        f"Enabled job '{job_name}' not found in pipeline '{pipeline_name}'"
+    )

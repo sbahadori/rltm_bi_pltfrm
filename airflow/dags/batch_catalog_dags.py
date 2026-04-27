@@ -49,7 +49,7 @@ for pipeline_spec in load_enabled_pipeline_specs(CATALOG_PATH):
         )
 
         with dag:
-            build_tasks_from_pipeline_spec(dag=dag, pipeline_spec=pipeline_spec)
+            build_tasks_from_pipeline_spec(dag=dag, pipeline_spec=pipeline_spec,catalog_path=CATALOG_PATH,)
 
         globals()[pipeline_spec["name"]] = dag
 

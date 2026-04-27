@@ -45,7 +45,12 @@ def build_runtime_context(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def resolve_secret(auth_spec: dict[str, Any]) -> str:
+def resolve_secret(auth_spec: dict[str, Any]) -> str | None:
+    auth_type = auth_spec["type"]
+
+    if auth_type == "none":
+        return None
+
     env_name = auth_spec["secret_env"]
     value = os.getenv(env_name)
     if not value:
@@ -69,7 +74,9 @@ def build_request_parts(runtime_ctx: dict[str, Any]) -> tuple[str, dict[str, Any
     secret_value = resolve_secret(auth)
     auth_type = auth["type"]
 
-    if auth_type == "query_param":
+    if auth_type == "none":
+        pass
+    elif auth_type == "query_param":
         params[auth["param_name"]] = secret_value
     elif auth_type == "header_bearer":
         header_name = auth.get("header_name", "Authorization")
@@ -135,6 +142,16 @@ def validate_payload(payload: dict[str, Any], validation_spec: dict[str, Any]) -
 
 def map_field_value(payload: dict[str, Any], field_spec: dict[str, Any]) -> Any:
     kind = field_spec["kind"]
+
+    if kind == "current_utc":
+        return datetime.now(timezone.utc)
+
+    if kind == "constant_float":
+        return float(field_spec["value"])
+
+    if kind == "constant_string":
+        return str(field_spec["value"])
+
     path = field_spec["path"]
     raw_value = get_json_path(payload, path)
 

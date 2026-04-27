@@ -1,7 +1,7 @@
 {
   "pipelines": [
     {
-      "name": "gold_price_pipeline_v2",
+      "name": "gold_price_pipeline",
       "enabled": true,
       "description": "API-driven gold price Bronze/Silver/Gold batch pipeline",
       "domain": "gold_price",
@@ -117,7 +117,7 @@
           "retry_delay_minutes": 1,
           "tags": ["gold_price", "silver"],
           "spec": {
-            "entrypoint": "jobs/gold_price/bronze_to_silver.py",
+            "entrypoint": "jobs/batch/bronze_to_silver.py",
             "args": {
               "bronze_path": "s3a://lakehouse/bronze/gold_price_events",
               "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean"
@@ -140,7 +140,7 @@
           "retry_delay_minutes": 1,
           "tags": ["gold_price", "gold", "bars"],
           "spec": {
-            "entrypoint": "jobs/gold_price/gold_bars_1m.py",
+            "entrypoint": "jobs/batch/gold_bars_1m.py",
             "args": {
               "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean",
               "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m"
@@ -163,7 +163,7 @@
           "retry_delay_minutes": 1,
           "tags": ["gold_price", "gold", "metrics"],
           "spec": {
-            "entrypoint": "jobs/gold_price/gold_price_metrics.py",
+            "entrypoint": "jobs/batch/gold_price_metrics.py",
             "args": {
               "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m",
               "metrics_path": "s3a://lakehouse/gold/gold_price_metrics"

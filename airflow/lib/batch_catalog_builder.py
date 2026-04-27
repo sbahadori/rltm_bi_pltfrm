@@ -1,10 +1,10 @@
-## Build Airflow batch tasks from catalog-defined pipeline specifications.
 from __future__ import annotations
 
 import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from airflow.providers.standard.operators.bash import BashOperator
 
@@ -35,28 +35,19 @@ def build_common_env() -> dict[str, str]:
     }
 
 
-def build_airflow_task_from_job(
-    job: dict,
-    pipeline_spec: dict,
-    catalog_path: str,
-    dag,
-    common_env: dict[str, str] | None = None,
-) -> BashOperator:
-    env = build_common_env()
-    if common_env:
-        env.update(common_env)
-
+def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], catalog_path: str) -> dict[str, Any]:
     job_type = job["job_type"]
     spec = job["spec"]
 
     if job_type == "spark_batch":
-        spark_job_config = {
+        return {
             "entrypoint": spec["entrypoint"],
             "args": spec.get("args", {}),
             "spark": spec.get("spark", {}),
         }
-    elif job_type == "generic_api_to_bronze":
-        spark_job_config = {
+
+    if job_type == "generic_api_to_bronze":
+        return {
             "entrypoint": "jobs/batch/generic_api_to_bronze.py",
             "args": {
                 "catalog_path": catalog_path,
@@ -65,9 +56,44 @@ def build_airflow_task_from_job(
             },
             "spark": spec.get("spark", {}),
         }
-    else:
-        raise ValueError(f"Unsupported job_type: {job_type}")
 
+    if job_type == "generic_bronze_to_silver":
+        return {
+            "entrypoint": "jobs/batch/generic_bronze_to_silver.py",
+            "args": {
+                "catalog_path": catalog_path,
+                "pipeline_name": pipeline_spec["name"],
+                "job_name": job["name"],
+            },
+            "spark": spec.get("spark", {}),
+        }
+
+    if job_type == "generic_silver_to_gold":
+        return {
+            "entrypoint": "jobs/batch/generic_silver_to_gold.py",
+            "args": {
+                "catalog_path": catalog_path,
+                "pipeline_name": pipeline_spec["name"],
+                "job_name": job["name"],
+            },
+            "spark": spec.get("spark", {}),
+        }
+
+    raise ValueError(f"Unsupported job_type: {job_type}")
+
+
+def build_airflow_task_from_job(
+    job: dict[str, Any],
+    pipeline_spec: dict[str, Any],
+    catalog_path: str,
+    dag,
+    common_env: dict[str, str] | None = None,
+) -> BashOperator:
+    env = build_common_env()
+    if common_env:
+        env.update(common_env)
+
+    spark_job_config = _build_runner_job_spec(job, pipeline_spec, catalog_path)
     cmd = build_spark_submit_command(spark_job_config)
 
     return BashOperator(
@@ -85,7 +111,7 @@ def build_airflow_task_from_job(
 def build_tasks_from_pipeline_spec(
     *,
     dag,
-    pipeline_spec: dict,
+    pipeline_spec: dict[str, Any],
     catalog_path: str,
     common_env: dict[str, str] | None = None,
 ) -> dict[str, BashOperator]:
@@ -117,5 +143,5 @@ def build_tasks_from_pipeline_spec(
     return tasks
 
 
-def load_enabled_pipeline_specs(catalog_path: str) -> list[dict]:
+def load_enabled_pipeline_specs(catalog_path: str) -> list[dict[str, Any]]:
     return get_enabled_pipelines(catalog_path)

@@ -109,7 +109,7 @@
         {
           "name": "gold_price_silver",
           "enabled": true,
-          "job_type": "spark_batch",
+          "job_type": "generic_bronze_to_silver",
           "source_type": "api",
           "dependencies": ["gold_price_ingest"],
           "execution_timeout_minutes": 10,
@@ -117,10 +117,57 @@
           "retry_delay_minutes": 1,
           "tags": ["gold_price", "silver"],
           "spec": {
-            "entrypoint": "jobs/batch/bronze_to_silver.py",
-            "args": {
-              "bronze_path": "s3a://lakehouse/bronze/gold_price_events",
-              "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean"
+            "source": {
+              "path": "s3a://lakehouse/bronze/gold_price_events",
+              "format": "delta"
+            },
+            "target": {
+              "path": "s3a://lakehouse/silver/gold_price_ticks_clean",
+              "format": "delta",
+              "mode": "merge",
+              "merge_keys": ["event_id"],
+              "partition_by": ["processing_date"]
+            },
+            "select_map": {
+              "event_id": "event_id",
+              "symbol": "symbol",
+              "source_name": "source_name",
+              "event_ts_utc": "source_event_ts",
+              "ingestion_ts": "ingestion_ts",
+              "price_usd": "price_usd",
+              "currency": "currency"
+            },
+            "filters": [
+              {
+                "type": "equals",
+                "field": "api_status",
+                "value": "success"
+              }
+            ],
+            "derived_fields": {
+              "processing_date": {
+                "kind": "sql",
+                "expr": "to_date(ingestion_ts)"
+              }
+            },
+            "quality_rules": [
+              {
+                "type": "not_null",
+                "field": "event_ts_utc"
+              },
+              {
+                "type": "not_null",
+                "field": "price_usd"
+              },
+              {
+                "type": "greater_than",
+                "field": "price_usd",
+                "value": 0
+              }
+            ],
+            "dedupe": {
+              "key_columns": ["event_id"],
+              "order_by": ["ingestion_ts asc"]
             },
             "spark": {
               "master": null,
@@ -130,43 +177,59 @@
           }
         },
         {
-          "name": "gold_price_bars_1m",
+          "name": "gold_price_gold",
           "enabled": true,
-          "job_type": "spark_batch",
+          "job_type": "generic_silver_to_gold",
           "source_type": "api",
           "dependencies": ["gold_price_silver"],
           "execution_timeout_minutes": 10,
           "retries": 0,
           "retry_delay_minutes": 1,
-          "tags": ["gold_price", "gold", "bars"],
+          "tags": ["gold_price", "gold"],
           "spec": {
-            "entrypoint": "jobs/batch/gold_bars_1m.py",
-            "args": {
-              "silver_path": "s3a://lakehouse/silver/gold_price_ticks_clean",
-              "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m"
+            "source": {
+              "path": "s3a://lakehouse/silver/gold_price_ticks_clean",
+              "format": "delta"
             },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        },
-        {
-          "name": "gold_price_metrics",
-          "enabled": true,
-          "job_type": "spark_batch",
-          "source_type": "api",
-          "dependencies": ["gold_price_bars_1m"],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": ["gold_price", "gold", "metrics"],
-          "spec": {
-            "entrypoint": "jobs/batch/gold_price_metrics.py",
-            "args": {
-              "gold_path": "s3a://lakehouse/gold/gold_price_bars_1m",
-              "metrics_path": "s3a://lakehouse/gold/gold_price_metrics"
+            "target": {
+              "path": "s3a://lakehouse/gold/gold_price_curated",
+              "format": "delta",
+              "mode": "merge",
+              "merge_keys": ["event_id"],
+              "partition_by": ["trade_date"]
+            },
+            "select_map": {
+              "event_id": "event_id",
+              "symbol": "symbol",
+              "source_name": "source_name",
+              "currency": "currency",
+              "event_ts": "event_ts_utc",
+              "price_usd": "price_usd"
+            },
+            "filters": [],
+            "derived_fields": {
+              "trade_date": {
+                "kind": "sql",
+                "expr": "to_date(event_ts)"
+              },
+              "price_bucket": {
+                "kind": "sql",
+                "expr": "case when price_usd < 2500 then 'low' when price_usd < 3500 then 'mid' else 'high' end"
+              }
+            },
+            "quality_rules": [
+              {
+                "type": "not_null",
+                "field": "event_id"
+              },
+              {
+                "type": "not_null",
+                "field": "event_ts"
+              }
+            ],
+            "dedupe": {
+              "key_columns": ["event_id"],
+              "order_by": ["event_ts asc"]
             },
             "spark": {
               "master": null,

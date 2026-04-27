@@ -1,4 +1,4 @@
-## Dynamic Airflow DAG factory for catalog-driven batch pipelines.
+from __future__ import annotations
 
 import os
 import sys
@@ -35,7 +35,10 @@ for pipeline_spec in load_enabled_pipeline_specs(CATALOG_PATH):
 
         dag = DAG(
             dag_id=pipeline_spec["name"],
-            description=pipeline_spec.get("description", f"Catalog-driven DAG for {pipeline_spec['name']}"),
+            description=pipeline_spec.get(
+                "description",
+                f"Catalog-driven DAG for {pipeline_spec['name']}",
+            ),
             start_date=_parse_start_date(dag_cfg["start_date"]),
             schedule=dag_cfg.get("schedule"),
             catchup=dag_cfg.get("catchup", False),
@@ -43,15 +46,24 @@ for pipeline_spec in load_enabled_pipeline_specs(CATALOG_PATH):
             default_args={
                 "owner": default_args_cfg.get("owner", "admin"),
                 "retries": default_args_cfg.get("retries", 0),
-                "retry_delay": timedelta(minutes=default_args_cfg.get("retry_delay_minutes", 1)),
+                "retry_delay": timedelta(
+                    minutes=default_args_cfg.get("retry_delay_minutes", 1)
+                ),
             },
             tags=dag_cfg.get("tags", ["catalog_driven", "airflow", "batch"]),
         )
 
         with dag:
-            build_tasks_from_pipeline_spec(dag=dag, pipeline_spec=pipeline_spec,catalog_path=CATALOG_PATH,)
+            build_tasks_from_pipeline_spec(
+                dag=dag,
+                pipeline_spec=pipeline_spec,
+                catalog_path=CATALOG_PATH,
+            )
 
         globals()[pipeline_spec["name"]] = dag
 
     except Exception as exc:
-        print(f"[batch_catalog_dags] Failed to build DAG for pipeline '{pipeline_spec.get('name', '?')}': {exc}")
+        print(
+            f"[batch_catalog_dags] Failed to build DAG for pipeline "
+            f"'{pipeline_spec.get('name', '?')}': {exc}"
+        )

@@ -1,23 +1,17 @@
-# وظایفش:
-
-# load registry
-# validate registry
-# get pipelines
-# get jobs
-# validate unique job names
-# validate dependencies
-# باید این قابلیت‌ها را داشته باشد
-# load_job_registry(path)
-# get_enabled_pipelines(path)
-# validate_job_registry(data)
-# get_pipeline_spec(path, pipeline_name)
-
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 from typing import Any
+
+
+SUPPORTED_JOB_TYPES = {
+    "spark_batch",
+    "generic_api_to_bronze",
+    "generic_bronze_to_silver",
+    "generic_silver_to_gold",
+}
 
 
 def get_repo_root() -> Path:
@@ -124,14 +118,20 @@ def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
         )
 
     job_type = job["job_type"]
+    if job_type not in SUPPORTED_JOB_TYPES:
+        raise ValueError(
+            f"Unsupported job_type '{job_type}' in pipeline '{pipeline_name}'. "
+            f"Supported values: {sorted(SUPPORTED_JOB_TYPES)}"
+        )
+
     if job_type == "spark_batch":
         validate_spark_batch_spec(pipeline_name, job)
     elif job_type == "generic_api_to_bronze":
         validate_generic_api_to_bronze_spec(pipeline_name, job)
-    else:
-        raise ValueError(
-            f"Unsupported job_type '{job_type}' in pipeline '{pipeline_name}'"
-        )
+    elif job_type == "generic_bronze_to_silver":
+        validate_generic_bronze_to_silver_spec(pipeline_name, job)
+    elif job_type == "generic_silver_to_gold":
+        validate_generic_silver_to_gold_spec(pipeline_name, job)
 
 
 def validate_spark_batch_spec(pipeline_name: str, job: dict[str, Any]) -> None:
@@ -179,12 +179,13 @@ def validate_generic_api_to_bronze_spec(pipeline_name: str, job: dict[str, Any])
             f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
         )
 
-    for section_name in required:
-        if not isinstance(spec[section_name], dict):
-            raise ValueError(
-                f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' "
-                f"must have spec.{section_name} as an object"
-            )
+    _require_object_sections(
+        pipeline_name,
+        job["name"],
+        spec,
+        required,
+        job_type="generic_api_to_bronze",
+    )
 
     source_required = ["base_url", "method", "timeout_seconds"]
     missing_source = [k for k in source_required if k not in spec["source"]]
@@ -217,6 +218,152 @@ def validate_generic_api_to_bronze_spec(pipeline_name: str, job: dict[str, Any])
         raise ValueError(
             f"generic_api_to_bronze job '{job['name']}' in pipeline '{pipeline_name}' missing bronze_write.target_path"
         )
+
+
+def validate_generic_bronze_to_silver_spec(pipeline_name: str, job: dict[str, Any]) -> None:
+    spec = job["spec"]
+    required = [
+        "source",
+        "target",
+        "select_map",
+        "filters",
+        "derived_fields",
+        "quality_rules",
+        "dedupe",
+        "spark",
+    ]
+    missing = [k for k in required if k not in spec]
+    if missing:
+        raise ValueError(
+            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
+        )
+
+    _require_object_sections(
+        pipeline_name,
+        job["name"],
+        spec,
+        ["source", "target", "select_map", "derived_fields", "dedupe", "spark"],
+        job_type="generic_bronze_to_silver",
+    )
+
+    _require_list_sections(
+        pipeline_name,
+        job["name"],
+        spec,
+        ["filters", "quality_rules"],
+        job_type="generic_bronze_to_silver",
+    )
+
+    source_required = ["path", "format"]
+    missing_source = [k for k in source_required if k not in spec["source"]]
+    if missing_source:
+        raise ValueError(
+            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing source keys: {missing_source}"
+        )
+
+    target_required = ["path", "format", "mode", "merge_keys", "partition_by"]
+    missing_target = [k for k in target_required if k not in spec["target"]]
+    if missing_target:
+        raise ValueError(
+            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing target keys: {missing_target}"
+        )
+
+    if spec["target"]["mode"] == "merge" and not spec["target"]["merge_keys"]:
+        raise ValueError(
+            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"requires non-empty target.merge_keys when mode is 'merge'"
+        )
+
+
+def validate_generic_silver_to_gold_spec(pipeline_name: str, job: dict[str, Any]) -> None:
+    spec = job["spec"]
+    required = [
+        "source",
+        "target",
+        "select_map",
+        "filters",
+        "derived_fields",
+        "quality_rules",
+        "dedupe",
+        "spark",
+    ]
+    missing = [k for k in required if k not in spec]
+    if missing:
+        raise ValueError(
+            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
+        )
+
+    _require_object_sections(
+        pipeline_name,
+        job["name"],
+        spec,
+        ["source", "target", "select_map", "derived_fields", "dedupe", "spark"],
+        job_type="generic_silver_to_gold",
+    )
+
+    _require_list_sections(
+        pipeline_name,
+        job["name"],
+        spec,
+        ["filters", "quality_rules"],
+        job_type="generic_silver_to_gold",
+    )
+
+    source_required = ["path", "format"]
+    missing_source = [k for k in source_required if k not in spec["source"]]
+    if missing_source:
+        raise ValueError(
+            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing source keys: {missing_source}"
+        )
+
+    target_required = ["path", "format", "mode", "merge_keys", "partition_by"]
+    missing_target = [k for k in target_required if k not in spec["target"]]
+    if missing_target:
+        raise ValueError(
+            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"missing target keys: {missing_target}"
+        )
+
+    if spec["target"]["mode"] == "merge" and not spec["target"]["merge_keys"]:
+        raise ValueError(
+            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+            f"requires non-empty target.merge_keys when mode is 'merge'"
+        )
+
+
+def _require_object_sections(
+    pipeline_name: str,
+    job_name: str,
+    spec: dict[str, Any],
+    section_names: list[str],
+    *,
+    job_type: str,
+) -> None:
+    for section_name in section_names:
+        if not isinstance(spec[section_name], dict):
+            raise ValueError(
+                f"{job_type} job '{job_name}' in pipeline '{pipeline_name}' "
+                f"must have spec.{section_name} as an object"
+            )
+
+
+def _require_list_sections(
+    pipeline_name: str,
+    job_name: str,
+    spec: dict[str, Any],
+    section_names: list[str],
+    *,
+    job_type: str,
+) -> None:
+    for section_name in section_names:
+        if not isinstance(spec[section_name], list):
+            raise ValueError(
+                f"{job_type} job '{job_name}' in pipeline '{pipeline_name}' "
+                f"must have spec.{section_name} as a list"
+            )
 
 
 def get_enabled_pipelines(catalog_path: str | Path) -> list[dict[str, Any]]:

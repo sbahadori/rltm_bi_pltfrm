@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 
 
@@ -58,8 +59,21 @@ def build_spark() -> SparkSession:
         .config("spark.hadoop.fs.s3a.endpoint.region", region)
         .getOrCreate()
     )
+
     spark.sparkContext.setLogLevel("ERROR")
     return spark
+
+
+def verify_bronze_written(spark: SparkSession, target_path: str) -> None:
+    if not DeltaTable.isDeltaTable(spark, target_path):
+        raise RuntimeError(f"Bronze Delta table was not created: {target_path}")
+
+    count = spark.read.format("delta").load(target_path).count()
+
+    if count < 1:
+        raise RuntimeError(f"Bronze Delta table is empty: {target_path}")
+
+    print(f"[BRONZE_WRITE_OK] path={target_path}, rows={count}", flush=True)
 
 
 def main():
@@ -67,24 +81,61 @@ def main():
     spark = None
 
     try:
-        job = get_job_by_name(args.catalog_path, args.pipeline_name, args.job_name)
+        print(
+            f"[START] pipeline={args.pipeline_name}, job={args.job_name}",
+            flush=True,
+        )
+
+        job = get_job_by_name(
+            args.catalog_path,
+            args.pipeline_name,
+            args.job_name,
+        )
+
         if job["job_type"] != "generic_api_to_bronze":
             raise ValueError(
-                f"Job '{args.job_name}' is not generic_api_to_bronze; got '{job['job_type']}'"
+                f"Job '{args.job_name}' is not generic_api_to_bronze; "
+                f"got '{job['job_type']}'"
             )
 
         runtime_ctx = build_runtime_context(job)
+        print("[STEP] runtime context built", flush=True)
+
         payload = execute_api_request(runtime_ctx)
+        print("[STEP] API request executed", flush=True)
+
         validate_payload(payload, runtime_ctx["validation"])
+        print("[STEP] payload validated", flush=True)
+
         row = map_payload_to_row(payload, runtime_ctx)
+        print(
+            f"[STEP] mapped row columns={list(row.keys())}",
+            flush=True,
+        )
+
         spark = build_spark()
-        df = build_bronze_dataframe(spark, row)
+
+        df = build_bronze_dataframe(
+            spark=spark,
+            row=row,
+            schema=runtime_ctx["schema"],
+        )
+
+        print(f"[STEP] dataframe created rows={df.count()}", flush=True)
+
         write_bronze_dataframe(df, runtime_ctx["bronze_write"])
 
+        target_path = runtime_ctx["bronze_write"]["target_path"]
+
+        print(f"[STEP] write finished target={target_path}", flush=True)
+
+        verify_bronze_written(spark, target_path)
+
         print(
-            f"Wrote Bronze rows for job '{args.job_name}' to "
-            f"{runtime_ctx['bronze_write']['target_path']}"
+            f"[SUCCESS] Wrote Bronze rows for job '{args.job_name}' to {target_path}",
+            flush=True,
         )
+
     finally:
         if spark is not None:
             spark.stop()

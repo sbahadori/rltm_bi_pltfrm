@@ -30,21 +30,6 @@ REPO_ROOT = _bootstrap_repo_path()
 
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 
-
-# This schema is intentionally aligned with the current curated gold target for gold price.
-# It is a business-ready detail table, not an aggregated bars/metrics table.
-DEFAULT_GOLD_SCHEMA = StructType([
-    StructField("event_id", StringType(), False),
-    StructField("symbol", StringType(), True),
-    StructField("source_name", StringType(), True),
-    StructField("currency", StringType(), True),
-    StructField("event_ts", TimestampType(), True),
-    StructField("price_usd", DoubleType(), True),
-    StructField("trade_date", DateType(), True),
-    StructField("price_bucket", StringType(), True),
-])
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog-path", required=True)
@@ -172,23 +157,43 @@ def apply_dedupe(df: DataFrame, dedupe_spec: dict[str, Any]) -> DataFrame:
     )
 
 
-def ensure_table(spark: SparkSession, path: str) -> None:
+def ensure_table(
+    spark: SparkSession,
+    path: str,
+    df: DataFrame,
+    partition_by: list[str],
+) -> None:
     if DeltaTable.isDeltaTable(spark, path):
         return
 
-    (
-        spark.createDataFrame([], DEFAULT_GOLD_SCHEMA)
-        .write.format("delta")
+    writer = (
+        df.limit(0)
+        .write
+        .format("delta")
         .mode("overwrite")
-        .partitionBy("trade_date")
-        .save(path)
     )
 
+    if partition_by:
+        writer = writer.partitionBy(*partition_by)
 
-def merge_to_target(spark: SparkSession, target_path: str, df: DataFrame, merge_keys: list[str]) -> None:
-    ensure_table(spark, target_path)
+    writer.save(path)
+    
+def merge_to_target(
+    spark: SparkSession,
+    target_path: str,
+    df: DataFrame,
+    merge_keys: list[str],
+    partition_by: list[str],
+) -> None:
+    ensure_table(
+        spark=spark,
+        path=target_path,
+        df=df,
+        partition_by=partition_by,
+    )
 
     target = DeltaTable.forPath(spark, target_path)
+
     condition = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
 
     (
@@ -224,20 +229,35 @@ def main():
             print("No rows to write to Silver.")
             return
 
-        if spec["target"].get("mode", "merge") == "merge":
+        target_mode = spec["target"].get("mode", "merge")
+        target_format = spec["target"].get("format", "delta")
+        partition_by = spec["target"].get("partition_by", [])
+
+        if target_mode == "merge":
             if not merge_keys:
                 raise ValueError("Target mode 'merge' requires target.merge_keys")
-            merge_to_target(spark, target_path, silver_df, merge_keys)
-        else:
-            writer = silver_df.write.format(spec["target"].get("format", "delta")).mode(
-                spec["target"].get("mode", "append")
+
+            merge_to_target(
+                spark=spark,
+                target_path=target_path,
+                df=silver_df,
+                merge_keys=merge_keys,
+                partition_by=partition_by,
             )
-            partition_by = spec["target"].get("partition_by", [])
+
+        else:
+            writer = (
+                silver_df.write
+                .format(target_format)
+                .mode(target_mode)
+            )
+
             if partition_by:
                 writer = writer.partitionBy(*partition_by)
+
             writer.save(target_path)
 
-        print(f"Wrote Silver rows to {target_path}")
+        print(f"Wrote Gold rows to {target_path}")
     finally:
         spark.stop()
 

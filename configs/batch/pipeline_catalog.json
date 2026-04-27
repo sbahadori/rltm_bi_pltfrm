@@ -76,20 +76,34 @@
               ],
               "rules": []
             },
+            "schema": [
+              "event_id string not null",
+              "source_name string not null",
+              "source_event_ts timestamp null",
+              "ingestion_ts timestamp not null",
+              "payload_json string not null",
+              "api_status string not null"
+            ],
             "mapping": {
-              "constants": {
-                "source_name": "open_meteo",
-                "symbol": "weather_forecast",
-                "currency": "NA"
+              "source_name": {
+                "source": "constant",
+                "value": "open_meteo"
               },
-              "fields": {
-                "source_event_ts": {
-                  "kind": "current_utc"
-                },
-                "price_usd": {
-                  "kind": "constant_float",
-                  "value": 1
-                }
+              "source_event_ts": {
+                "source": "runtime",
+                "value": "current_utc"
+              },
+              "ingestion_ts": {
+                "source": "runtime",
+                "value": "current_utc"
+              },
+              "payload_json": {
+                "source": "runtime",
+                "value": "raw_payload_json"
+              },
+              "api_status": {
+                "source": "constant",
+                "value": "success"
               }
             },
             "bronze_write": {
@@ -145,16 +159,86 @@
                 "processing_date"
               ]
             },
-            "select_map": {
-              "event_id": "event_id",
-              "symbol": "symbol",
-              "source_name": "source_name",
-              "event_ts_utc": "source_event_ts",
-              "ingestion_ts": "ingestion_ts",
-              "price_usd": "price_usd",
-              "currency": "currency"
+            "transform": {
+              "type": "json_array_zip_explode",
+              "payload_column": "payload_json",
+              "root_fields": {
+                "latitude": {
+                  "path": "$.latitude",
+                  "cast": "double"
+                },
+                "longitude": {
+                  "path": "$.longitude",
+                  "cast": "double"
+                },
+                "timezone": {
+                  "path": "$.timezone",
+                  "cast": "string"
+                }
+              },
+              "array_fields": {
+                "forecast_ts_utc": {
+                  "path": "$.hourly.time",
+                  "cast": "timestamp"
+                },
+                "temperature_2m": {
+                  "path": "$.hourly.temperature_2m",
+                  "cast": "double"
+                },
+                "relative_humidity_2m": {
+                  "path": "$.hourly.relative_humidity_2m",
+                  "cast": "double"
+                },
+                "precipitation": {
+                  "path": "$.hourly.precipitation",
+                  "cast": "double"
+                },
+                "weather_code": {
+                  "path": "$.hourly.weather_code",
+                  "cast": "int"
+                },
+                "wind_speed_10m": {
+                  "path": "$.hourly.wind_speed_10m",
+                  "cast": "double"
+                }
+              },
+              "carry_fields": {
+                "source_name": "source_name",
+                "ingestion_ts": "ingestion_ts"
+              },
+              "event_id": {
+                "type": "hash",
+                "columns": [
+                  "source_name",
+                  "latitude",
+                  "longitude",
+                  "forecast_ts_utc"
+                ]
+              }
             },
-            "filters": [],
+            "schema": [
+              "event_id string not null",
+              "source_name string not null",
+              "latitude double null",
+              "longitude double null",
+              "timezone string null",
+              "forecast_ts_utc timestamp not null",
+              "temperature_2m double null",
+              "relative_humidity_2m double null",
+              "precipitation double null",
+              "weather_code int null",
+              "wind_speed_10m double null",
+              "ingestion_ts timestamp not null",
+              "processing_date date not null"
+            ],
+            "filters": [
+              {
+                "type": "equals",
+                "field": "api_status",
+                "value": "success"
+              }
+            ],
+            "select_map": {},
             "derived_fields": {
               "processing_date": {
                 "kind": "sql",
@@ -165,10 +249,6 @@
               {
                 "type": "not_null",
                 "field": "event_id"
-              },
-              {
-                "type": "not_null",
-                "field": "event_ts_utc"
               }
             ],
             "dedupe": {
@@ -214,26 +294,26 @@
                 "event_id"
               ],
               "partition_by": [
-                "trade_date"
+                "event_date"
               ]
             },
             "select_map": {
               "event_id": "event_id",
-              "symbol": "symbol",
               "source_name": "source_name",
-              "currency": "currency",
-              "event_ts": "event_ts_utc",
-              "price_usd": "price_usd"
+              "event_ts": "source_event_ts",
+              "ingestion_ts": "ingestion_ts",
+              "payload_json": "payload_json",
+              "api_status": "api_status"
             },
             "filters": [],
             "derived_fields": {
-              "trade_date": {
+              "event_date": {
                 "kind": "sql",
-                "expr": "to_date(event_ts)"
+                "expr": "to_date(ingestion_ts)"
               },
               "dataset_name": {
                 "kind": "sql",
-                "expr": "'weather_forecast'"
+                "expr": "'weather_forecast_raw'"
               }
             },
             "quality_rules": [
@@ -243,7 +323,11 @@
               },
               {
                 "type": "not_null",
-                "field": "event_ts"
+                "field": "ingestion_ts"
+              },
+              {
+                "type": "not_null",
+                "field": "payload_json"
               }
             ],
             "dedupe": {
@@ -251,7 +335,7 @@
                 "event_id"
               ],
               "order_by": [
-                "event_ts asc"
+                "ingestion_ts asc"
               ]
             },
             "spark": {
@@ -340,21 +424,51 @@
                 }
               ]
             },
+            "schema": [
+              "event_id string not null",
+              "source_name string not null",
+              "symbol string null",
+              "currency string null",
+              "source_event_ts timestamp null",
+              "ingestion_ts timestamp not null",
+              "price_usd double null",
+              "payload_json string not null",
+              "api_status string not null"
+            ],
             "mapping": {
-              "constants": {
-                "source_name": "metalpriceapi",
-                "symbol": "XAU",
-                "currency": "USD"
+              "source_name": {
+                "source": "constant",
+                "value": "metalpriceapi"
               },
-              "fields": {
-                "source_event_ts": {
-                  "kind": "unix_ts",
-                  "path": "$.timestamp"
-                },
-                "price_usd": {
-                  "kind": "float",
-                  "path": "$.rates.USD"
-                }
+              "symbol": {
+                "source": "constant",
+                "value": "XAU"
+              },
+              "currency": {
+                "source": "constant",
+                "value": "USD"
+              },
+              "source_event_ts": {
+                "source": "json",
+                "path": "$.timestamp",
+                "cast": "unix_ts"
+              },
+              "price_usd": {
+                "source": "json",
+                "path": "$.rates.USD",
+                "cast": "double"
+              },
+              "ingestion_ts": {
+                "source": "runtime",
+                "value": "current_utc"
+              },
+              "payload_json": {
+                "source": "runtime",
+                "value": "raw_payload_json"
+              },
+              "api_status": {
+                "source": "constant",
+                "value": "success"
               }
             },
             "bronze_write": {
@@ -433,6 +547,10 @@
               }
             },
             "quality_rules": [
+              {
+                "type": "not_null",
+                "field": "event_id"
+              },
               {
                 "type": "not_null",
                 "field": "event_ts_utc"

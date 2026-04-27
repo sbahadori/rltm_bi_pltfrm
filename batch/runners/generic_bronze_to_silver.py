@@ -31,17 +31,6 @@ REPO_ROOT = _bootstrap_repo_path()
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 
 
-DEFAULT_SILVER_SCHEMA = StructType([
-    StructField("event_id", StringType(), False),
-    StructField("symbol", StringType(), True),
-    StructField("source_name", StringType(), True),
-    StructField("event_ts_utc", TimestampType(), True),
-    StructField("ingestion_ts", TimestampType(), True),
-    StructField("price_usd", DoubleType(), True),
-    StructField("currency", StringType(), True),
-    StructField("processing_date", DateType(), True),
-])
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -87,9 +76,15 @@ def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[
 
 
 def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
-    cols = [col(source_name).alias(target_name) for target_name, source_name in select_map.items()]
-    return df.select(*cols)
+    if not select_map:
+        return df
 
+    cols = [
+        col(source_name).alias(target_name)
+        for target_name, source_name in select_map.items()
+    ]
+
+    return df.select(*cols)
 
 def apply_filters(df: DataFrame, filters_spec: list[dict[str, Any]]) -> DataFrame:
     result = df
@@ -170,23 +165,43 @@ def apply_dedupe(df: DataFrame, dedupe_spec: dict[str, Any]) -> DataFrame:
     )
 
 
-def ensure_table(spark: SparkSession, path: str) -> None:
+def ensure_table(
+    spark: SparkSession,
+    path: str,
+    df: DataFrame,
+    partition_by: list[str],
+) -> None:
     if DeltaTable.isDeltaTable(spark, path):
         return
 
-    (
-        spark.createDataFrame([], DEFAULT_SILVER_SCHEMA)
-        .write.format("delta")
+    writer = (
+        df.limit(0)
+        .write
+        .format("delta")
         .mode("overwrite")
-        .partitionBy("processing_date")
-        .save(path)
     )
 
+    if partition_by:
+        writer = writer.partitionBy(*partition_by)
 
-def merge_to_target(spark: SparkSession, target_path: str, df: DataFrame, merge_keys: list[str]) -> None:
-    ensure_table(spark, target_path)
+    writer.save(path)
+
+def merge_to_target(
+    spark: SparkSession,
+    target_path: str,
+    df: DataFrame,
+    merge_keys: list[str],
+    partition_by: list[str],
+) -> None:
+    ensure_table(
+        spark=spark,
+        path=target_path,
+        df=df,
+        partition_by=partition_by,
+    )
 
     target = DeltaTable.forPath(spark, target_path)
+
     condition = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
 
     (
@@ -226,7 +241,15 @@ def main():
         if spec["target"].get("mode", "merge") == "merge":
             if not merge_keys:
                 raise ValueError("Target mode 'merge' requires target.merge_keys")
-            merge_to_target(spark, target_path, silver_df, merge_keys)
+            partition_by = spec["target"].get("partition_by", [])
+
+            merge_to_target(
+                spark=spark,
+                target_path=target_path,
+                df=silver_df,
+                merge_keys=merge_keys,
+                partition_by=partition_by,
+            )
         else:
             writer = silver_df.write.format(spec["target"].get("format", "delta")).mode(
                 spec["target"].get("mode", "append")

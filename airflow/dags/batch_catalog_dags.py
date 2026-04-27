@@ -16,9 +16,9 @@ if str(REPO_ROOT) not in sys.path:
 if str(AIRFLOW_APP_ROOT) not in sys.path:
     sys.path.insert(0, str(AIRFLOW_APP_ROOT))
 
-from lib.batch_catalog_builder import build_tasks_from_pipeline_spec, load_enabled_pipeline_specs  # noqa: E402
+from builder.batch_catalog_builder import build_tasks_from_pipeline_spec, load_enabled_pipeline_specs  # noqa: E402
 
-CATALOG_PATH = "configs/orchestration/batch_pipeline_catalog.json"
+CATALOG_PATH = "configs/batch/pipeline_catalog.json"
 
 
 def _parse_start_date(value: str) -> datetime:

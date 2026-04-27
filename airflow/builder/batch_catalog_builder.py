@@ -18,8 +18,8 @@ def _bootstrap_repo_path() -> Path:
 
 REPO_ROOT = _bootstrap_repo_path()
 
-from shared.lib.batch_catalog_utils import get_enabled_pipelines  # noqa: E402
-from shared.lib.spark_submit_utils import build_spark_submit_command, get_repo_root  # noqa: E402
+from batch.specs.batch_catalog_utils import get_enabled_pipelines  # noqa: E402
+from shared.spark.spark_submit_utils import build_spark_submit_command, get_repo_root  # noqa: E402
 
 
 def build_common_env() -> dict[str, str]:
@@ -48,7 +48,7 @@ def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], c
 
     if job_type == "generic_api_to_bronze":
         return {
-            "entrypoint": "jobs/batch/generic_api_to_bronze.py",
+            "entrypoint": "batch/runners/generic_api_to_bronze.py",
             "args": {
                 "catalog_path": catalog_path,
                 "pipeline_name": pipeline_spec["name"],
@@ -59,7 +59,7 @@ def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], c
 
     if job_type == "generic_bronze_to_silver":
         return {
-            "entrypoint": "jobs/batch/generic_bronze_to_silver.py",
+            "entrypoint": "batch/runners/generic_bronze_to_silver.py",
             "args": {
                 "catalog_path": catalog_path,
                 "pipeline_name": pipeline_spec["name"],
@@ -70,7 +70,7 @@ def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], c
 
     if job_type == "generic_silver_to_gold":
         return {
-            "entrypoint": "jobs/batch/generic_silver_to_gold.py",
+            "entrypoint": "batch/runners/generic_silver_to_gold.py",
             "args": {
                 "catalog_path": catalog_path,
                 "pipeline_name": pipeline_spec["name"],

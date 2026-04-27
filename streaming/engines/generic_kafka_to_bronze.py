@@ -23,7 +23,7 @@ REPO_ROOT = _bootstrap_repo_path()
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, current_timestamp, expr, get_json_object
-from shared.lib.stream_spec_utils import get_stream_spec, validate_stream_spec
+from streaming.specs.stream_spec_utils import get_stream_spec, validate_stream_spec
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(

@@ -15,7 +15,7 @@ def _bootstrap_repo_path() -> Path:
 
 REPO_ROOT = _bootstrap_repo_path()
 
-from shared.lib.stream_spec_utils import get_repo_root, get_stream_spec, validate_stream_spec
+from streaming.specs.stream_spec_utils import get_repo_root, get_stream_spec, validate_stream_spec
 
 ENGINE_ENTRYPOINTS = {
     "generic_kafka_to_bronze": "spark_apps/streaming/generic_kafka_to_bronze.py",

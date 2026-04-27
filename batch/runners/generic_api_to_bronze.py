@@ -17,8 +17,8 @@ def _bootstrap_repo_path() -> Path:
 
 REPO_ROOT = _bootstrap_repo_path()
 
-from shared.lib.batch_catalog_utils import get_job_by_name  # noqa: E402
-from shared.lib.generic_api_job_utils import (  # noqa: E402
+from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
+from batch.utils.generic_api_job_utils import (  # noqa: E402
     build_bronze_dataframe,
     build_runtime_context,
     execute_api_request,

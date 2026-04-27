@@ -19,7 +19,7 @@ def _bootstrap_repo_path() -> Path:
 
 REPO_ROOT = _bootstrap_repo_path()
 
-from shared.lib.stream_spec_utils import load_stream_registry, resolve_repo_path
+from streaming.specs.stream_spec_utils import load_stream_registry, resolve_repo_path
 
 POLL_INTERVAL_SEC = 5
 
@@ -100,7 +100,7 @@ class StreamSupervisor:
     def _build_command(self, stream_name: str, layer: str) -> list[str]:
         return [
             "python3",
-            "/opt/spark/apps/runners/run_stream_service.py",
+            "/opt/spark/streaming/runners/run_stream_service.py",
             "--registry",
             self.registry_path,
             "--stream-name",

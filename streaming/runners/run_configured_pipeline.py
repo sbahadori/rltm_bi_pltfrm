@@ -27,7 +27,7 @@ def bootstrap_import_path() -> None:
 def main() -> None:
     bootstrap_import_path()
 
-    from shared.lib.spark_submit_utils import build_spark_submit_command, load_pipeline_config
+    from shared.spark.spark_submit_utils import build_spark_submit_command, load_pipeline_config
     
     args = parse_args()
     config = load_pipeline_config(args.config)

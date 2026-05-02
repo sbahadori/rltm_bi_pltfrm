@@ -90,7 +90,7 @@
             "expr": "coalesce(user_id, anonymous_id)"
           }
         },
-        "transform_plugin": "spark_apps.transforms.clickstream:apply_clickstream_transform"
+        "transform_plugin": "streaming.transforms.clickstream:apply_clickstream_transform"
       },
       "restart_policy": {
         "max_retries": 10,

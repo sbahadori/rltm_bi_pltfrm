@@ -100,7 +100,7 @@ class StreamSupervisor:
     def _build_command(self, stream_name: str, layer: str) -> list[str]:
         return [
             "python3",
-            "/opt/spark/streaming/runners/run_stream_service.py",
+            str(REPO_ROOT / "streaming" / "runners" / "run_stream_service.py"),
             "--registry",
             self.registry_path,
             "--stream-name",

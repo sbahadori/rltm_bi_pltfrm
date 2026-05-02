@@ -57,7 +57,6 @@ x-spark-stream-base: &spark-stream-base
     AWS_REGION: us-east-1
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
-    - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
     - ${PROJECT_ROOT}/spark_health:/tmp/health
     - ${PROJECT_ROOT}/spark_checkpoints:/tmp/checkpoints
@@ -198,8 +197,8 @@ services:
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&
-      python3 /opt/spark/apps/runners/stream_supervisor.py
-      --registry configs/streaming/stream_registry.json
+      python3 /workspace/rltm_bi_pltfrm/streaming/runners/stream_supervisor.py
+      --registry /workspace/rltm_bi_pltfrm/configs/streaming/stream_registry.json
       --status-file /tmp/health/stream_supervisor_status.json
       "
     healthcheck:

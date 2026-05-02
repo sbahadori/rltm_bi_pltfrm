@@ -18,8 +18,8 @@ REPO_ROOT = _bootstrap_repo_path()
 from streaming.specs.stream_spec_utils import get_repo_root, get_stream_spec, validate_stream_spec
 
 ENGINE_ENTRYPOINTS = {
-    "generic_kafka_to_bronze": "spark_apps/streaming/generic_kafka_to_bronze.py",
-    "generic_bronze_to_silver": "spark_apps/streaming/generic_bronze_to_silver.py",
+    "generic_kafka_to_bronze": "streaming/engines/generic_kafka_to_bronze.py",
+    "generic_bronze_to_silver": "streaming/engines/generic_bronze_to_silver.py",
 }
 
 
@@ -27,9 +27,15 @@ def build_submit_command(entrypoint: str, registry: str, stream_name: str) -> st
     spark_submit_bin = os.getenv("SPARK_SUBMIT", "/opt/spark/bin/spark-submit")
     spark_master = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
     repo_root = get_repo_root()
+
+    entrypoint = entrypoint.lstrip("/")
     entrypoint_path = (repo_root / entrypoint).resolve()
 
+    if not entrypoint_path.exists():
+        raise FileNotFoundError(f"Streaming engine entrypoint not found: {entrypoint_path}")
+
     packages = ["io.delta:delta-spark_2.12:3.2.0"]
+
     if entrypoint.endswith("generic_kafka_to_bronze.py"):
         packages.append("org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1")
 
@@ -48,8 +54,8 @@ def build_submit_command(entrypoint: str, registry: str, stream_name: str) -> st
         "--registry", registry,
         "--stream-name", stream_name,
     ]
-    return " ".join(shlex.quote(x) for x in cmd)
 
+    return " ".join(shlex.quote(x) for x in cmd)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()

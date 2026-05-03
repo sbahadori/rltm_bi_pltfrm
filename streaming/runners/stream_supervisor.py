@@ -11,15 +11,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     return repo_root
 
+
 REPO_ROOT = _bootstrap_repo_path()
 
-from streaming.specs.stream_spec_utils import load_stream_registry, resolve_repo_path
+from streaming.specs.stream_spec_utils import (  # noqa: E402
+    load_stream_registry,
+    resolve_repo_path,
+)
+
 
 POLL_INTERVAL_SEC = 5
 
@@ -76,8 +82,8 @@ class StreamSupervisor:
                     continue
 
                 unit_name = f"{stream_name}_{layer}"
-
                 previous = self.states.get(unit_name)
+
                 state = UnitState(
                     unit_name=unit_name,
                     stream_name=stream_name,
@@ -93,14 +99,20 @@ class StreamSupervisor:
                     last_start_ts_epoch=previous.last_start_ts_epoch if previous else None,
                     next_retry_ts_epoch=previous.next_retry_ts_epoch if previous else None,
                 )
+
                 new_states[unit_name] = state
 
         self.states = new_states
 
     def _build_command(self, stream_name: str, layer: str) -> list[str]:
+        runner_path = REPO_ROOT / "streaming" / "runners" / "run_stream_service.py"
+
+        if not runner_path.exists():
+            raise FileNotFoundError(f"Stream runner not found: {runner_path}")
+
         return [
             "python3",
-            str(REPO_ROOT / "streaming" / "runners" / "run_stream_service.py"),
+            str(runner_path),
             "--registry",
             self.registry_path,
             "--stream-name",
@@ -111,6 +123,12 @@ class StreamSupervisor:
 
     def _start_unit(self, state: UnitState) -> None:
         cmd = self._build_command(state.stream_name, state.layer)
+
+        print(
+            f"[supervisor] command for '{state.unit_name}': {' '.join(cmd)}",
+            flush=True,
+        )
+
         proc = subprocess.Popen(
             cmd,
             stdout=sys.stdout,
@@ -118,6 +136,7 @@ class StreamSupervisor:
             text=True,
             env=os.environ.copy(),
         )
+
         self.processes[state.unit_name] = proc
         state.pid = proc.pid
         state.returncode = None
@@ -128,20 +147,23 @@ class StreamSupervisor:
         for unit_name, proc in list(self.processes.items()):
             try:
                 if proc.poll() is None:
+                    print(f"[supervisor] terminating '{unit_name}'", flush=True)
                     proc.terminate()
             except Exception:
                 pass
 
         deadline = time.time() + 20
+
         while time.time() < deadline:
             alive = [p for p in self.processes.values() if p.poll() is None]
             if not alive:
                 break
             time.sleep(0.5)
 
-        for proc in self.processes.values():
+        for unit_name, proc in list(self.processes.items()):
             try:
                 if proc.poll() is None:
+                    print(f"[supervisor] killing '{unit_name}'", flush=True)
                     proc.kill()
             except Exception:
                 pass
@@ -149,6 +171,7 @@ class StreamSupervisor:
     def _refresh_process_states(self) -> None:
         for unit_name, proc in list(self.processes.items()):
             rc = proc.poll()
+
             if rc is None:
                 state = self.states.get(unit_name)
                 if state:
@@ -157,10 +180,16 @@ class StreamSupervisor:
                 continue
 
             state = self.states.get(unit_name)
+
             if state:
                 state.pid = None
                 state.returncode = rc
                 state.next_retry_ts_epoch = int(time.time()) + state.backoff_seconds
+
+                print(
+                    f"[supervisor] '{unit_name}' exited with returncode={rc}",
+                    flush=True,
+                )
 
             del self.processes[unit_name]
 
@@ -179,7 +208,10 @@ class StreamSupervisor:
 
             if state.returncode is not None:
                 if state.retries >= state.max_retries:
-                    print(f"[supervisor] '{unit_name}' exceeded max_retries; not restarting", flush=True)
+                    print(
+                        f"[supervisor] '{unit_name}' exceeded max_retries; not restarting",
+                        flush=True,
+                    )
                     continue
 
                 if state.next_retry_ts_epoch is not None and now < state.next_retry_ts_epoch:
@@ -227,7 +259,10 @@ class StreamSupervisor:
             },
         }
 
-        self.status_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.status_file.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def run(self) -> None:
         while not self.stop_requested:
@@ -250,7 +285,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     registry_path = str(resolve_repo_path(args.registry))
-    supervisor = StreamSupervisor(registry_path=registry_path, status_file=args.status_file)
+    supervisor = StreamSupervisor(
+        registry_path=registry_path,
+        status_file=args.status_file,
+    )
     supervisor.run()
 
 

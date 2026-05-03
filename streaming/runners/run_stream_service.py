@@ -7,15 +7,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     return repo_root
 
+
 REPO_ROOT = _bootstrap_repo_path()
 
-from streaming.specs.stream_spec_utils import get_repo_root, get_stream_spec, validate_stream_spec
+from streaming.specs.stream_spec_utils import (  # noqa: E402
+    get_repo_root,
+    get_stream_spec,
+    validate_stream_spec,
+)
+
 
 ENGINE_ENTRYPOINTS = {
     "generic_kafka_to_bronze": "streaming/engines/generic_kafka_to_bronze.py",
@@ -28,11 +35,15 @@ def build_submit_command(entrypoint: str, registry: str, stream_name: str) -> st
     spark_master = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
     repo_root = get_repo_root()
 
+    # Defensive normalization:
+    # Avoid accidentally treating "/streaming/..." as an absolute container path.
     entrypoint = entrypoint.lstrip("/")
     entrypoint_path = (repo_root / entrypoint).resolve()
 
     if not entrypoint_path.exists():
-        raise FileNotFoundError(f"Streaming engine entrypoint not found: {entrypoint_path}")
+        raise FileNotFoundError(
+            f"Streaming engine entrypoint not found: {entrypoint_path}"
+        )
 
     packages = ["io.delta:delta-spark_2.12:3.2.0"]
 
@@ -41,21 +52,33 @@ def build_submit_command(entrypoint: str, registry: str, stream_name: str) -> st
 
     cmd = [
         spark_submit_bin,
-        "--master", spark_master,
-        "--packages", ",".join(packages),
-        "--conf", "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension",
-        "--conf", "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog",
-        "--conf", "spark.ui.showConsoleProgress=false",
-        "--conf", "spark.jars.ivy=/tmp/.ivy2",
-        "--conf", "spark.executor.cores=1",
-        "--conf", "spark.executor.memory=1G",
-        "--conf", "spark.cores.max=1",
+        "--master",
+        spark_master,
+        "--packages",
+        ",".join(packages),
+        "--conf",
+        "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension",
+        "--conf",
+        "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        "--conf",
+        "spark.ui.showConsoleProgress=false",
+        "--conf",
+        "spark.jars.ivy=/tmp/.ivy2",
+        "--conf",
+        "spark.executor.cores=1",
+        "--conf",
+        "spark.executor.memory=1G",
+        "--conf",
+        "spark.cores.max=1",
         str(entrypoint_path),
-        "--registry", registry,
-        "--stream-name", stream_name,
+        "--registry",
+        registry,
+        "--stream-name",
+        stream_name,
     ]
 
     return " ".join(shlex.quote(x) for x in cmd)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -73,11 +96,21 @@ def main() -> None:
 
     layer_spec = spec[args.layer]
     engine = layer_spec["engine"]
-    entrypoint = ENGINE_ENTRYPOINTS[engine]
 
+    if engine not in ENGINE_ENTRYPOINTS:
+        raise ValueError(
+            f"Unsupported streaming engine '{engine}'. "
+            f"Supported engines: {sorted(ENGINE_ENTRYPOINTS)}"
+        )
+
+    entrypoint = ENGINE_ENTRYPOINTS[engine]
     cmd = build_submit_command(entrypoint, args.registry, spec["name"])
 
-    print(f"Executing stream '{spec['name']}' layer '{args.layer}' command:\n{cmd}")
+    print(
+        f"Executing stream '{spec['name']}' layer '{args.layer}' command:\n{cmd}",
+        flush=True,
+    )
+
     subprocess.run(cmd, shell=True, check=True)
 
 

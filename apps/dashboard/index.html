@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rltm_bi_pltfrm</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;display:flex;height:100vh;overflow:hidden;font-size:13px}
+.sidebar{width:236px;background:#161b27;border-right:1px solid #1e2535;display:flex;flex-direction:column;flex-shrink:0}
+.logo{padding:14px 16px;border-bottom:1px solid #1e2535}
+.logo-top{display:flex;align-items:center;gap:9px}
+.logo-icon{width:30px;height:30px;background:#3b82f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.logo-text{font-size:13px;font-weight:600;color:#f1f5f9}
+.logo-sub{font-size:10px;color:#475569;margin-top:1px}
+.branch{margin-top:7px;font-size:10px;color:#475569;background:#0f1117;border:1px solid #1e2535;border-radius:4px;padding:2px 8px;font-family:monospace;display:inline-block}
+nav{padding:10px 8px;flex:1;overflow-y:auto}
+.nl{font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.8px;padding:0 8px;margin-bottom:4px}
+.ni{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;color:#94a3b8;margin-bottom:1px;font-size:12px}
+.ni:hover{background:#1e2535;color:#e2e8f0}
+.ni.active{background:#1e3a5f;color:#60a5fa}
+.ni svg{width:14px;height:14px;flex-shrink:0}
+.nb{margin-left:auto;font-size:10px;border-radius:10px;padding:1px 6px}
+.nb-r{background:#7f1d1d;color:#fca5a5}
+.nb-a{background:#78350f;color:#fcd34d}
+.nb-b{background:#1e3a5f;color:#93c5fd}
+.sf{padding:10px 16px;border-top:1px solid #1e2535}
+.av{width:26px;height:26px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#60a5fa;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#161b27;border-bottom:1px solid #1e2535;padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.tb-title{font-size:14px;font-weight:600;color:#f1f5f9}
+.tb-right{display:flex;align-items:center;gap:8px}
+.btn{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:none}
+.bp{background:#3b82f6;color:#fff}
+.bg{background:transparent;color:#94a3b8;border:1px solid #1e2535}
+.bg:hover{background:#1e2535}
+.tag{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500;white-space:nowrap}
+.t-bl{background:#1e3a5f;color:#60a5fa}
+.t-gr{background:#14532d30;color:#4ade80}
+.t-am{background:#78350f30;color:#fbbf24}
+.t-re{background:#7f1d1d30;color:#f87171}
+.t-pu{background:#3b076430;color:#c084fc}
+.t-gy{background:#1e2535;color:#94a3b8}
+.content{flex:1;overflow-y:auto;padding:18px 20px;background:#0f1117}
+.page{display:none}
+.page.active{display:block}
+.mr{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.mc{background:#161b27;border:1px solid #1e2535;border-radius:8px;padding:12px 14px}
+.ml{font-size:10px;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.mv{font-size:22px;font-weight:600;color:#f1f5f9;line-height:1}
+.ms{font-size:10px;color:#64748b;margin-top:3px}
+.up{color:#4ade80!important}
+.dn{color:#f87171!important}
+.wn{color:#fbbf24!important}
+.card{background:#161b27;border:1px solid #1e2535;border-radius:8px;padding:14px;margin-bottom:16px}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ct{font-size:12px;font-weight:600;color:#e2e8f0}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:7px 10px;font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1e2535}
+td{padding:9px 10px;border-bottom:1px solid #1a1f2e;font-size:12px;color:#94a3b8}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1a2236}
+.jn{color:#e2e8f0;font-weight:500}
+.mo{font-family:monospace;font-size:11px}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:5px}
+.dg{background:#4ade80;box-shadow:0 0 4px #4ade8055}
+.da{background:#fbbf24}
+.dr{background:#f87171}
+.dgr{background:#475569}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.cw{position:relative;height:190px}
+.dw{padding:8px 0;overflow-x:auto}
+.dr2{display:flex;align-items:center;gap:0;flex-wrap:nowrap;min-width:max-content}
+.dn2{display:inline-flex;flex-direction:column;align-items:flex-start;background:#1e2535;border:1px solid #2d3748;border-radius:6px;padding:7px 10px;font-size:11px;cursor:pointer;min-width:140px}
+.dn2 .t{color:#e2e8f0;font-weight:500}
+.dn2 .s{color:#64748b;font-size:10px;margin-top:2px}
+.dn2.run{border-color:#3b82f6}
+.dn2.ok{border-color:#4ade8055}
+.dn2.fail{border-color:#f8717155}
+.dn2.stm{border-color:#c084fc55;background:#3b076420}
+.da2{color:#2d3748;margin:0 6px;font-size:14px;flex-shrink:0}
+.ic{background:#161b27;border:1px solid #1e2535;border-radius:8px;padding:13px}
+.in{font-size:13px;font-weight:600;color:#e2e8f0}
+.is{font-size:10px;color:#64748b;margin-top:1px}
+.il{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.ist{display:flex;justify-content:space-between;font-size:11px;margin-top:5px}
+.ist span:first-child{color:#64748b}
+.hb{height:3px;background:#1e2535;border-radius:2px;margin-top:8px}
+.hf{height:100%;border-radius:2px}
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100}
+.ov.open{display:block}
+.dr3{position:fixed;right:0;top:0;bottom:0;width:640px;background:#161b27;border-left:1px solid #1e2535;display:flex;flex-direction:column;z-index:101;transform:translateX(100%);transition:transform .2s ease}
+.ov.open .dr3{transform:translateX(0)}
+.dh{padding:13px 16px;border-bottom:1px solid #1e2535;display:flex;align-items:flex-start;gap:10px;flex-shrink:0}
+.dhi{flex:1}
+.dht{font-size:13px;font-weight:600;color:#f1f5f9}
+.dhg{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap}
+.dc{background:none;border:none;color:#64748b;font-size:18px;cursor:pointer}
+.dc:hover{color:#e2e8f0}
+.dm{padding:8px 16px;border-bottom:1px solid #1e2535;display:flex;gap:14px;flex-wrap:wrap;flex-shrink:0}
+.dmi{font-size:11px;color:#64748b}
+.dmi span{color:#94a3b8}
+.dtb{padding:7px 16px;border-bottom:1px solid #1e2535;display:flex;gap:8px;align-items:center;flex-shrink:0}
+.dtb input{flex:1;background:#0f1117;border:1px solid #1e2535;border-radius:5px;padding:5px 9px;font-size:12px;color:#e2e8f0;outline:none}
+.dtb input:focus{border-color:#3b82f6}
+.lbs{display:flex;gap:3px}
+.lb{padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid transparent;opacity:.45}
+.lb.on{opacity:1}
+.lb.INFO{background:#1e3a5f22;color:#60a5fa;border-color:#1e3a5f}
+.lb.WARN{background:#78350f22;color:#fbbf24;border-color:#78350f}
+.lb.ERROR{background:#7f1d1d22;color:#f87171;border-color:#7f1d1d}
+.lb-body{flex:1;overflow-y:auto;padding:8px 16px;font-family:monospace;font-size:11.5px;line-height:1.8}
+.ll{display:flex;gap:9px;padding:1px 0}
+.ll:hover{background:#1a2236;border-radius:3px}
+.ll.hidden{display:none}
+.ll-ts{color:#475569;flex-shrink:0;width:76px}
+.ll-lv{flex-shrink:0;width:40px;font-weight:600}
+.ll-lv.INFO{color:#60a5fa}
+.ll-lv.WARN{color:#fbbf24}
+.ll-lv.ERROR{color:#f87171}
+.ll-msg{color:#94a3b8;flex:1;word-break:break-all}
+.ll-msg .hl{background:#fbbf2430;color:#fbbf24;border-radius:2px;padding:0 2px}
+.df{padding:7px 16px;border-top:1px solid #1e2535;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.df span{font-size:11px;color:#475569}
+.pp{font-family:monospace;font-size:10px;background:#0f1117;border:1px solid #1e2535;padding:2px 7px;border-radius:4px;color:#64748b}
+.sl{font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-top">
+      <div class="logo-icon">BI</div>
+      <div><div class="logo-text">rltm_bi_pltfrm</div><div class="logo-sub">Real-Time BI Platform</div></div>
+    </div>
+    <div class="branch">branch: new_architecture_v2</div>
+  </div>
+  <nav>
+    <div style="margin-bottom:14px">
+      <div class="nl">Overview</div>
+      <div class="ni active" onclick="show('dashboard',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+        Dashboard
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="nl">Batch Pipelines</div>
+      <div class="ni" onclick="show('gold_p',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        gold_price_pipeline
+        <span class="nb nb-a">Batch</span>
+      </div>
+      <div class="ni" onclick="show('weather_p',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 2a4 4 0 00-3.85 5.1A3 3 0 105 13h8a3 3 0 000-6h-.15A4 4 0 008 2z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        weather_forecast_pipeline
+        <span class="nb nb-a">Batch</span>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="nl">Streaming</div>
+      <div class="ni" onclick="show('events_p',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 8h3l2-5 3 10 2-5 2 3h2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+        clickstream_user_events
+        <span class="nb nb-b">Stream</span>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="nl">Jobs</div>
+      <div class="ni" onclick="show('monitor',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 3h14v2H1zm0 4h14v2H1zm0 4h8v2H1z"/></svg>
+        Job Monitor
+      </div>
+      <div class="ni" onclick="show('dags',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+        Airflow DAGs
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="nl">Storage</div>
+      <div class="ni" onclick="show('lake',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.7 2 6 2s6-.9 6-2V4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 8v4c0 1.1 2.7 2 6 2s6-.9 6-2V8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        Delta Lakehouse
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="nl">System</div>
+      <div class="ni" onclick="show('infra',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+        Infrastructure
+      </div>
+      <div class="ni" onclick="show('alerts',this)">
+        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a5 5 0 00-5 5v3l-1 2h12l-1-2V6a5 5 0 00-5-5zm-1 13a1 1 0 002 0H7z"/></svg>
+        Alerts
+        <span class="nb nb-a">2</span>
+      </div>
+    </div>
+  </nav>
+  <div class="sf">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="av">AD</div>
+      <div>
+        <div style="font-size:12px;color:#e2e8f0;font-weight:500">admin</div>
+        <div style="font-size:10px;color:#64748b">Airflow · MinIO</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div class="tb-title" id="pt">Dashboard</div>
+    <div class="tb-right">
+      <span class="tag t-gr"><span class="dot dg"></span>Supervisor healthy · 2 streams</span>
+      <span class="tag t-am">2 DAGs · schedule: null</span>
+      <button class="btn bg">Refresh</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="mr">
+        <div class="mc"><div class="ml">Streaming jobs (supervisor)</div><div class="mv" style="color:#4ade80">2</div><div class="ms up">bronze + silver · clickstream</div></div>
+        <div class="mc"><div class="ml">Batch pipelines (catalog)</div><div class="mv">2</div><div class="ms">gold_price · weather_forecast</div></div>
+        <div class="mc"><div class="ml">Delta layers</div><div class="mv">6</div><div class="ms">bronze/silver/gold · batch + stream</div></div>
+        <div class="mc"><div class="ml">Kafka lag (user_events)</div><div class="mv wn">~800</div><div class="ms wn">3 partitions · trigger 15s</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><span class="ct">Streaming ingest — user_events (15s micro-batch)</span><span class="tag t-bl">Live</span></div>
+          <div class="cw"><canvas id="throughputChart" role="img" aria-label="Streaming throughput">Batch sizes vary.</canvas></div>
+        </div>
+        <div class="card">
+          <div class="ch"><span class="ct">Batch pipeline task durations</span><span class="tag t-am">generic runners</span></div>
+          <div class="cw"><canvas id="stageChart" role="img" aria-label="Task durations">Task durations.</canvas></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">Recent activity</span></div>
+        <table>
+          <thead><tr><th>Job / Stream</th><th>Type</th><th>Runner</th><th>Status</th><th>Output path</th><th>Updated</th></tr></thead>
+          <tbody>
+            <tr style="cursor:pointer" onclick="openDrawer('bronze_clt')"><td class="jn">bronze_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_kafka_to_bronze</td><td><span class="dot dg"></span>Running</td><td class="pp">bronze_delta/user_events</td><td>Just now</td></tr>
+            <tr style="cursor:pointer" onclick="openDrawer('silver_clt')"><td class="jn">silver_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Running</td><td class="pp">silver_delta/user_events_clean</td><td>30s ago</td></tr>
+            <tr style="cursor:pointer" onclick="openDrawer('gold_price_ingest')"><td class="jn">gold_price_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">bronze/gold_price_events</td><td>5 min ago</td></tr>
+            <tr style="cursor:pointer" onclick="openDrawer('gold_price_silver')"><td class="jn">gold_price_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">silver/gold_price_ticks_clean</td><td>6 min ago</td></tr>
+            <tr style="cursor:pointer" onclick="openDrawer('weather_ingest')"><td class="jn">weather_forecast_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">bronze/weather_forecast_events</td><td>12 min ago</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- GOLD PRICE PIPELINE -->
+    <div class="page" id="page-gold_p">
+      <div class="card">
+        <div class="ch"><span class="ct">gold_price_pipeline — catalog-driven DAG (schedule: null)</span><span class="tag t-gr">Last run: succeeded</span></div>
+        <div class="dw"><div class="dr2">
+          <div class="dn2 ok" onclick="openDrawer('gold_price_ingest')">
+            <div class="t">gold_price_ingest</div>
+            <div class="s">generic_api_to_bronze</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-gy" style="font-size:9px">metalpriceapi · XAU/USD</span></div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 ok" onclick="openDrawer('gold_price_silver')">
+            <div class="t">gold_price_silver</div>
+            <div class="s">generic_bronze_to_silver</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-gr" style="font-size:9px">dedup event_id · quality</span></div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 ok" onclick="openDrawer('gold_price_gold')">
+            <div class="t">gold_price_gold</div>
+            <div class="s">generic_silver_to_gold</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-am" style="font-size:9px">price_bucket · trade_date</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">Delta paths — gold_price_pipeline</span></div>
+        <table>
+          <thead><tr><th>Layer</th><th>Path (MinIO)</th><th>Mode</th><th>Merge key</th><th>Partition</th></tr></thead>
+          <tbody>
+            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">s3a://lakehouse/bronze/gold_price_events</td><td>append</td><td>—</td><td>ingest_year/month/day/hour</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">s3a://lakehouse/silver/gold_price_ticks_clean</td><td>merge</td><td>event_id</td><td>processing_date</td></tr>
+            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">s3a://lakehouse/gold/gold_price_curated</td><td>merge</td><td>event_id</td><td>trade_date</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">Job spec (pipeline_catalog.json)</span></div>
+        <table>
+          <thead><tr><th>Job name</th><th>Type</th><th>Source</th><th>Auth</th><th>Timeout</th></tr></thead>
+          <tbody>
+            <tr><td class="jn">gold_price_ingest</td><td class="mo">generic_api_to_bronze</td><td class="mo">metalpriceapi.com/v1/latest</td><td>query_param: api_key</td><td>10 min</td></tr>
+            <tr><td class="jn">gold_price_silver</td><td class="mo">generic_bronze_to_silver</td><td class="mo">bronze/gold_price_events</td><td>—</td><td>10 min</td></tr>
+            <tr><td class="jn">gold_price_gold</td><td class="mo">generic_silver_to_gold</td><td class="mo">silver/gold_price_ticks_clean</td><td>—</td><td>10 min</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- WEATHER PIPELINE -->
+    <div class="page" id="page-weather_p">
+      <div class="card">
+        <div class="ch"><span class="ct">weather_forecast_pipeline — catalog-driven DAG (schedule: null)</span><span class="tag t-gr">Last run: succeeded</span></div>
+        <div class="dw"><div class="dr2">
+          <div class="dn2 ok" onclick="openDrawer('weather_ingest')">
+            <div class="t">weather_forecast_ingest</div>
+            <div class="s">generic_api_to_bronze</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-gy" style="font-size:9px">open-meteo.com · London</span></div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 ok" onclick="openDrawer('weather_silver')">
+            <div class="t">weather_forecast_silver</div>
+            <div class="s">generic_bronze_to_silver</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-gr" style="font-size:9px">json_array_zip_explode</span></div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 ok" onclick="openDrawer('weather_gold')">
+            <div class="t">weather_forecast_gold</div>
+            <div class="s">generic_silver_to_gold</div>
+            <div class="s" style="margin-top:3px"><span class="tag t-am" style="font-size:9px">curated · event_date</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">Delta paths — weather_forecast_pipeline</span></div>
+        <table>
+          <thead><tr><th>Layer</th><th>Path (MinIO)</th><th>Mode</th><th>Merge key</th><th>Partition</th></tr></thead>
+          <tbody>
+            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">s3a://lakehouse/bronze/weather_forecast_events</td><td>append</td><td>—</td><td>ingest_year/month/day/hour</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">s3a://lakehouse/silver/weather_forecast_clean</td><td>merge</td><td>event_id</td><td>processing_date</td></tr>
+            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">s3a://lakehouse/gold/weather_forecast_curated</td><td>merge</td><td>event_id</td><td>event_date</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STREAMING -->
+    <div class="page" id="page-events_p">
+      <div class="card">
+        <div class="ch"><span class="ct">clickstream_user_events — stream_registry.json</span><span class="tag t-bl">Live</span></div>
+        <div class="dw"><div class="dr2">
+          <div class="dn2 stm">
+            <div class="t">Web Demo (FastAPI)</div>
+            <div class="s">:8091 → collector</div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 run">
+            <div class="t">Collector (FastAPI)</div>
+            <div class="s">:8000 · topic: user_events</div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 run">
+            <div class="t">Kafka 3.9.2 (KRaft)</div>
+            <div class="s">user_events · 3 partitions</div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 run" onclick="openDrawer('bronze_clt')">
+            <div class="t">generic_kafka_to_bronze</div>
+            <div class="s">trigger: 15s</div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 run" onclick="openDrawer('silver_clt')">
+            <div class="t">generic_bronze_to_silver</div>
+            <div class="s">trigger: 30s</div>
+          </div>
+          <span class="da2">→</span>
+          <div class="dn2 ok">
+            <div class="t">Delta Silver</div>
+            <div class="s">silver_delta/user_events_clean</div>
+          </div>
+        </div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><span class="ct">Silver field_map</span></div>
+          <table>
+            <thead><tr><th>Field</th><th>JSON path</th><th>Cast</th></tr></thead>
+            <tbody>
+              <tr><td class="mo">event_id</td><td class="mo">$.event_id</td><td>string</td></tr>
+              <tr><td class="mo">event_ts</td><td class="mo">$.event_ts</td><td>timestamp</td></tr>
+              <tr><td class="mo">event_type</td><td class="mo">$.event_type</td><td>string</td></tr>
+              <tr><td class="mo">anonymous_id</td><td class="mo">$.anonymous_id</td><td>string</td></tr>
+              <tr><td class="mo">session_id</td><td class="mo">$.session_id</td><td>string</td></tr>
+              <tr><td class="mo">item_id</td><td class="mo">$.properties.item_id</td><td>string</td></tr>
+              <tr><td class="mo">backend_event_name</td><td class="mo">$.properties.backend_event_name</td><td>string</td></tr>
+              <tr><td class="mo">results_count</td><td class="mo">$.properties.results_count</td><td>long</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="ch"><span class="ct">Computed fields + quality rules</span></div>
+          <table>
+            <thead><tr><th>Field</th><th>Expression</th></tr></thead>
+            <tbody>
+              <tr><td class="mo">event_date</td><td class="mo">coalesce(to_date(event_ts), to_date(kafka_ts))</td></tr>
+              <tr><td class="mo">canonical_user_key</td><td class="mo">coalesce(user_id, anonymous_id)</td></tr>
+            </tbody>
+          </table>
+          <div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.8">
+            Required: <span style="color:#94a3b8">event_type, event_date</span><br>
+            Identity keys: <span style="color:#94a3b8">event_id, user_id, anonymous_id, session_id</span><br>
+            Invalid rows: <span class="pp">silver_delta/user_events_quarantine</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- JOB MONITOR -->
+    <div class="page" id="page-monitor">
+      <div class="mr" style="grid-template-columns:repeat(3,1fr)">
+        <div class="mc"><div class="ml">Streaming (supervisor)</div><div class="mv up">2</div><div class="ms">bronze · silver</div></div>
+        <div class="mc"><div class="ml">Batch tasks today</div><div class="mv">6</div><div class="ms up">all succeeded</div></div>
+        <div class="mc"><div class="ml">Supervisor status</div><div class="mv up">OK</div><div class="ms">heartbeat healthy</div></div>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">All jobs</span></div>
+        <table>
+          <thead><tr><th>Container</th><th>App name</th><th>Type</th><th>Runner</th><th>Status</th><th>Trigger</th><th>Output</th><th>Logs</th></tr></thead>
+          <tbody>
+            <tr style="cursor:pointer" onclick="openDrawer('bronze_clt')">
+              <td class="mo">spark-stream-supervisor</td><td class="jn">bronze_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_kafka_to_bronze</td><td><span class="dot dg"></span>Running</td><td class="mo">15s</td><td class="pp">bronze_delta/user_events</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('silver_clt')">
+              <td class="mo">spark-stream-supervisor</td><td class="jn">silver_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Running</td><td class="mo">30s</td><td class="pp">silver_delta/user_events_clean</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('gold_price_ingest')">
+              <td class="mo">airflow (task)</td><td class="jn">gold_price_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">bronze/gold_price_events</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('gold_price_silver')">
+              <td class="mo">airflow (task)</td><td class="jn">gold_price_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">silver/gold_price_ticks_clean</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('gold_price_gold')">
+              <td class="mo">airflow (task)</td><td class="jn">gold_price_gold</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_silver_to_gold</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">gold/gold_price_curated</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('weather_ingest')">
+              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">bronze/weather_forecast_events</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('weather_silver')">
+              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">silver/weather_forecast_clean</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+            <tr style="cursor:pointer" onclick="openDrawer('weather_gold')">
+              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_gold</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_silver_to_gold</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">gold/weather_forecast_curated</td><td style="color:#3b82f6">Logs</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- AIRFLOW DAGS -->
+    <div class="page" id="page-dags">
+      <div class="card">
+        <div class="ch"><span class="ct">batch_catalog_dags.py — catalog-driven DAG factory</span><span class="tag t-gy">CATALOG_PATH: configs/batch/pipeline_catalog.json</span></div>
+        <table>
+          <thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Tags</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="jn">gold_price_pipeline</td><td class="mo">null (manual)</td><td>gold_price_ingest → gold_price_silver → gold_price_gold</td><td>gold_price · batch · catalog_driven</td><td><span class="dot dg"></span>active</td></tr>
+            <tr><td class="jn">weather_forecast_pipeline</td><td class="mo">null (manual)</td><td>weather_forecast_ingest → weather_forecast_silver → weather_forecast_gold</td><td>weather · batch · catalog_driven</td><td><span class="dot dg"></span>active</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="ch"><span class="ct">Airflow services (compose.phase2.yaml)</span></div>
+        <table>
+          <thead><tr><th>Service</th><th>Role</th><th>Port</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="jn">airflow-api-server</td><td>REST API + UI</td><td>8090→8080</td><td><span class="dot dg"></span>healthy</td></tr>
+            <tr><td class="jn">airflow-scheduler</td><td>Task scheduling</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
+            <tr><td class="jn">airflow-dag-processor</td><td>DAG file parsing</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
+            <tr><td class="jn">airflow-triggerer</td><td>Deferrable operators</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
+            <tr><td class="jn">airflow-postgres</td><td>Metadata DB</td><td>internal</td><td><span class="dot dg"></span>healthy</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DELTA LAKEHOUSE -->
+    <div class="page" id="page-lake">
+      <div class="card">
+        <div class="ch"><span class="ct">Delta Lakehouse — MinIO · s3a://lakehouse/</span></div>
+        <table>
+          <thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Write mode</th><th>Partition</th></tr></thead>
+          <tbody>
+            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze/gold_price_events</td><td>gold_price_pipeline</td><td>append</td><td>ingest_year/month/day/hour</td></tr>
+            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze/weather_forecast_events</td><td>weather_forecast_pipeline</td><td>append</td><td>ingest_year/month/day/hour</td></tr>
+            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze_delta/user_events</td><td>clickstream (stream)</td><td>append stream</td><td>event_date</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver/gold_price_ticks_clean</td><td>gold_price_pipeline</td><td>merge (event_id)</td><td>processing_date</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver/weather_forecast_clean</td><td>weather_forecast_pipeline</td><td>merge (event_id)</td><td>processing_date</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver_delta/user_events_clean</td><td>clickstream (stream)</td><td>append stream</td><td>event_date</td></tr>
+            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver_delta/user_events_quarantine</td><td>clickstream (stream)</td><td>append</td><td>—</td></tr>
+            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">gold/gold_price_curated</td><td>gold_price_pipeline</td><td>merge (event_id)</td><td>trade_date</td></tr>
+            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">gold/weather_forecast_curated</td><td>weather_forecast_pipeline</td><td>merge (event_id)</td><td>event_date</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- INFRASTRUCTURE -->
+    <div class="page" id="page-infra">
+      <div class="sl">Phase 1 — Core Lakehouse (compose/compose.phase1.yaml)</div>
+      <div class="g3" style="margin-bottom:16px">
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">MinIO</div><div class="is">Object storage · S3-compatible</div></div>
+            <div class="il" style="background:#78350f30;color:#fbbf24">S3</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>Ports</span><span>:9000 / :9001</span></div>
+          <div class="ist"><span>Bucket</span><span class="mo">lakehouse</span></div>
+        </div>
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">Apache Spark 3.5.1</div><div class="is">custom docker/spark/Dockerfile</div></div>
+            <div class="il" style="background:#1e3a5f;color:#60a5fa">Sp</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:88%;background:#4ade80"></div></div>
+          <div class="ist"><span>Master</span><span>:8080 / :7077</span></div>
+          <div class="ist"><span>Workers</span><span>spark-worker (:8081) + spark-worker-2 (:8082)</span></div>
+          <div class="ist"><span>Each</span><span>2 cores · 2G RAM</span></div>
+        </div>
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">PostgreSQL 16</div><div class="is">Warehouse + pgAdmin :5050</div></div>
+            <div class="il" style="background:#14532d30;color:#4ade80">PG</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>Port</span><span>:5432</span></div>
+          <div class="ist"><span>Status</span><span style="color:#4ade80">Healthy</span></div>
+        </div>
+      </div>
+      <div class="sl">Phase 2 — Streaming + Orchestration (compose/compose.phase2.yaml)</div>
+      <div class="g3" style="margin-bottom:16px">
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">Apache Kafka 3.9.2</div><div class="is">KRaft · kafka-init-topics</div></div>
+            <div class="il" style="background:#78350f30;color:#fbbf24">Ka</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:78%;background:#fbbf24"></div></div>
+          <div class="ist"><span>Topic</span><span class="mo">user_events (3p)</span></div>
+          <div class="ist"><span>Lag</span><span style="color:#fbbf24">~800 msgs</span></div>
+        </div>
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">spark-stream-supervisor</div><div class="is">Manages bronze + silver streams</div></div>
+            <div class="il" style="background:#14532d30;color:#4ade80">SV</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>Registry</span><span class="mo">stream_registry.json</span></div>
+          <div class="ist"><span>Restart</span><span>max 10 retries · 10s backoff</span></div>
+        </div>
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">Airflow</div><div class="is">LocalExecutor · runtime:latest</div></div>
+            <div class="il" style="background:#14532d30;color:#4ade80">Af</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>UI</span><span>:8090</span></div>
+          <div class="ist"><span>DAGs</span><span>batch_catalog_dags.py</span></div>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">Collector (FastAPI)</div><div class="is">Event ingestion · :8000</div></div>
+            <div class="il" style="background:#3b076430;color:#c084fc">Co</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>Endpoint</span><span class="mo">POST /collect</span></div>
+          <div class="ist"><span>Fallback</span><span>events.jsonl</span></div>
+        </div>
+        <div class="ic">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div><div class="in">Web Demo + Dashboard</div><div class="is">compose.simulator.yaml</div></div>
+            <div class="il" style="background:#3b076430;color:#c084fc">Wb</div>
+          </div>
+          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
+          <div class="ist"><span>Web Demo</span><span>:8091</span></div>
+          <div class="ist"><span>Dashboard</span><span>:9090 (nginx)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALERTS -->
+    <div class="page" id="page-alerts">
+      <div class="card">
+        <div class="ch"><span class="ct">Active alerts</span><span class="tag t-am">2 active</span></div>
+        <div>
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1a1f2e">
+            <div style="width:28px;height:28px;background:#78350f30;color:#fbbf24;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">!</div>
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:500;color:#e2e8f0">Kafka consumer lag — user_events topic</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px">~800 uncommitted messages · 3 partitions · bronze trigger 15s</div>
+            </div>
+            <span class="tag t-am">Warning</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">
+            <div style="width:28px;height:28px;background:#1e3a5f;color:#60a5fa;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">i</div>
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:500;color:#e2e8f0">Both batch DAGs have schedule: null</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px">Must be triggered manually via Airflow UI (:8090) or REST API.</div>
+            </div>
+            <span class="tag t-bl">Info</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- LOG DRAWER -->
+<div class="ov" id="logDrawer" onclick="closeDrawer(event)">
+  <div class="dr3">
+    <div class="dh">
+      <div class="dhi"><div class="dht" id="d-title">Logs</div><div class="dhg" id="d-tags"></div></div>
+      <button class="dc" onclick="document.getElementById('logDrawer').classList.remove('open')">✕</button>
+    </div>
+    <div class="dm" id="d-meta"></div>
+    <div class="dtb">
+      <input type="text" id="logSearch" placeholder="Filter logs..." oninput="filterLogs()">
+      <div class="lbs">
+        <div class="lb INFO on" onclick="toggleLevel(this)">INFO</div>
+        <div class="lb WARN on" onclick="toggleLevel(this)">WARN</div>
+        <div class="lb ERROR on" onclick="toggleLevel(this)">ERROR</div>
+      </div>
+      <button class="btn bg" style="font-size:11px;padding:4px 10px" onclick="downloadLogs()">Export</button>
+    </div>
+    <div class="lb-body" id="logBody"></div>
+    <div class="df"><span id="logCount"></span><span id="logLive" style="color:#4ade80"></span></div>
+  </div>
+</div>
+
+<script>
+var JOBS = {
+  bronze_clt: {
+    name: "bronze_clickstream_user_events",
+    tags: [{t:"Stream",c:"t-bl"},{t:"Running",c:"t-gr"},{t:"generic_kafka_to_bronze",c:"t-gy"}],
+    meta: [["App","bronze_clickstream_user_events"],["Topic","user_events · 3 partitions · kafka:19092"],["Bronze path","s3a://lakehouse/bronze_delta/user_events"],["Trigger","15 seconds"],["Heartbeat","/tmp/health/bronze_clickstream_user_events.json"]],
+    live: true,
+    logs: [
+      {ts:"09:00:00",l:"INFO",m:"[supervisor] starting 'clickstream_user_events_bronze'"},
+      {ts:"09:00:01",l:"INFO",m:"[bronze] starting app=bronze_clickstream_user_events topic=user_events"},
+      {ts:"09:00:02",l:"INFO",m:"[bronze] waiting for Kafka topic user_events (startup_wait=60s)"},
+      {ts:"09:00:04",l:"INFO",m:"[bronze] topic ready. Starting Spark Structured Streaming."},
+      {ts:"09:00:05",l:"INFO",m:"[bronze] S3A endpoint: http://minio:9000. DeltaLake extensions loaded."},
+      {ts:"09:00:06",l:"INFO",m:"[bronze] streaming query started. Trigger: ProcessingTime(15000ms)."},
+      {ts:"09:00:21",l:"INFO",m:"[bronze] batch_id=0 last_batch_rows=142 last_write_ok=True"},
+      {ts:"09:00:36",l:"INFO",m:"[bronze] batch_id=1 last_batch_rows=98"},
+      {ts:"09:00:51",l:"INFO",m:"[bronze] batch_id=2 last_batch_rows=210"},
+      {ts:"09:01:06",l:"WARN",m:"[bronze] batch_id=3 consumer lag detected on partitions [0,1,2]. lag=~800"},
+      {ts:"09:01:21",l:"INFO",m:"[bronze] batch_id=4 last_batch_rows=340. Lag recovering."},
+      {ts:"09:01:36",l:"INFO",m:"[bronze] batch_id=5 last_batch_rows=290. Checkpoint saved."}
+    ]
+  },
+  silver_clt: {
+    name: "silver_clickstream_user_events",
+    tags: [{t:"Stream",c:"t-bl"},{t:"Running",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
+    meta: [["App","silver_clickstream_user_events"],["Bronze","s3a://lakehouse/bronze_delta/user_events"],["Silver","s3a://lakehouse/silver_delta/user_events_clean"],["Quarantine","s3a://lakehouse/silver_delta/user_events_quarantine"],["Trigger","30 seconds"],["Required fields","event_type, event_date"]],
+    live: true,
+    logs: [
+      {ts:"09:00:10",l:"INFO",m:"[supervisor] starting 'clickstream_user_events_silver'"},
+      {ts:"09:00:11",l:"INFO",m:"[silver] starting app=silver_clickstream_user_events"},
+      {ts:"09:00:12",l:"INFO",m:"[silver] checking bronze path s3a://lakehouse/bronze_delta/user_events ... exists."},
+      {ts:"09:00:13",l:"INFO",m:"[silver] readStream from Delta bronze. Trigger: 30 seconds."},
+      {ts:"09:00:43",l:"INFO",m:"[silver] batch_id=0 input_count=240 valid=238 invalid=2"},
+      {ts:"09:00:43",l:"INFO",m:"[silver] writing valid rows to s3a://lakehouse/silver_delta/user_events_clean"},
+      {ts:"09:00:43",l:"INFO",m:"[silver] writing invalid rows to quarantine path"},
+      {ts:"09:00:43",l:"INFO",m:"[silver] batch_id=0 last_valid_rows=238 last_invalid_rows=2 last_write_ok=True"},
+      {ts:"09:01:13",l:"INFO",m:"[silver] batch_id=1 total=196 valid=196 invalid=0. Heartbeat updated."},
+      {ts:"09:01:43",l:"INFO",m:"[silver] batch_id=2 total=280 valid=279 invalid=1"},
+      {ts:"09:02:13",l:"INFO",m:"[silver] batch_id=3 total=320 valid=320 invalid=0. Checkpoint saved."}
+    ]
+  },
+  gold_price_ingest: {
+    name: "gold_price_ingest",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_api_to_bronze",c:"t-gy"}],
+    meta: [["Pipeline","gold_price_pipeline"],["Runner","batch/runners/generic_api_to_bronze.py"],["API","https://api.metalpriceapi.com/v1/latest"],["Auth","query_param: api_key (METALPRICE_API_KEY)"],["Output","s3a://lakehouse/bronze/gold_price_events"]],
+    live: false,
+    logs: [
+      {ts:"09:00:00",l:"INFO",m:"[START] pipeline=gold_price_pipeline, job=gold_price_ingest"},
+      {ts:"09:00:01",l:"INFO",m:"[STEP] runtime context built. source=metalpriceapi.com, auth=query_param"},
+      {ts:"09:00:02",l:"INFO",m:"[STEP] executing API request GET https://api.metalpriceapi.com/v1/latest"},
+      {ts:"09:00:03",l:"INFO",m:"[STEP] API response 200 OK. $.success=true, $.rates.USD present."},
+      {ts:"09:00:03",l:"INFO",m:"[STEP] payload validated. Mapping row: symbol=XAU, price_usd=3301.45"},
+      {ts:"09:00:04",l:"INFO",m:"[STEP] event_id computed (SHA-256 of source_name+source_event_ts+payload)."},
+      {ts:"09:00:05",l:"INFO",m:"[STEP] Spark session created: generic_api_to_bronze."},
+      {ts:"09:00:09",l:"INFO",m:"[STEP] write finished target=s3a://lakehouse/bronze/gold_price_events"},
+      {ts:"09:00:10",l:"INFO",m:"[BRONZE_WRITE_OK] path=s3a://lakehouse/bronze/gold_price_events, rows=15"},
+      {ts:"09:00:10",l:"INFO",m:"[SUCCESS] Wrote Bronze rows for job 'gold_price_ingest'."}
+    ]
+  },
+  gold_price_silver: {
+    name: "gold_price_silver",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
+    meta: [["Pipeline","gold_price_pipeline"],["Source","s3a://lakehouse/bronze/gold_price_events"],["Target","s3a://lakehouse/silver/gold_price_ticks_clean"],["Merge key","event_id"],["Partition","processing_date"]],
+    live: false,
+    logs: [
+      {ts:"09:00:11",l:"INFO",m:"generic_bronze_to_silver started. job=gold_price_silver"},
+      {ts:"09:00:13",l:"INFO",m:"Reading bronze: s3a://lakehouse/bronze/gold_price_events. Rows: 15."},
+      {ts:"09:00:14",l:"INFO",m:"Applying filters: api_status == 'success'. 15 rows pass."},
+      {ts:"09:00:14",l:"INFO",m:"Applying select_map: event_id, symbol, source_name, event_ts_utc, price_usd, currency."},
+      {ts:"09:00:15",l:"INFO",m:"Applying quality_rules: price_usd > 0, event_ts_utc notNull."},
+      {ts:"09:00:15",l:"INFO",m:"Applying dedupe: key_columns=[event_id]. 0 duplicates removed."},
+      {ts:"09:00:18",l:"INFO",m:"Delta merge executed. 13 rows: 11 matched(updated), 2 not-matched(inserted)."},
+      {ts:"09:00:18",l:"INFO",m:"Wrote Silver rows to s3a://lakehouse/silver/gold_price_ticks_clean."}
+    ]
+  },
+  gold_price_gold: {
+    name: "gold_price_gold",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_silver_to_gold",c:"t-gy"}],
+    meta: [["Pipeline","gold_price_pipeline"],["Source","s3a://lakehouse/silver/gold_price_ticks_clean"],["Target","s3a://lakehouse/gold/gold_price_curated"],["Derived","trade_date · price_bucket (low/mid/high)"]],
+    live: false,
+    logs: [
+      {ts:"09:00:19",l:"INFO",m:"generic_silver_to_gold started. job=gold_price_gold"},
+      {ts:"09:00:20",l:"INFO",m:"Reading silver: s3a://lakehouse/silver/gold_price_ticks_clean. Rows: 13."},
+      {ts:"09:00:21",l:"INFO",m:"Applying derived_fields: trade_date=to_date(event_ts), price_bucket=case when price_usd<2500 low when <3500 mid else high."},
+      {ts:"09:00:22",l:"INFO",m:"Applying quality_rules: event_id notNull, event_ts notNull. All pass."},
+      {ts:"09:00:25",l:"INFO",m:"Delta merge executed. 13 rows upserted. price_bucket=high (price ~3300 USD)."},
+      {ts:"09:00:25",l:"INFO",m:"Wrote Gold rows to s3a://lakehouse/gold/gold_price_curated."}
+    ]
+  },
+  weather_ingest: {
+    name: "weather_forecast_ingest",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_api_to_bronze",c:"t-gy"}],
+    meta: [["Pipeline","weather_forecast_pipeline"],["API","https://api.open-meteo.com/v1/forecast"],["Auth","none (public API)"],["Params","lat=51.5085, lon=-0.1257, London, forecast_days=3"],["Output","s3a://lakehouse/bronze/weather_forecast_events"]],
+    live: false,
+    logs: [
+      {ts:"09:05:00",l:"INFO",m:"[START] pipeline=weather_forecast_pipeline, job=weather_forecast_ingest"},
+      {ts:"09:05:01",l:"INFO",m:"[STEP] runtime context built. source=open-meteo.com, auth=none."},
+      {ts:"09:05:02",l:"INFO",m:"[STEP] API response 200 OK. $.latitude, $.hourly, $.daily validated."},
+      {ts:"09:05:03",l:"INFO",m:"[STEP] mapped row: source_name=open_meteo, payload_json=canonical_json(response)."},
+      {ts:"09:05:06",l:"INFO",m:"[STEP] write finished: s3a://lakehouse/bronze/weather_forecast_events"},
+      {ts:"09:05:07",l:"INFO",m:"[BRONZE_WRITE_OK] path=s3a://lakehouse/bronze/weather_forecast_events, rows=1"},
+      {ts:"09:05:07",l:"INFO",m:"[SUCCESS] Wrote Bronze rows for job 'weather_forecast_ingest'."}
+    ]
+  },
+  weather_silver: {
+    name: "weather_forecast_silver",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
+    meta: [["Pipeline","weather_forecast_pipeline"],["Transform","json_array_zip_explode (72 hourly rows)"],["Source","s3a://lakehouse/bronze/weather_forecast_events"],["Target","s3a://lakehouse/silver/weather_forecast_clean"]],
+    live: false,
+    logs: [
+      {ts:"09:05:08",l:"INFO",m:"generic_bronze_to_silver started. job=weather_forecast_silver"},
+      {ts:"09:05:09",l:"INFO",m:"Reading bronze: 1 row (single API response)."},
+      {ts:"09:05:10",l:"INFO",m:"Transform: json_array_zip_explode. Extracting hourly arrays (72 hours)."},
+      {ts:"09:05:11",l:"INFO",m:"Root fields extracted: latitude=51.5085, longitude=-0.1257, timezone=Europe/London."},
+      {ts:"09:05:11",l:"INFO",m:"Array zip explode complete. 72 rows generated (one per forecast hour)."},
+      {ts:"09:05:12",l:"INFO",m:"event_id computed: hash(source_name, latitude, longitude, forecast_ts_utc)."},
+      {ts:"09:05:13",l:"INFO",m:"Quality rules: event_id notNull. 72 rows pass."},
+      {ts:"09:05:16",l:"INFO",m:"Delta merge: 72 rows not-matched inserted. Wrote to silver/weather_forecast_clean."}
+    ]
+  },
+  weather_gold: {
+    name: "weather_forecast_gold",
+    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_silver_to_gold",c:"t-gy"}],
+    meta: [["Pipeline","weather_forecast_pipeline"],["Source","s3a://lakehouse/silver/weather_forecast_clean"],["Target","s3a://lakehouse/gold/weather_forecast_curated"],["Derived","event_date · dataset_name"]],
+    live: false,
+    logs: [
+      {ts:"09:05:17",l:"INFO",m:"generic_silver_to_gold started. job=weather_forecast_gold"},
+      {ts:"09:05:18",l:"INFO",m:"Reading silver: s3a://lakehouse/silver/weather_forecast_clean. Rows: 72."},
+      {ts:"09:05:19",l:"INFO",m:"Derived: event_date=to_date(ingestion_ts), dataset_name='weather_forecast_raw'."},
+      {ts:"09:05:20",l:"INFO",m:"Quality rules: event_id, ingestion_ts, payload_json all notNull. 72 rows pass."},
+      {ts:"09:05:22",l:"INFO",m:"Delta merge: 72 rows upserted to s3a://lakehouse/gold/weather_forecast_curated."},
+      {ts:"09:05:22",l:"INFO",m:"Wrote Gold rows. Task SUCCESS."}
+    ]
+  }
+};
+
+function openDrawer(id) {
+  var j = JOBS[id];
+  if (!j) return;
+  document.getElementById("d-title").textContent = j.name;
+  document.getElementById("d-tags").innerHTML = j.tags.map(function(t) {
+    return '<span class="tag ' + t.c + '">' + t.t + "</span>";
+  }).join("");
+  document.getElementById("d-meta").innerHTML = j.meta.map(function(m) {
+    return '<div class="dmi">' + m[0] + ": <span>" + m[1] + "</span></div>";
+  }).join("");
+  document.getElementById("logLive").textContent = j.live ? "⬤ Live" : "";
+  var body = document.getElementById("logBody");
+  body.innerHTML = j.logs.map(function(l) {
+    return '<div class="ll" data-level="' + l.l + '"><span class="ll-ts">' + l.ts + '</span><span class="ll-lv ' + l.l + '">' + l.l + '</span><span class="ll-msg">' + l.m + "</span></div>";
+  }).join("");
+  document.getElementById("logSearch").value = "";
+  document.querySelectorAll(".lb").forEach(function(b) { b.classList.add("on"); });
+  updateCount();
+  document.getElementById("logDrawer").classList.add("open");
+  setTimeout(function() { body.scrollTop = body.scrollHeight; }, 50);
+}
+
+function closeDrawer(e) {
+  if (e.target === document.getElementById("logDrawer")) {
+    document.getElementById("logDrawer").classList.remove("open");
+  }
+}
+
+function toggleLevel(btn) {
+  btn.classList.toggle("on");
+  filterLogs();
+}
+
+function filterLogs() {
+  var q = document.getElementById("logSearch").value.toLowerCase();
+  var active = {};
+  document.querySelectorAll(".lb.on").forEach(function(b) { active[b.textContent] = true; });
+  document.querySelectorAll(".ll").forEach(function(l) {
+    var msg = l.querySelector(".ll-msg");
+    var vis = active[l.dataset.level] && (!q || msg.textContent.toLowerCase().indexOf(q) >= 0);
+    l.classList.toggle("hidden", !vis);
+    if (q && vis) {
+      var re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+      msg.innerHTML = msg.textContent.replace(re, '<span class="hl">$1</span>');
+    } else {
+      msg.innerHTML = msg.textContent;
+    }
+  });
+  updateCount();
+}
+
+function updateCount() {
+  var tot = document.querySelectorAll(".ll").length;
+  var vis = document.querySelectorAll(".ll:not(.hidden)").length;
+  document.getElementById("logCount").textContent = vis === tot ? tot + " lines" : vis + " of " + tot + " lines";
+}
+
+function downloadLogs() {
+  var txt = [];
+  document.querySelectorAll(".ll:not(.hidden)").forEach(function(l) {
+    txt.push("[" + l.querySelector(".ll-ts").textContent + "] " + l.querySelector(".ll-lv").textContent + " " + l.querySelector(".ll-msg").textContent);
+  });
+  var a = document.createElement("a");
+  a.href = "data:text/plain;charset=utf-8," + encodeURIComponent(txt.join("\n"));
+  a.download = "job-logs.txt";
+  a.click();
+}
+
+function show(id, el) {
+  document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
+  document.querySelectorAll(".ni").forEach(function(n) { n.classList.remove("active"); });
+  document.getElementById("page-" + id).classList.add("active");
+  el.classList.add("active");
+  var titles = {
+    dashboard: "Dashboard", gold_p: "gold_price_pipeline", weather_p: "weather_forecast_pipeline",
+    events_p: "clickstream_user_events", monitor: "Job Monitor", dags: "Airflow DAGs",
+    lake: "Delta Lakehouse", infra: "Infrastructure", alerts: "Alerts"
+  };
+  document.getElementById("pt").textContent = titles[id] || id;
+}
+
+new Chart(document.getElementById("throughputChart"), {
+  type: "line",
+  data: {
+    labels: ["0s","15s","30s","45s","60s","75s","90s","105s","120s","135s","150s","165s","180s","195s","210s","225s","240s","255s","270s","285s"],
+    datasets: [{
+      label: "Events/batch",
+      data: [142,98,210,98,320,280,200,310,260,290,330,180,240,310,270,200,280,340,250,290],
+      borderColor: "#818cf8", backgroundColor: "rgba(129,140,248,0.07)",
+      borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.4
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: "#475569", font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: "#1e2535" } },
+      y: { ticks: { color: "#475569", font: { size: 10 } }, grid: { color: "#1e2535" } }
+    }
+  }
+});
+
+new Chart(document.getElementById("stageChart"), {
+  type: "bar",
+  data: {
+    labels: ["api_to_bronze", "bronze_to_silver", "silver_to_gold"],
+    datasets: [
+      { label: "gold_price", data: [85, 60, 55], backgroundColor: "#78350f80", borderColor: "#fbbf24", borderWidth: 1 },
+      { label: "weather_forecast", data: [90, 75, 50], backgroundColor: "#1e3a5f80", borderColor: "#60a5fa", borderWidth: 1 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: "y",
+    plugins: { legend: { labels: { color: "#94a3b8", font: { size: 10 }, boxWidth: 10 } } },
+    scales: {
+      x: { ticks: { color: "#475569", font: { size: 10 }, callback: function(v) { return v + "s"; } }, grid: { color: "#1e2535" } },
+      y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e2535" } }
+    }
+  }
+});
+</script>
+</body>
+</html>

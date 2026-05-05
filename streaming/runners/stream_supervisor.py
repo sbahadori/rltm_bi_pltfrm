@@ -129,10 +129,21 @@ class StreamSupervisor:
             flush=True,
         )
 
+        log_dir = Path(os.getenv("STREAM_LOG_DIR", "/tmp/health/logs"))
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        log_path = log_dir / f"{state.unit_name}.log"
+        log_file = log_path.open("a", encoding="utf-8")
+
+        print(
+            f"[supervisor] writing logs for '{state.unit_name}' to {log_path}",
+            flush=True,
+        )
+
         proc = subprocess.Popen(
             cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             text=True,
             env=os.environ.copy(),
         )

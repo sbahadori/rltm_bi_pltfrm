@@ -194,6 +194,8 @@ services:
       - kafka
       - kafka-init-topics
     user: "0:0"
+    environment:
+      STREAM_LOG_DIR: /tmp/health/logs
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&

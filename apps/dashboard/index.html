@@ -6,6 +6,7 @@
 <title>rltm_bi_pltfrm</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
+
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;display:flex;height:100vh;overflow:hidden;font-size:13px}
 .sidebar{width:236px;background:#161b27;border-right:1px solid #1e2535;display:flex;flex-direction:column;flex-shrink:0}
@@ -126,78 +127,92 @@ tr:hover td{background:#1a2236}
 .df span{font-size:11px;color:#475569}
 .pp{font-family:monospace;font-size:10px;background:#0f1117;border:1px solid #1e2535;padding:2px 7px;border-radius:4px;color:#64748b}
 .sl{font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+
+
+.dy{background:#fbbf24;box-shadow:0 0 4px #fbbf2455}
+.errbox{background:#7f1d1d22;border:1px solid #7f1d1d55;color:#fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.6}
+.empty{padding:18px;color:#64748b;font-size:12px;text-align:center}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:8px;padding:5px 0;border-bottom:1px solid #1a1f2e;font-size:12px}
+.kv:last-child{border-bottom:none}
+.kv .k{color:#64748b}
+.kv .v{color:#94a3b8;word-break:break-all}
+.ni.small{font-size:11px;padding-left:18px}
+.pillrow{display:flex;gap:6px;flex-wrap:wrap}
+
 </style>
 </head>
+
 <body>
 
 <aside class="sidebar">
   <div class="logo">
     <div class="logo-top">
       <div class="logo-icon">BI</div>
-      <div><div class="logo-text">rltm_bi_pltfrm</div><div class="logo-sub">Real-Time BI Platform</div></div>
+      <div>
+        <div class="logo-text">rltm_bi_pltfrm</div>
+        <div class="logo-sub">Real-Time BI Platform</div>
+      </div>
     </div>
     <div class="branch">branch: new_architecture_v2</div>
   </div>
+
   <nav>
     <div style="margin-bottom:14px">
       <div class="nl">Overview</div>
-      <div class="ni active" onclick="show('dashboard',this)">
+      <div class="ni active" data-page="dashboard">
         <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
         Dashboard
       </div>
     </div>
+
     <div style="margin-bottom:14px">
       <div class="nl">Batch Pipelines</div>
-      <div class="ni" onclick="show('gold_p',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-        gold_price_pipeline
-        <span class="nb nb-a">Batch</span>
-      </div>
-      <div class="ni" onclick="show('weather_p',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 2a4 4 0 00-3.85 5.1A3 3 0 105 13h8a3 3 0 000-6h-.15A4 4 0 008 2z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-        weather_forecast_pipeline
-        <span class="nb nb-a">Batch</span>
+      <div id="sidebarBatchList">
+        <div class="empty">Loading batch pipelines...</div>
       </div>
     </div>
+
     <div style="margin-bottom:14px">
       <div class="nl">Streaming</div>
-      <div class="ni" onclick="show('events_p',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 8h3l2-5 3 10 2-5 2 3h2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
-        clickstream_user_events
-        <span class="nb nb-b">Stream</span>
+      <div id="sidebarStreamList">
+        <div class="empty">Loading streams...</div>
       </div>
     </div>
+
     <div style="margin-bottom:14px">
       <div class="nl">Jobs</div>
-      <div class="ni" onclick="show('monitor',this)">
+      <div class="ni" data-page="monitor">
         <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 3h14v2H1zm0 4h14v2H1zm0 4h8v2H1z"/></svg>
         Job Monitor
       </div>
-      <div class="ni" onclick="show('dags',this)">
+      <div class="ni" data-page="dags">
         <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
         Airflow DAGs
       </div>
     </div>
+
     <div style="margin-bottom:14px">
       <div class="nl">Storage</div>
-      <div class="ni" onclick="show('lake',this)">
+      <div class="ni" data-page="lake">
         <svg fill="currentColor" viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.7 2 6 2s6-.9 6-2V4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 8v4c0 1.1 2.7 2 6 2s6-.9 6-2V8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
         Delta Lakehouse
       </div>
     </div>
+
     <div style="margin-bottom:14px">
       <div class="nl">System</div>
-      <div class="ni" onclick="show('infra',this)">
+      <div class="ni" data-page="infra">
         <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
         Infrastructure
       </div>
-      <div class="ni" onclick="show('alerts',this)">
+      <div class="ni" data-page="alerts">
         <svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a5 5 0 00-5 5v3l-1 2h12l-1-2V6a5 5 0 00-5-5zm-1 13a1 1 0 002 0H7z"/></svg>
         Alerts
-        <span class="nb nb-a">2</span>
+        <span class="nb nb-a" id="alertsBadge">0</span>
       </div>
     </div>
   </nav>
+
   <div class="sf">
     <div style="display:flex;align-items:center;gap:8px">
       <div class="av">AD</div>
@@ -213,199 +228,131 @@ tr:hover td{background:#1a2236}
   <div class="topbar">
     <div class="tb-title" id="pt">Dashboard</div>
     <div class="tb-right">
-      <span class="tag t-gr"><span class="dot dg"></span>Supervisor healthy · 2 streams</span>
-      <span class="tag t-am">2 DAGs · schedule: null</span>
-      <button class="btn bg">Refresh</button>
+      <span class="tag t-gy" id="topRuntimeStatus">Loading runtime...</span>
+      <span class="tag t-gy" id="topDagStatus">Loading catalog...</span>
+      <button class="btn bg" id="refreshBtn">Refresh</button>
     </div>
   </div>
 
   <div class="content">
+    <div id="globalError"></div>
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
       <div class="mr">
-        <div class="mc"><div class="ml">Streaming jobs (supervisor)</div><div class="mv" style="color:#4ade80">2</div><div class="ms up">bronze + silver · clickstream</div></div>
-        <div class="mc"><div class="ml">Batch pipelines (catalog)</div><div class="mv">2</div><div class="ms">gold_price · weather_forecast</div></div>
-        <div class="mc"><div class="ml">Delta layers</div><div class="mv">6</div><div class="ms">bronze/silver/gold · batch + stream</div></div>
-        <div class="mc"><div class="ml">Kafka lag (user_events)</div><div class="mv wn">~800</div><div class="ms wn">3 partitions · trigger 15s</div></div>
+        <div class="mc">
+          <div class="ml">Streaming jobs</div>
+          <div class="mv" id="metricStreams">-</div>
+          <div class="ms" id="metricStreamsSub">Loading...</div>
+        </div>
+        <div class="mc">
+          <div class="ml">Batch pipelines</div>
+          <div class="mv" id="metricBatch">-</div>
+          <div class="ms" id="metricBatchSub">Loading...</div>
+        </div>
+        <div class="mc">
+          <div class="ml">Delta targets</div>
+          <div class="mv" id="metricDelta">-</div>
+          <div class="ms" id="metricDeltaSub">From catalog specs</div>
+        </div>
+        <div class="mc">
+          <div class="ml">Runtime issues</div>
+          <div class="mv" id="metricIssues">-</div>
+          <div class="ms" id="metricIssuesSub">Runtime API dependent</div>
+        </div>
       </div>
+
       <div class="g2">
         <div class="card">
-          <div class="ch"><span class="ct">Streaming ingest — user_events (15s micro-batch)</span><span class="tag t-bl">Live</span></div>
-          <div class="cw"><canvas id="throughputChart" role="img" aria-label="Streaming throughput">Batch sizes vary.</canvas></div>
+          <div class="ch">
+            <span class="ct">Streaming runtime snapshot</span>
+            <span class="tag t-bl" id="streamSnapshotTag">Runtime</span>
+          </div>
+          <div class="cw"><canvas id="throughputChart" role="img" aria-label="Stream heartbeat age chart"></canvas></div>
         </div>
         <div class="card">
-          <div class="ch"><span class="ct">Batch pipeline task durations</span><span class="tag t-am">generic runners</span></div>
-          <div class="cw"><canvas id="stageChart" role="img" aria-label="Task durations">Task durations.</canvas></div>
+          <div class="ch">
+            <span class="ct">Batch catalog composition</span>
+            <span class="tag t-am">Catalog</span>
+          </div>
+          <div class="cw"><canvas id="stageChart" role="img" aria-label="Batch jobs by pipeline chart"></canvas></div>
         </div>
       </div>
+
       <div class="card">
-        <div class="ch"><span class="ct">Recent activity</span></div>
+        <div class="ch">
+          <span class="ct">Recent activity</span>
+          <span class="tag t-gy" id="lastRefreshTag">Not refreshed yet</span>
+        </div>
         <table>
           <thead><tr><th>Job / Stream</th><th>Type</th><th>Runner</th><th>Status</th><th>Output path</th><th>Updated</th></tr></thead>
-          <tbody>
-            <tr style="cursor:pointer" onclick="openDrawer('bronze_clt')"><td class="jn">bronze_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_kafka_to_bronze</td><td><span class="dot dg"></span>Running</td><td class="pp">bronze_delta/user_events</td><td>Just now</td></tr>
-            <tr style="cursor:pointer" onclick="openDrawer('silver_clt')"><td class="jn">silver_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Running</td><td class="pp">silver_delta/user_events_clean</td><td>30s ago</td></tr>
-            <tr style="cursor:pointer" onclick="openDrawer('gold_price_ingest')"><td class="jn">gold_price_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">bronze/gold_price_events</td><td>5 min ago</td></tr>
-            <tr style="cursor:pointer" onclick="openDrawer('gold_price_silver')"><td class="jn">gold_price_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">silver/gold_price_ticks_clean</td><td>6 min ago</td></tr>
-            <tr style="cursor:pointer" onclick="openDrawer('weather_ingest')"><td class="jn">weather_forecast_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td class="pp">bronze/weather_forecast_events</td><td>12 min ago</td></tr>
+          <tbody id="recentActivityBody">
+            <tr><td colspan="6" class="empty">Loading jobs...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- GOLD PRICE PIPELINE -->
-    <div class="page" id="page-gold_p">
+    <!-- GENERIC PIPELINE DETAIL -->
+    <div class="page" id="page-pipeline">
       <div class="card">
-        <div class="ch"><span class="ct">gold_price_pipeline — catalog-driven DAG (schedule: null)</span><span class="tag t-gr">Last run: succeeded</span></div>
-        <div class="dw"><div class="dr2">
-          <div class="dn2 ok" onclick="openDrawer('gold_price_ingest')">
-            <div class="t">gold_price_ingest</div>
-            <div class="s">generic_api_to_bronze</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-gy" style="font-size:9px">metalpriceapi · XAU/USD</span></div>
+        <div class="ch">
+          <span class="ct" id="pipelineTitle">Pipeline</span>
+          <span class="tag t-am" id="pipelineSchedule">schedule</span>
+        </div>
+        <div class="dw">
+          <div class="dr2" id="pipelineFlow">
+            <div class="empty">Select a batch pipeline.</div>
           </div>
-          <span class="da2">→</span>
-          <div class="dn2 ok" onclick="openDrawer('gold_price_silver')">
-            <div class="t">gold_price_silver</div>
-            <div class="s">generic_bronze_to_silver</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-gr" style="font-size:9px">dedup event_id · quality</span></div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 ok" onclick="openDrawer('gold_price_gold')">
-            <div class="t">gold_price_gold</div>
-            <div class="s">generic_silver_to_gold</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-am" style="font-size:9px">price_bucket · trade_date</span></div>
-          </div>
-        </div></div>
+        </div>
       </div>
-      <div class="card">
-        <div class="ch"><span class="ct">Delta paths — gold_price_pipeline</span></div>
-        <table>
-          <thead><tr><th>Layer</th><th>Path (MinIO)</th><th>Mode</th><th>Merge key</th><th>Partition</th></tr></thead>
-          <tbody>
-            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">s3a://lakehouse/bronze/gold_price_events</td><td>append</td><td>—</td><td>ingest_year/month/day/hour</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">s3a://lakehouse/silver/gold_price_ticks_clean</td><td>merge</td><td>event_id</td><td>processing_date</td></tr>
-            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">s3a://lakehouse/gold/gold_price_curated</td><td>merge</td><td>event_id</td><td>trade_date</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="card">
-        <div class="ch"><span class="ct">Job spec (pipeline_catalog.json)</span></div>
-        <table>
-          <thead><tr><th>Job name</th><th>Type</th><th>Source</th><th>Auth</th><th>Timeout</th></tr></thead>
-          <tbody>
-            <tr><td class="jn">gold_price_ingest</td><td class="mo">generic_api_to_bronze</td><td class="mo">metalpriceapi.com/v1/latest</td><td>query_param: api_key</td><td>10 min</td></tr>
-            <tr><td class="jn">gold_price_silver</td><td class="mo">generic_bronze_to_silver</td><td class="mo">bronze/gold_price_events</td><td>—</td><td>10 min</td></tr>
-            <tr><td class="jn">gold_price_gold</td><td class="mo">generic_silver_to_gold</td><td class="mo">silver/gold_price_ticks_clean</td><td>—</td><td>10 min</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
 
-    <!-- WEATHER PIPELINE -->
-    <div class="page" id="page-weather_p">
-      <div class="card">
-        <div class="ch"><span class="ct">weather_forecast_pipeline — catalog-driven DAG (schedule: null)</span><span class="tag t-gr">Last run: succeeded</span></div>
-        <div class="dw"><div class="dr2">
-          <div class="dn2 ok" onclick="openDrawer('weather_ingest')">
-            <div class="t">weather_forecast_ingest</div>
-            <div class="s">generic_api_to_bronze</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-gy" style="font-size:9px">open-meteo.com · London</span></div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 ok" onclick="openDrawer('weather_silver')">
-            <div class="t">weather_forecast_silver</div>
-            <div class="s">generic_bronze_to_silver</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-gr" style="font-size:9px">json_array_zip_explode</span></div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 ok" onclick="openDrawer('weather_gold')">
-            <div class="t">weather_forecast_gold</div>
-            <div class="s">generic_silver_to_gold</div>
-            <div class="s" style="margin-top:3px"><span class="tag t-am" style="font-size:9px">curated · event_date</span></div>
-          </div>
-        </div></div>
-      </div>
-      <div class="card">
-        <div class="ch"><span class="ct">Delta paths — weather_forecast_pipeline</span></div>
-        <table>
-          <thead><tr><th>Layer</th><th>Path (MinIO)</th><th>Mode</th><th>Merge key</th><th>Partition</th></tr></thead>
-          <tbody>
-            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">s3a://lakehouse/bronze/weather_forecast_events</td><td>append</td><td>—</td><td>ingest_year/month/day/hour</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">s3a://lakehouse/silver/weather_forecast_clean</td><td>merge</td><td>event_id</td><td>processing_date</td></tr>
-            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">s3a://lakehouse/gold/weather_forecast_curated</td><td>merge</td><td>event_id</td><td>event_date</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- STREAMING -->
-    <div class="page" id="page-events_p">
-      <div class="card">
-        <div class="ch"><span class="ct">clickstream_user_events — stream_registry.json</span><span class="tag t-bl">Live</span></div>
-        <div class="dw"><div class="dr2">
-          <div class="dn2 stm">
-            <div class="t">Web Demo (FastAPI)</div>
-            <div class="s">:8091 → collector</div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 run">
-            <div class="t">Collector (FastAPI)</div>
-            <div class="s">:8000 · topic: user_events</div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 run">
-            <div class="t">Kafka 3.9.2 (KRaft)</div>
-            <div class="s">user_events · 3 partitions</div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 run" onclick="openDrawer('bronze_clt')">
-            <div class="t">generic_kafka_to_bronze</div>
-            <div class="s">trigger: 15s</div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 run" onclick="openDrawer('silver_clt')">
-            <div class="t">generic_bronze_to_silver</div>
-            <div class="s">trigger: 30s</div>
-          </div>
-          <span class="da2">→</span>
-          <div class="dn2 ok">
-            <div class="t">Delta Silver</div>
-            <div class="s">silver_delta/user_events_clean</div>
-          </div>
-        </div></div>
-      </div>
       <div class="g2">
         <div class="card">
-          <div class="ch"><span class="ct">Silver field_map</span></div>
+          <div class="ch"><span class="ct">Job specs</span></div>
           <table>
-            <thead><tr><th>Field</th><th>JSON path</th><th>Cast</th></tr></thead>
-            <tbody>
-              <tr><td class="mo">event_id</td><td class="mo">$.event_id</td><td>string</td></tr>
-              <tr><td class="mo">event_ts</td><td class="mo">$.event_ts</td><td>timestamp</td></tr>
-              <tr><td class="mo">event_type</td><td class="mo">$.event_type</td><td>string</td></tr>
-              <tr><td class="mo">anonymous_id</td><td class="mo">$.anonymous_id</td><td>string</td></tr>
-              <tr><td class="mo">session_id</td><td class="mo">$.session_id</td><td>string</td></tr>
-              <tr><td class="mo">item_id</td><td class="mo">$.properties.item_id</td><td>string</td></tr>
-              <tr><td class="mo">backend_event_name</td><td class="mo">$.properties.backend_event_name</td><td>string</td></tr>
-              <tr><td class="mo">results_count</td><td class="mo">$.properties.results_count</td><td>long</td></tr>
+            <thead><tr><th>Job name</th><th>Type</th><th>Source / Input</th><th>Target</th><th>Status</th></tr></thead>
+            <tbody id="pipelineJobsBody">
+              <tr><td colspan="5" class="empty">No pipeline selected.</td></tr>
             </tbody>
           </table>
         </div>
+
         <div class="card">
-          <div class="ch"><span class="ct">Computed fields + quality rules</span></div>
+          <div class="ch"><span class="ct">Pipeline metadata</span></div>
+          <div id="pipelineMetaBody" class="empty">No pipeline selected.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GENERIC STREAM DETAIL -->
+    <div class="page" id="page-stream">
+      <div class="card">
+        <div class="ch">
+          <span class="ct" id="streamTitle">Stream</span>
+          <span class="tag t-bl" id="streamRuntimeTag">runtime</span>
+        </div>
+        <div class="dw">
+          <div class="dr2" id="streamFlow">
+            <div class="empty">Select a stream.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><span class="ct">Stream jobs</span></div>
           <table>
-            <thead><tr><th>Field</th><th>Expression</th></tr></thead>
-            <tbody>
-              <tr><td class="mo">event_date</td><td class="mo">coalesce(to_date(event_ts), to_date(kafka_ts))</td></tr>
-              <tr><td class="mo">canonical_user_key</td><td class="mo">coalesce(user_id, anonymous_id)</td></tr>
+            <thead><tr><th>Job name</th><th>Runner</th><th>Status</th><th>Trigger</th><th>Output</th></tr></thead>
+            <tbody id="streamJobsBody">
+              <tr><td colspan="5" class="empty">No stream selected.</td></tr>
             </tbody>
           </table>
-          <div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.8">
-            Required: <span style="color:#94a3b8">event_type, event_date</span><br>
-            Identity keys: <span style="color:#94a3b8">event_id, user_id, anonymous_id, session_id</span><br>
-            Invalid rows: <span class="pp">silver_delta/user_events_quarantine</span>
-          </div>
+        </div>
+
+        <div class="card">
+          <div class="ch"><span class="ct">Stream metadata</span></div>
+          <div id="streamMetaBody" class="empty">No stream selected.</div>
         </div>
       </div>
     </div>
@@ -413,39 +360,17 @@ tr:hover td{background:#1a2236}
     <!-- JOB MONITOR -->
     <div class="page" id="page-monitor">
       <div class="mr" style="grid-template-columns:repeat(3,1fr)">
-        <div class="mc"><div class="ml">Streaming (supervisor)</div><div class="mv up">2</div><div class="ms">bronze · silver</div></div>
-        <div class="mc"><div class="ml">Batch tasks today</div><div class="mv">6</div><div class="ms up">all succeeded</div></div>
-        <div class="mc"><div class="ml">Supervisor status</div><div class="mv up">OK</div><div class="ms">heartbeat healthy</div></div>
+        <div class="mc"><div class="ml">Streaming jobs</div><div class="mv" id="monitorStreams">-</div><div class="ms" id="monitorStreamsSub">Runtime status</div></div>
+        <div class="mc"><div class="ml">Batch jobs</div><div class="mv" id="monitorBatch">-</div><div class="ms" id="monitorBatchSub">Catalog tasks</div></div>
+        <div class="mc"><div class="ml">Supervisor status</div><div class="mv" id="monitorSupervisor">-</div><div class="ms" id="monitorSupervisorSub">stream status file</div></div>
       </div>
+
       <div class="card">
         <div class="ch"><span class="ct">All jobs</span></div>
         <table>
           <thead><tr><th>Container</th><th>App name</th><th>Type</th><th>Runner</th><th>Status</th><th>Trigger</th><th>Output</th><th>Logs</th></tr></thead>
-          <tbody>
-            <tr style="cursor:pointer" onclick="openDrawer('bronze_clt')">
-              <td class="mo">spark-stream-supervisor</td><td class="jn">bronze_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_kafka_to_bronze</td><td><span class="dot dg"></span>Running</td><td class="mo">15s</td><td class="pp">bronze_delta/user_events</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('silver_clt')">
-              <td class="mo">spark-stream-supervisor</td><td class="jn">silver_clickstream_user_events</td><td><span class="tag t-bl">Stream</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Running</td><td class="mo">30s</td><td class="pp">silver_delta/user_events_clean</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('gold_price_ingest')">
-              <td class="mo">airflow (task)</td><td class="jn">gold_price_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">bronze/gold_price_events</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('gold_price_silver')">
-              <td class="mo">airflow (task)</td><td class="jn">gold_price_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">silver/gold_price_ticks_clean</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('gold_price_gold')">
-              <td class="mo">airflow (task)</td><td class="jn">gold_price_gold</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_silver_to_gold</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">gold/gold_price_curated</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('weather_ingest')">
-              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_ingest</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_api_to_bronze</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">bronze/weather_forecast_events</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('weather_silver')">
-              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_silver</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_bronze_to_silver</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">silver/weather_forecast_clean</td><td style="color:#3b82f6">Logs</td>
-            </tr>
-            <tr style="cursor:pointer" onclick="openDrawer('weather_gold')">
-              <td class="mo">airflow (task)</td><td class="jn">weather_forecast_gold</td><td><span class="tag t-am">Batch</span></td><td class="mo">generic_silver_to_gold</td><td><span class="dot dg"></span>Succeeded</td><td>on-demand</td><td class="pp">gold/weather_forecast_curated</td><td style="color:#3b82f6">Logs</td>
-            </tr>
+          <tbody id="jobMonitorBody">
+            <tr><td colspan="8" class="empty">Loading jobs...</td></tr>
           </tbody>
         </table>
       </div>
@@ -454,25 +379,14 @@ tr:hover td{background:#1a2236}
     <!-- AIRFLOW DAGS -->
     <div class="page" id="page-dags">
       <div class="card">
-        <div class="ch"><span class="ct">batch_catalog_dags.py — catalog-driven DAG factory</span><span class="tag t-gy">CATALOG_PATH: configs/batch/pipeline_catalog.json</span></div>
+        <div class="ch">
+          <span class="ct">batch_catalog_dags.py — catalog-driven DAG factory</span>
+          <span class="tag t-gy">CATALOG_PATH: configs/batch/pipeline_catalog.json</span>
+        </div>
         <table>
           <thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Tags</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td class="jn">gold_price_pipeline</td><td class="mo">null (manual)</td><td>gold_price_ingest → gold_price_silver → gold_price_gold</td><td>gold_price · batch · catalog_driven</td><td><span class="dot dg"></span>active</td></tr>
-            <tr><td class="jn">weather_forecast_pipeline</td><td class="mo">null (manual)</td><td>weather_forecast_ingest → weather_forecast_silver → weather_forecast_gold</td><td>weather · batch · catalog_driven</td><td><span class="dot dg"></span>active</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="card">
-        <div class="ch"><span class="ct">Airflow services (compose.phase2.yaml)</span></div>
-        <table>
-          <thead><tr><th>Service</th><th>Role</th><th>Port</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td class="jn">airflow-api-server</td><td>REST API + UI</td><td>8090→8080</td><td><span class="dot dg"></span>healthy</td></tr>
-            <tr><td class="jn">airflow-scheduler</td><td>Task scheduling</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
-            <tr><td class="jn">airflow-dag-processor</td><td>DAG file parsing</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
-            <tr><td class="jn">airflow-triggerer</td><td>Deferrable operators</td><td>—</td><td><span class="dot dg"></span>healthy</td></tr>
-            <tr><td class="jn">airflow-postgres</td><td>Metadata DB</td><td>internal</td><td><span class="dot dg"></span>healthy</td></tr>
+          <tbody id="dagTableBody">
+            <tr><td colspan="5" class="empty">Loading DAGs...</td></tr>
           </tbody>
         </table>
       </div>
@@ -481,19 +395,11 @@ tr:hover td{background:#1a2236}
     <!-- DELTA LAKEHOUSE -->
     <div class="page" id="page-lake">
       <div class="card">
-        <div class="ch"><span class="ct">Delta Lakehouse — MinIO · s3a://lakehouse/</span></div>
+        <div class="ch"><span class="ct">Delta Lakehouse — targets discovered from catalog</span></div>
         <table>
-          <thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Write mode</th><th>Partition</th></tr></thead>
-          <tbody>
-            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze/gold_price_events</td><td>gold_price_pipeline</td><td>append</td><td>ingest_year/month/day/hour</td></tr>
-            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze/weather_forecast_events</td><td>weather_forecast_pipeline</td><td>append</td><td>ingest_year/month/day/hour</td></tr>
-            <tr><td><span class="tag t-am">Bronze</span></td><td class="mo">bronze_delta/user_events</td><td>clickstream (stream)</td><td>append stream</td><td>event_date</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver/gold_price_ticks_clean</td><td>gold_price_pipeline</td><td>merge (event_id)</td><td>processing_date</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver/weather_forecast_clean</td><td>weather_forecast_pipeline</td><td>merge (event_id)</td><td>processing_date</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver_delta/user_events_clean</td><td>clickstream (stream)</td><td>append stream</td><td>event_date</td></tr>
-            <tr><td><span class="tag t-bl">Silver</span></td><td class="mo">silver_delta/user_events_quarantine</td><td>clickstream (stream)</td><td>append</td><td>—</td></tr>
-            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">gold/gold_price_curated</td><td>gold_price_pipeline</td><td>merge (event_id)</td><td>trade_date</td></tr>
-            <tr><td><span class="tag t-gr">Gold</span></td><td class="mo">gold/weather_forecast_curated</td><td>weather_forecast_pipeline</td><td>merge (event_id)</td><td>event_date</td></tr>
+          <thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Write mode</th></tr></thead>
+          <tbody id="lakeTableBody">
+            <tr><td colspan="5" class="empty">Loading lakehouse targets...</td></tr>
           </tbody>
         </table>
       </div>
@@ -501,110 +407,34 @@ tr:hover td{background:#1a2236}
 
     <!-- INFRASTRUCTURE -->
     <div class="page" id="page-infra">
-      <div class="sl">Phase 1 — Core Lakehouse (compose/compose.phase1.yaml)</div>
-      <div class="g3" style="margin-bottom:16px">
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">MinIO</div><div class="is">Object storage · S3-compatible</div></div>
-            <div class="il" style="background:#78350f30;color:#fbbf24">S3</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>Ports</span><span>:9000 / :9001</span></div>
-          <div class="ist"><span>Bucket</span><span class="mo">lakehouse</span></div>
+      <div class="card">
+        <div class="ch">
+          <span class="ct">Infrastructure</span>
+          <span class="tag t-gy">Static service map; health endpoints can be added later</span>
         </div>
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">Apache Spark 3.5.1</div><div class="is">custom docker/spark/Dockerfile</div></div>
-            <div class="il" style="background:#1e3a5f;color:#60a5fa">Sp</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:88%;background:#4ade80"></div></div>
-          <div class="ist"><span>Master</span><span>:8080 / :7077</span></div>
-          <div class="ist"><span>Workers</span><span>spark-worker (:8081) + spark-worker-2 (:8082)</span></div>
-          <div class="ist"><span>Each</span><span>2 cores · 2G RAM</span></div>
-        </div>
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">PostgreSQL 16</div><div class="is">Warehouse + pgAdmin :5050</div></div>
-            <div class="il" style="background:#14532d30;color:#4ade80">PG</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>Port</span><span>:5432</span></div>
-          <div class="ist"><span>Status</span><span style="color:#4ade80">Healthy</span></div>
-        </div>
-      </div>
-      <div class="sl">Phase 2 — Streaming + Orchestration (compose/compose.phase2.yaml)</div>
-      <div class="g3" style="margin-bottom:16px">
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">Apache Kafka 3.9.2</div><div class="is">KRaft · kafka-init-topics</div></div>
-            <div class="il" style="background:#78350f30;color:#fbbf24">Ka</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:78%;background:#fbbf24"></div></div>
-          <div class="ist"><span>Topic</span><span class="mo">user_events (3p)</span></div>
-          <div class="ist"><span>Lag</span><span style="color:#fbbf24">~800 msgs</span></div>
-        </div>
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">spark-stream-supervisor</div><div class="is">Manages bronze + silver streams</div></div>
-            <div class="il" style="background:#14532d30;color:#4ade80">SV</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>Registry</span><span class="mo">stream_registry.json</span></div>
-          <div class="ist"><span>Restart</span><span>max 10 retries · 10s backoff</span></div>
-        </div>
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">Airflow</div><div class="is">LocalExecutor · runtime:latest</div></div>
-            <div class="il" style="background:#14532d30;color:#4ade80">Af</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>UI</span><span>:8090</span></div>
-          <div class="ist"><span>DAGs</span><span>batch_catalog_dags.py</span></div>
-        </div>
-      </div>
-      <div class="g2">
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">Collector (FastAPI)</div><div class="is">Event ingestion · :8000</div></div>
-            <div class="il" style="background:#3b076430;color:#c084fc">Co</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>Endpoint</span><span class="mo">POST /collect</span></div>
-          <div class="ist"><span>Fallback</span><span>events.jsonl</span></div>
-        </div>
-        <div class="ic">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div><div class="in">Web Demo + Dashboard</div><div class="is">compose.simulator.yaml</div></div>
-            <div class="il" style="background:#3b076430;color:#c084fc">Wb</div>
-          </div>
-          <div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div>
-          <div class="ist"><span>Web Demo</span><span>:8091</span></div>
-          <div class="ist"><span>Dashboard</span><span>:9090 (nginx)</span></div>
-        </div>
+        <table>
+          <thead><tr><th>Service</th><th>Role</th><th>Expected port / path</th><th>Dashboard status source</th></tr></thead>
+          <tbody>
+            <tr><td class="jn">MinIO</td><td>Object storage</td><td class="mo">:9000 / :9001</td><td class="mo">not wired</td></tr>
+            <tr><td class="jn">Spark</td><td>Batch + streaming compute</td><td class="mo">:8080 / :7077</td><td class="mo">not wired</td></tr>
+            <tr><td class="jn">Kafka</td><td>Event broker</td><td class="mo">user_events</td><td class="mo">not wired</td></tr>
+            <tr><td class="jn">Airflow</td><td>Batch orchestration</td><td class="mo">:8090</td><td class="mo">catalog + log files</td></tr>
+            <tr><td class="jn">spark-stream-supervisor</td><td>Streaming process manager</td><td class="mo">spark_health/stream_supervisor_status.json</td><td class="mo">/api/runtime/streams/status</td></tr>
+            <tr><td class="jn">Dashboard</td><td>Monitoring UI</td><td class="mo">:9090</td><td class="mo">/api/config</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
     <!-- ALERTS -->
     <div class="page" id="page-alerts">
       <div class="card">
-        <div class="ch"><span class="ct">Active alerts</span><span class="tag t-am">2 active</span></div>
-        <div>
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1a1f2e">
-            <div style="width:28px;height:28px;background:#78350f30;color:#fbbf24;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">!</div>
-            <div style="flex:1">
-              <div style="font-size:12px;font-weight:500;color:#e2e8f0">Kafka consumer lag — user_events topic</div>
-              <div style="font-size:11px;color:#64748b;margin-top:2px">~800 uncommitted messages · 3 partitions · bronze trigger 15s</div>
-            </div>
-            <span class="tag t-am">Warning</span>
-          </div>
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">
-            <div style="width:28px;height:28px;background:#1e3a5f;color:#60a5fa;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">i</div>
-            <div style="flex:1">
-              <div style="font-size:12px;font-weight:500;color:#e2e8f0">Both batch DAGs have schedule: null</div>
-              <div style="font-size:11px;color:#64748b;margin-top:2px">Must be triggered manually via Airflow UI (:8090) or REST API.</div>
-            </div>
-            <span class="tag t-bl">Info</span>
-          </div>
+        <div class="ch">
+          <span class="ct">Runtime alerts</span>
+          <span class="tag t-am" id="alertsTitleTag">0 active</span>
+        </div>
+        <div id="alertsBody">
+          <div class="empty">Loading alerts...</div>
         </div>
       </div>
     </div>
@@ -616,7 +446,10 @@ tr:hover td{background:#1a2236}
 <div class="ov" id="logDrawer" onclick="closeDrawer(event)">
   <div class="dr3">
     <div class="dh">
-      <div class="dhi"><div class="dht" id="d-title">Logs</div><div class="dhg" id="d-tags"></div></div>
+      <div class="dhi">
+        <div class="dht" id="d-title">Logs</div>
+        <div class="dhg" id="d-tags"></div>
+      </div>
       <button class="dc" onclick="document.getElementById('logDrawer').classList.remove('open')">✕</button>
     </div>
     <div class="dm" id="d-meta"></div>
@@ -635,161 +468,724 @@ tr:hover td{background:#1a2236}
 </div>
 
 <script>
-var JOBS = {
-  bronze_clt: {
-    name: "bronze_clickstream_user_events",
-    tags: [{t:"Stream",c:"t-bl"},{t:"Running",c:"t-gr"},{t:"generic_kafka_to_bronze",c:"t-gy"}],
-    meta: [["App","bronze_clickstream_user_events"],["Topic","user_events · 3 partitions · kafka:19092"],["Bronze path","s3a://lakehouse/bronze_delta/user_events"],["Trigger","15 seconds"],["Heartbeat","/tmp/health/bronze_clickstream_user_events.json"]],
-    live: true,
-    logs: [
-      {ts:"09:00:00",l:"INFO",m:"[supervisor] starting 'clickstream_user_events_bronze'"},
-      {ts:"09:00:01",l:"INFO",m:"[bronze] starting app=bronze_clickstream_user_events topic=user_events"},
-      {ts:"09:00:02",l:"INFO",m:"[bronze] waiting for Kafka topic user_events (startup_wait=60s)"},
-      {ts:"09:00:04",l:"INFO",m:"[bronze] topic ready. Starting Spark Structured Streaming."},
-      {ts:"09:00:05",l:"INFO",m:"[bronze] S3A endpoint: http://minio:9000. DeltaLake extensions loaded."},
-      {ts:"09:00:06",l:"INFO",m:"[bronze] streaming query started. Trigger: ProcessingTime(15000ms)."},
-      {ts:"09:00:21",l:"INFO",m:"[bronze] batch_id=0 last_batch_rows=142 last_write_ok=True"},
-      {ts:"09:00:36",l:"INFO",m:"[bronze] batch_id=1 last_batch_rows=98"},
-      {ts:"09:00:51",l:"INFO",m:"[bronze] batch_id=2 last_batch_rows=210"},
-      {ts:"09:01:06",l:"WARN",m:"[bronze] batch_id=3 consumer lag detected on partitions [0,1,2]. lag=~800"},
-      {ts:"09:01:21",l:"INFO",m:"[bronze] batch_id=4 last_batch_rows=340. Lag recovering."},
-      {ts:"09:01:36",l:"INFO",m:"[bronze] batch_id=5 last_batch_rows=290. Checkpoint saved."}
-    ]
-  },
-  silver_clt: {
-    name: "silver_clickstream_user_events",
-    tags: [{t:"Stream",c:"t-bl"},{t:"Running",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
-    meta: [["App","silver_clickstream_user_events"],["Bronze","s3a://lakehouse/bronze_delta/user_events"],["Silver","s3a://lakehouse/silver_delta/user_events_clean"],["Quarantine","s3a://lakehouse/silver_delta/user_events_quarantine"],["Trigger","30 seconds"],["Required fields","event_type, event_date"]],
-    live: true,
-    logs: [
-      {ts:"09:00:10",l:"INFO",m:"[supervisor] starting 'clickstream_user_events_silver'"},
-      {ts:"09:00:11",l:"INFO",m:"[silver] starting app=silver_clickstream_user_events"},
-      {ts:"09:00:12",l:"INFO",m:"[silver] checking bronze path s3a://lakehouse/bronze_delta/user_events ... exists."},
-      {ts:"09:00:13",l:"INFO",m:"[silver] readStream from Delta bronze. Trigger: 30 seconds."},
-      {ts:"09:00:43",l:"INFO",m:"[silver] batch_id=0 input_count=240 valid=238 invalid=2"},
-      {ts:"09:00:43",l:"INFO",m:"[silver] writing valid rows to s3a://lakehouse/silver_delta/user_events_clean"},
-      {ts:"09:00:43",l:"INFO",m:"[silver] writing invalid rows to quarantine path"},
-      {ts:"09:00:43",l:"INFO",m:"[silver] batch_id=0 last_valid_rows=238 last_invalid_rows=2 last_write_ok=True"},
-      {ts:"09:01:13",l:"INFO",m:"[silver] batch_id=1 total=196 valid=196 invalid=0. Heartbeat updated."},
-      {ts:"09:01:43",l:"INFO",m:"[silver] batch_id=2 total=280 valid=279 invalid=1"},
-      {ts:"09:02:13",l:"INFO",m:"[silver] batch_id=3 total=320 valid=320 invalid=0. Checkpoint saved."}
-    ]
-  },
-  gold_price_ingest: {
-    name: "gold_price_ingest",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_api_to_bronze",c:"t-gy"}],
-    meta: [["Pipeline","gold_price_pipeline"],["Runner","batch/runners/generic_api_to_bronze.py"],["API","https://api.metalpriceapi.com/v1/latest"],["Auth","query_param: api_key (METALPRICE_API_KEY)"],["Output","s3a://lakehouse/bronze/gold_price_events"]],
-    live: false,
-    logs: [
-      {ts:"09:00:00",l:"INFO",m:"[START] pipeline=gold_price_pipeline, job=gold_price_ingest"},
-      {ts:"09:00:01",l:"INFO",m:"[STEP] runtime context built. source=metalpriceapi.com, auth=query_param"},
-      {ts:"09:00:02",l:"INFO",m:"[STEP] executing API request GET https://api.metalpriceapi.com/v1/latest"},
-      {ts:"09:00:03",l:"INFO",m:"[STEP] API response 200 OK. $.success=true, $.rates.USD present."},
-      {ts:"09:00:03",l:"INFO",m:"[STEP] payload validated. Mapping row: symbol=XAU, price_usd=3301.45"},
-      {ts:"09:00:04",l:"INFO",m:"[STEP] event_id computed (SHA-256 of source_name+source_event_ts+payload)."},
-      {ts:"09:00:05",l:"INFO",m:"[STEP] Spark session created: generic_api_to_bronze."},
-      {ts:"09:00:09",l:"INFO",m:"[STEP] write finished target=s3a://lakehouse/bronze/gold_price_events"},
-      {ts:"09:00:10",l:"INFO",m:"[BRONZE_WRITE_OK] path=s3a://lakehouse/bronze/gold_price_events, rows=15"},
-      {ts:"09:00:10",l:"INFO",m:"[SUCCESS] Wrote Bronze rows for job 'gold_price_ingest'."}
-    ]
-  },
-  gold_price_silver: {
-    name: "gold_price_silver",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
-    meta: [["Pipeline","gold_price_pipeline"],["Source","s3a://lakehouse/bronze/gold_price_events"],["Target","s3a://lakehouse/silver/gold_price_ticks_clean"],["Merge key","event_id"],["Partition","processing_date"]],
-    live: false,
-    logs: [
-      {ts:"09:00:11",l:"INFO",m:"generic_bronze_to_silver started. job=gold_price_silver"},
-      {ts:"09:00:13",l:"INFO",m:"Reading bronze: s3a://lakehouse/bronze/gold_price_events. Rows: 15."},
-      {ts:"09:00:14",l:"INFO",m:"Applying filters: api_status == 'success'. 15 rows pass."},
-      {ts:"09:00:14",l:"INFO",m:"Applying select_map: event_id, symbol, source_name, event_ts_utc, price_usd, currency."},
-      {ts:"09:00:15",l:"INFO",m:"Applying quality_rules: price_usd > 0, event_ts_utc notNull."},
-      {ts:"09:00:15",l:"INFO",m:"Applying dedupe: key_columns=[event_id]. 0 duplicates removed."},
-      {ts:"09:00:18",l:"INFO",m:"Delta merge executed. 13 rows: 11 matched(updated), 2 not-matched(inserted)."},
-      {ts:"09:00:18",l:"INFO",m:"Wrote Silver rows to s3a://lakehouse/silver/gold_price_ticks_clean."}
-    ]
-  },
-  gold_price_gold: {
-    name: "gold_price_gold",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_silver_to_gold",c:"t-gy"}],
-    meta: [["Pipeline","gold_price_pipeline"],["Source","s3a://lakehouse/silver/gold_price_ticks_clean"],["Target","s3a://lakehouse/gold/gold_price_curated"],["Derived","trade_date · price_bucket (low/mid/high)"]],
-    live: false,
-    logs: [
-      {ts:"09:00:19",l:"INFO",m:"generic_silver_to_gold started. job=gold_price_gold"},
-      {ts:"09:00:20",l:"INFO",m:"Reading silver: s3a://lakehouse/silver/gold_price_ticks_clean. Rows: 13."},
-      {ts:"09:00:21",l:"INFO",m:"Applying derived_fields: trade_date=to_date(event_ts), price_bucket=case when price_usd<2500 low when <3500 mid else high."},
-      {ts:"09:00:22",l:"INFO",m:"Applying quality_rules: event_id notNull, event_ts notNull. All pass."},
-      {ts:"09:00:25",l:"INFO",m:"Delta merge executed. 13 rows upserted. price_bucket=high (price ~3300 USD)."},
-      {ts:"09:00:25",l:"INFO",m:"Wrote Gold rows to s3a://lakehouse/gold/gold_price_curated."}
-    ]
-  },
-  weather_ingest: {
-    name: "weather_forecast_ingest",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_api_to_bronze",c:"t-gy"}],
-    meta: [["Pipeline","weather_forecast_pipeline"],["API","https://api.open-meteo.com/v1/forecast"],["Auth","none (public API)"],["Params","lat=51.5085, lon=-0.1257, London, forecast_days=3"],["Output","s3a://lakehouse/bronze/weather_forecast_events"]],
-    live: false,
-    logs: [
-      {ts:"09:05:00",l:"INFO",m:"[START] pipeline=weather_forecast_pipeline, job=weather_forecast_ingest"},
-      {ts:"09:05:01",l:"INFO",m:"[STEP] runtime context built. source=open-meteo.com, auth=none."},
-      {ts:"09:05:02",l:"INFO",m:"[STEP] API response 200 OK. $.latitude, $.hourly, $.daily validated."},
-      {ts:"09:05:03",l:"INFO",m:"[STEP] mapped row: source_name=open_meteo, payload_json=canonical_json(response)."},
-      {ts:"09:05:06",l:"INFO",m:"[STEP] write finished: s3a://lakehouse/bronze/weather_forecast_events"},
-      {ts:"09:05:07",l:"INFO",m:"[BRONZE_WRITE_OK] path=s3a://lakehouse/bronze/weather_forecast_events, rows=1"},
-      {ts:"09:05:07",l:"INFO",m:"[SUCCESS] Wrote Bronze rows for job 'weather_forecast_ingest'."}
-    ]
-  },
-  weather_silver: {
-    name: "weather_forecast_silver",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_bronze_to_silver",c:"t-gy"}],
-    meta: [["Pipeline","weather_forecast_pipeline"],["Transform","json_array_zip_explode (72 hourly rows)"],["Source","s3a://lakehouse/bronze/weather_forecast_events"],["Target","s3a://lakehouse/silver/weather_forecast_clean"]],
-    live: false,
-    logs: [
-      {ts:"09:05:08",l:"INFO",m:"generic_bronze_to_silver started. job=weather_forecast_silver"},
-      {ts:"09:05:09",l:"INFO",m:"Reading bronze: 1 row (single API response)."},
-      {ts:"09:05:10",l:"INFO",m:"Transform: json_array_zip_explode. Extracting hourly arrays (72 hours)."},
-      {ts:"09:05:11",l:"INFO",m:"Root fields extracted: latitude=51.5085, longitude=-0.1257, timezone=Europe/London."},
-      {ts:"09:05:11",l:"INFO",m:"Array zip explode complete. 72 rows generated (one per forecast hour)."},
-      {ts:"09:05:12",l:"INFO",m:"event_id computed: hash(source_name, latitude, longitude, forecast_ts_utc)."},
-      {ts:"09:05:13",l:"INFO",m:"Quality rules: event_id notNull. 72 rows pass."},
-      {ts:"09:05:16",l:"INFO",m:"Delta merge: 72 rows not-matched inserted. Wrote to silver/weather_forecast_clean."}
-    ]
-  },
-  weather_gold: {
-    name: "weather_forecast_gold",
-    tags: [{t:"Batch",c:"t-am"},{t:"Succeeded",c:"t-gr"},{t:"generic_silver_to_gold",c:"t-gy"}],
-    meta: [["Pipeline","weather_forecast_pipeline"],["Source","s3a://lakehouse/silver/weather_forecast_clean"],["Target","s3a://lakehouse/gold/weather_forecast_curated"],["Derived","event_date · dataset_name"]],
-    live: false,
-    logs: [
-      {ts:"09:05:17",l:"INFO",m:"generic_silver_to_gold started. job=weather_forecast_gold"},
-      {ts:"09:05:18",l:"INFO",m:"Reading silver: s3a://lakehouse/silver/weather_forecast_clean. Rows: 72."},
-      {ts:"09:05:19",l:"INFO",m:"Derived: event_date=to_date(ingestion_ts), dataset_name='weather_forecast_raw'."},
-      {ts:"09:05:20",l:"INFO",m:"Quality rules: event_id, ingestion_ts, payload_json all notNull. 72 rows pass."},
-      {ts:"09:05:22",l:"INFO",m:"Delta merge: 72 rows upserted to s3a://lakehouse/gold/weather_forecast_curated."},
-      {ts:"09:05:22",l:"INFO",m:"Wrote Gold rows. Task SUCCESS."}
-    ]
-  }
+const REFRESH_MS = 5000;
+
+let DASHBOARD_STATE = {
+  config: null,
+  streamStatus: null,
+  jobs: [],
+  pipelines: [],
+  streams: [],
+  selectedPipeline: null,
+  selectedStream: null,
+  alerts: [],
+  lastLogText: ""
 };
 
-function openDrawer(id) {
-  var j = JOBS[id];
-  if (!j) return;
-  document.getElementById("d-title").textContent = j.name;
-  document.getElementById("d-tags").innerHTML = j.tags.map(function(t) {
-    return '<span class="tag ' + t.c + '">' + t.t + "</span>";
-  }).join("");
-  document.getElementById("d-meta").innerHTML = j.meta.map(function(m) {
-    return '<div class="dmi">' + m[0] + ": <span>" + m[1] + "</span></div>";
-  }).join("");
-  document.getElementById("logLive").textContent = j.live ? "⬤ Live" : "";
-  var body = document.getElementById("logBody");
-  body.innerHTML = j.logs.map(function(l) {
-    return '<div class="ll" data-level="' + l.l + '"><span class="ll-ts">' + l.ts + '</span><span class="ll-lv ' + l.l + '">' + l.l + '</span><span class="ll-msg">' + l.m + "</span></div>";
-  }).join("");
+let charts = {
+  stream: null,
+  batch: null
+};
+
+function safe(value, fallback = "") {
+  return value === undefined || value === null || value === "" ? fallback : value;
+}
+
+function escapeHtml(value) {
+  return String(safe(value))
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function shortPath(path) {
+  const p = String(safe(path, ""));
+  return p.replace("s3a://lakehouse/", "");
+}
+
+function normalizeStatus(status) {
+  return String(safe(status, "unknown")).toLowerCase();
+}
+
+function statusBadge(status) {
+  const raw = safe(status, "unknown");
+  const s = normalizeStatus(raw);
+
+  if (["running", "success", "succeeded", "healthy", "ok", "active"].includes(s)) {
+    return '<span class="dot dg"></span>' + escapeHtml(raw);
+  }
+
+  if (["failed", "error", "dead", "unhealthy"].includes(s)) {
+    return '<span class="dot dr"></span>' + escapeHtml(raw);
+  }
+
+  if (["warning", "warn", "defined", "unknown", "queued", "scheduled"].includes(s)) {
+    return '<span class="dot dy"></span>' + escapeHtml(raw);
+  }
+
+  return '<span class="dot dgr"></span>' + escapeHtml(raw);
+}
+
+function badge(type) {
+  if (type === "stream") return '<span class="tag t-bl">Stream</span>';
+  return '<span class="tag t-am">Batch</span>';
+}
+
+async function apiJson(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`${url} failed: ${res.status}`);
+  }
+  return await res.json();
+}
+
+async function apiText(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${url} failed: ${res.status} ${text}`);
+  }
+  return await res.text();
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return Object.values(value);
+  return [];
+}
+
+function pick(...values) {
+  for (const v of values) {
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return "";
+}
+
+function getJobTargetPath(job) {
+  const spec = job.spec || {};
+  return pick(
+    job.target_path,
+    job.targetPath,
+    spec.target_path,
+    spec.output_path,
+    spec.bronze_write?.target_path,
+    spec.silver_write?.target_path,
+    spec.gold_write?.target_path,
+    spec.write?.target_path,
+    spec.sink?.path,
+    spec.output?.path,
+    job.output,
+    ""
+  );
+}
+
+function getJobInputPath(job) {
+  const spec = job.spec || {};
+  return pick(
+    job.source_path,
+    spec.source_path,
+    spec.bronze_read?.source_path,
+    spec.silver_read?.source_path,
+    spec.source?.base_url,
+    spec.source?.path,
+    spec.input?.path,
+    ""
+  );
+}
+
+function normalizePipeline(p) {
+  const rawJobs = asArray(p.jobs);
+  const name = pick(p.name, p.pipeline_name, p.id, "unknown_pipeline");
+  const dag = p.dag || {};
+  return {
+    ...p,
+    name,
+    type: pick(p.type, p.source_type === "stream" ? "stream" : "batch"),
+    schedule: pick(p.schedule, dag.schedule, null),
+    tags: asArray(p.tags).length ? asArray(p.tags) : asArray(dag.tags),
+    jobs: rawJobs.map((j) => normalizeJob(j, name, "batch"))
+  };
+}
+
+function normalizeStream(s) {
+  const rawJobs = asArray(s.jobs || s.units || s.streams);
+  const name = pick(s.name, s.stream_name, s.id, "unknown_stream");
+  return {
+    ...s,
+    name,
+    type: "stream",
+    jobs: rawJobs.map((j) => normalizeJob(j, name, "stream"))
+  };
+}
+
+function normalizeJob(job, pipelineName, fallbackType) {
+  const name = pick(job.name, job.job_name, job.app_name, job.unit_name, job.id, "unknown_job");
+  const type = pick(job.type, job.kind, fallbackType, "batch");
+  const jobType = pick(job.job_type, job.runner, job.runner_type, job.operator, job.type_name, "unknown_runner");
+  const targetPath = getJobTargetPath(job);
+
+  return {
+    ...job,
+    uid: `${type}:${pipelineName}:${name}`,
+    id: pick(job.id, `${type}:${pipelineName}:${name}`),
+    name,
+    pipeline: pipelineName,
+    type,
+    jobType,
+    sourcePath: getJobInputPath(job),
+    targetPath,
+    trigger: pick(job.trigger, job.trigger_interval, job.processing_time, job.schedule, type === "stream" ? "streaming" : "on-demand"),
+    status: pick(job.runtime_status, job.status, "defined"),
+    tags: asArray(job.tags),
+    raw: job
+  };
+}
+
+function normalizeConfig(config) {
+  const pipelines = asArray(config.pipelines).map(normalizePipeline);
+  const streams = asArray(config.streams || config.streaming || config.stream_registry).map(normalizeStream);
+
+  let jobs = asArray(config.jobs).map((j) => normalizeJob(j, pick(j.pipeline, j.pipeline_name, "unknown"), pick(j.type, "batch")));
+
+  if (!jobs.length) {
+    pipelines.forEach((p) => jobs.push(...p.jobs));
+    streams.forEach((s) => jobs.push(...s.jobs));
+  }
+
+  if (!streams.length) {
+    const streamJobs = jobs.filter((j) => j.type === "stream");
+    const grouped = {};
+    streamJobs.forEach((j) => {
+      const key = j.pipeline || "streaming";
+      if (!grouped[key]) grouped[key] = { name: key, type: "stream", jobs: [] };
+      grouped[key].jobs.push(j);
+    });
+    Object.values(grouped).forEach((s) => streams.push(s));
+  }
+
+  if (!pipelines.length) {
+    const batchJobs = jobs.filter((j) => j.type !== "stream");
+    const grouped = {};
+    batchJobs.forEach((j) => {
+      const key = j.pipeline || "batch";
+      if (!grouped[key]) grouped[key] = { name: key, type: "batch", schedule: j.schedule || null, jobs: [] };
+      grouped[key].jobs.push(j);
+    });
+    Object.values(grouped).forEach((p) => pipelines.push(p));
+  }
+
+  return { pipelines, streams, jobs };
+}
+
+function enrichJobsWithRuntime(jobs, streamStatus) {
+  const units = streamStatus?.units || {};
+  const entries = Object.entries(units);
+
+  return jobs.map((job) => {
+    const copy = { ...job };
+
+    if (copy.type === "stream") {
+      const match = entries.find(([unitName, unit]) => {
+        const names = [
+          unitName,
+          unit?.unit_name,
+          unit?.name,
+          unit?.app_name,
+          unit?.job_name,
+          unit?.stream_name
+        ].filter(Boolean);
+        return names.includes(copy.name) || names.includes(copy.id) || names.includes(copy.raw?.unit_name);
+      });
+
+      if (match) {
+        const [unitName, unit] = match;
+        copy.runtimeUnitName = unitName;
+        copy.status = pick(unit.computed_status, unit.status, unit.heartbeat?.status, copy.status);
+        copy.heartbeatAgeSeconds = unit.heartbeat_age_seconds;
+        copy.pid = unit.pid;
+        copy.returncode = unit.returncode;
+        copy.lastHeartbeat = pick(unit.heartbeat?.ts, unit.heartbeat?.timestamp, unit.heartbeat?.ts_epoch, "");
+      } else {
+        copy.status = copy.status === "defined" ? "unknown" : copy.status;
+      }
+    }
+
+    return copy;
+  });
+}
+
+function getAlerts(jobs, pipelines, streamStatus) {
+  const alerts = [];
+  const failed = jobs.filter((j) => ["failed", "error", "dead", "unhealthy"].includes(normalizeStatus(j.status)));
+  failed.forEach((j) => alerts.push({
+    level: "Error",
+    type: "t-re",
+    title: `${j.name} is ${j.status}`,
+    detail: `${j.type} · ${j.jobType} · ${j.pipeline}`
+  }));
+
+  const unknownStreams = jobs.filter((j) => j.type === "stream" && ["unknown", "defined"].includes(normalizeStatus(j.status)));
+  unknownStreams.forEach((j) => alerts.push({
+    level: "Warning",
+    type: "t-am",
+    title: `No runtime status for ${j.name}`,
+    detail: "Check /api/runtime/streams/status and stream_supervisor_status.json mount."
+  }));
+
+  const manual = pipelines.filter((p) => !p.schedule);
+  if (manual.length) {
+    alerts.push({
+      level: "Info",
+      type: "t-bl",
+      title: `${manual.length} batch pipeline(s) have schedule: null`,
+      detail: "These DAGs are manual unless triggered by Airflow UI/API."
+    });
+  }
+
+  if (!streamStatus) {
+    alerts.push({
+      level: "Warning",
+      type: "t-am",
+      title: "Stream runtime API unavailable",
+      detail: "Dashboard can still show catalog definitions, but stream status/logs need runtime endpoints."
+    });
+  }
+
+  return alerts;
+}
+
+async function loadDashboard() {
+  setGlobalError("");
+
+  let config;
+  try {
+    config = await apiJson("/api/config");
+  } catch (e) {
+    setGlobalError(`Cannot load /api/config: ${escapeHtml(e.message)}`);
+    config = { pipelines: [], streams: [], jobs: [] };
+  }
+
+  let streamStatus = null;
+  try {
+    streamStatus = await apiJson("/api/runtime/streams/status");
+  } catch (e) {
+    console.warn("stream runtime status unavailable", e);
+  }
+
+  const normalized = normalizeConfig(config);
+  const jobs = enrichJobsWithRuntime(normalized.jobs, streamStatus);
+  const pipelines = normalized.pipelines.map((p) => ({ ...p, jobs: jobs.filter((j) => j.pipeline === p.name && j.type !== "stream") }));
+  const streams = normalized.streams.map((s) => ({ ...s, jobs: jobs.filter((j) => j.pipeline === s.name && j.type === "stream") }));
+
+  DASHBOARD_STATE.config = config;
+  DASHBOARD_STATE.streamStatus = streamStatus;
+  DASHBOARD_STATE.jobs = jobs;
+  DASHBOARD_STATE.pipelines = pipelines;
+  DASHBOARD_STATE.streams = streams;
+  DASHBOARD_STATE.alerts = getAlerts(jobs, pipelines, streamStatus);
+
+  if (!DASHBOARD_STATE.selectedPipeline && pipelines.length) DASHBOARD_STATE.selectedPipeline = pipelines[0].name;
+  if (!DASHBOARD_STATE.selectedStream && streams.length) DASHBOARD_STATE.selectedStream = streams[0].name;
+
+  renderAll();
+}
+
+function renderAll() {
+  renderSidebar();
+  renderTopbar();
+  renderDashboardCards();
+  renderRecentActivity();
+  renderJobMonitor();
+  renderDagTable();
+  renderLakeTable();
+  renderAlerts();
+  renderPipelineDetail(DASHBOARD_STATE.selectedPipeline);
+  renderStreamDetail(DASHBOARD_STATE.selectedStream);
+  renderCharts();
+  document.getElementById("lastRefreshTag").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+}
+
+function setGlobalError(message) {
+  document.getElementById("globalError").innerHTML = message ? `<div class="errbox">${message}</div>` : "";
+}
+
+function renderSidebar() {
+  const batchList = document.getElementById("sidebarBatchList");
+  const streamList = document.getElementById("sidebarStreamList");
+
+  batchList.innerHTML = DASHBOARD_STATE.pipelines.length
+    ? DASHBOARD_STATE.pipelines.map((p) => `
+      <div class="ni small ${DASHBOARD_STATE.selectedPipeline === p.name ? "active" : ""}" onclick="selectPipeline('${escapeJs(p.name)}')">
+        <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        <span title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+        <span class="nb nb-a">Batch</span>
+      </div>
+    `).join("")
+    : `<div class="empty">No batch pipelines</div>`;
+
+  streamList.innerHTML = DASHBOARD_STATE.streams.length
+    ? DASHBOARD_STATE.streams.map((s) => `
+      <div class="ni small ${DASHBOARD_STATE.selectedStream === s.name ? "active" : ""}" onclick="selectStream('${escapeJs(s.name)}')">
+        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 8h3l2-5 3 10 2-5 2 3h2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+        <span title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+        <span class="nb nb-b">Stream</span>
+      </div>
+    `).join("")
+    : `<div class="empty">No streams</div>`;
+}
+
+function renderTopbar() {
+  const streamJobs = DASHBOARD_STATE.jobs.filter((j) => j.type === "stream");
+  const running = streamJobs.filter((j) => normalizeStatus(j.status) === "running").length;
+  const runtimeOk = DASHBOARD_STATE.streamStatus ? "t-gr" : "t-am";
+
+  document.getElementById("topRuntimeStatus").className = `tag ${runtimeOk}`;
+  document.getElementById("topRuntimeStatus").innerHTML =
+    `${DASHBOARD_STATE.streamStatus ? '<span class="dot dg"></span>' : '<span class="dot dy"></span>'} Supervisor ${DASHBOARD_STATE.streamStatus ? "connected" : "not connected"} · ${running}/${streamJobs.length} running`;
+
+  document.getElementById("topDagStatus").className = "tag t-am";
+  document.getElementById("topDagStatus").textContent = `${DASHBOARD_STATE.pipelines.length} DAGs · ${DASHBOARD_STATE.jobs.filter((j) => j.type !== "stream").length} batch tasks`;
+}
+
+function renderDashboardCards() {
+  const streamJobs = DASHBOARD_STATE.jobs.filter((j) => j.type === "stream");
+  const batchJobs = DASHBOARD_STATE.jobs.filter((j) => j.type !== "stream");
+  const targets = getLakeTargets();
+
+  const issues = DASHBOARD_STATE.alerts.filter((a) => ["Error", "Warning"].includes(a.level)).length;
+
+  document.getElementById("metricStreams").textContent = streamJobs.length;
+  document.getElementById("metricStreams").className = streamJobs.some((j) => normalizeStatus(j.status) === "running") ? "mv up" : "mv wn";
+  document.getElementById("metricStreamsSub").textContent = `${streamJobs.filter((j) => normalizeStatus(j.status) === "running").length} running`;
+
+  document.getElementById("metricBatch").textContent = DASHBOARD_STATE.pipelines.length;
+  document.getElementById("metricBatchSub").textContent = `${batchJobs.length} batch tasks`;
+
+  document.getElementById("metricDelta").textContent = targets.length;
+  document.getElementById("metricDeltaSub").textContent = "Discovered target paths";
+
+  document.getElementById("metricIssues").textContent = issues;
+  document.getElementById("metricIssues").className = issues ? "mv wn" : "mv up";
+  document.getElementById("metricIssuesSub").textContent = issues ? "Check alerts" : "No runtime warnings";
+
+  document.getElementById("monitorStreams").textContent = streamJobs.length;
+  document.getElementById("monitorStreamsSub").textContent = `${streamJobs.filter((j) => normalizeStatus(j.status) === "running").length} running`;
+  document.getElementById("monitorBatch").textContent = batchJobs.length;
+  document.getElementById("monitorBatchSub").textContent = `${DASHBOARD_STATE.pipelines.length} pipeline(s)`;
+  document.getElementById("monitorSupervisor").textContent = DASHBOARD_STATE.streamStatus ? "OK" : "N/A";
+  document.getElementById("monitorSupervisor").className = DASHBOARD_STATE.streamStatus ? "mv up" : "mv wn";
+  document.getElementById("monitorSupervisorSub").textContent = DASHBOARD_STATE.streamStatus ? "status API connected" : "runtime API unavailable";
+}
+
+function renderRecentActivity() {
+  const body = document.getElementById("recentActivityBody");
+  const jobs = DASHBOARD_STATE.jobs.slice().sort((a, b) => {
+    const ah = a.heartbeatAgeSeconds ?? 999999;
+    const bh = b.heartbeatAgeSeconds ?? 999999;
+    return ah - bh;
+  }).slice(0, 12);
+
+  body.innerHTML = jobs.length ? jobs.map((job) => `
+    <tr style="cursor:pointer" onclick="openDrawerDynamic('${escapeJs(job.uid)}')">
+      <td class="jn">${escapeHtml(job.name)}</td>
+      <td>${badge(job.type)}</td>
+      <td class="mo">${escapeHtml(job.jobType)}</td>
+      <td>${statusBadge(job.status)}</td>
+      <td class="pp">${escapeHtml(shortPath(job.targetPath))}</td>
+      <td>${job.heartbeatAgeSeconds != null ? escapeHtml(job.heartbeatAgeSeconds + "s ago") : "-"}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" class="empty">No jobs found in /api/config.</td></tr>`;
+}
+
+function renderJobMonitor() {
+  const body = document.getElementById("jobMonitorBody");
+  const jobs = DASHBOARD_STATE.jobs;
+
+  body.innerHTML = jobs.length ? jobs.map((job) => `
+    <tr style="cursor:pointer" onclick="openDrawerDynamic('${escapeJs(job.uid)}')">
+      <td class="mo">${job.type === "stream" ? "spark-stream-supervisor" : "airflow task"}</td>
+      <td class="jn">${escapeHtml(job.name)}</td>
+      <td>${badge(job.type)}</td>
+      <td class="mo">${escapeHtml(job.jobType)}</td>
+      <td>${statusBadge(job.status)}</td>
+      <td class="mo">${escapeHtml(job.trigger)}</td>
+      <td class="pp">${escapeHtml(shortPath(job.targetPath))}</td>
+      <td style="color:#3b82f6">Logs</td>
+    </tr>
+  `).join("") : `<tr><td colspan="8" class="empty">No jobs found.</td></tr>`;
+}
+
+function renderDagTable() {
+  const body = document.getElementById("dagTableBody");
+  const pipelines = DASHBOARD_STATE.pipelines;
+
+  body.innerHTML = pipelines.length ? pipelines.map((p) => `
+    <tr>
+      <td class="jn">${escapeHtml(p.name)}</td>
+      <td class="mo">${escapeHtml(p.schedule || "null (manual)")}</td>
+      <td>${p.jobs.map((j) => escapeHtml(j.name)).join(" → ") || "-"}</td>
+      <td>${asArray(p.tags).map(escapeHtml).join(" · ") || "-"}</td>
+      <td>${statusBadge("defined")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty">No batch pipelines found.</td></tr>`;
+}
+
+function getLakeTargets() {
+  const rows = [];
+  DASHBOARD_STATE.jobs.forEach((j) => {
+    if (!j.targetPath) return;
+    let layer = "Target";
+    const p = String(j.targetPath).toLowerCase();
+    if (p.includes("/bronze") || p.includes("bronze_")) layer = "Bronze";
+    else if (p.includes("/silver") || p.includes("silver_")) layer = "Silver";
+    else if (p.includes("/gold") || p.includes("gold_")) layer = "Gold";
+
+    rows.push({
+      layer,
+      path: j.targetPath,
+      pipeline: j.pipeline,
+      job: j.name,
+      mode: pick(j.raw?.spec?.bronze_write?.mode, j.raw?.spec?.silver_write?.mode, j.raw?.spec?.gold_write?.mode, j.raw?.mode, "-")
+    });
+  });
+
+  const seen = new Set();
+  return rows.filter((r) => {
+    const key = `${r.path}:${r.job}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function layerTag(layer) {
+  if (layer === "Bronze") return '<span class="tag t-am">Bronze</span>';
+  if (layer === "Silver") return '<span class="tag t-bl">Silver</span>';
+  if (layer === "Gold") return '<span class="tag t-gr">Gold</span>';
+  return '<span class="tag t-gy">Target</span>';
+}
+
+function renderLakeTable() {
+  const body = document.getElementById("lakeTableBody");
+  const rows = getLakeTargets();
+
+  body.innerHTML = rows.length ? rows.map((r) => `
+    <tr>
+      <td>${layerTag(r.layer)}</td>
+      <td class="mo">${escapeHtml(shortPath(r.path))}</td>
+      <td>${escapeHtml(r.pipeline)}</td>
+      <td class="jn">${escapeHtml(r.job)}</td>
+      <td>${escapeHtml(r.mode)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty">No target paths found in job specs.</td></tr>`;
+}
+
+function selectPipeline(name) {
+  DASHBOARD_STATE.selectedPipeline = name;
+  showPage("pipeline", `Pipeline · ${name}`);
+  renderSidebar();
+  renderPipelineDetail(name);
+}
+
+function selectStream(name) {
+  DASHBOARD_STATE.selectedStream = name;
+  showPage("stream", `Stream · ${name}`);
+  renderSidebar();
+  renderStreamDetail(name);
+}
+
+function renderPipelineDetail(name) {
+  const p = DASHBOARD_STATE.pipelines.find((x) => x.name === name);
+  if (!p) return;
+
+  document.getElementById("pipelineTitle").textContent = `${p.name} — catalog-driven DAG`;
+  document.getElementById("pipelineSchedule").textContent = `schedule: ${p.schedule || "null (manual)"}`;
+
+  document.getElementById("pipelineFlow").innerHTML = p.jobs.length ? p.jobs.map((j, i) => `
+    ${i ? '<span class="da2">→</span>' : ""}
+    <div class="dn2 ${statusClass(j.status)}" onclick="openDrawerDynamic('${escapeJs(j.uid)}')">
+      <div class="t">${escapeHtml(j.name)}</div>
+      <div class="s">${escapeHtml(j.jobType)}</div>
+      <div class="s" style="margin-top:3px">${statusBadge(j.status)}</div>
+    </div>
+  `).join("") : `<div class="empty">No jobs in this pipeline.</div>`;
+
+  document.getElementById("pipelineJobsBody").innerHTML = p.jobs.length ? p.jobs.map((j) => `
+    <tr style="cursor:pointer" onclick="openDrawerDynamic('${escapeJs(j.uid)}')">
+      <td class="jn">${escapeHtml(j.name)}</td>
+      <td class="mo">${escapeHtml(j.jobType)}</td>
+      <td class="mo">${escapeHtml(j.sourcePath || "-")}</td>
+      <td class="pp">${escapeHtml(shortPath(j.targetPath))}</td>
+      <td>${statusBadge(j.status)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty">No jobs in this pipeline.</td></tr>`;
+
+  document.getElementById("pipelineMetaBody").innerHTML = renderKeyValues({
+    "Name": p.name,
+    "Schedule": p.schedule || "null (manual)",
+    "Tags": asArray(p.tags).join(", ") || "-",
+    "Job count": p.jobs.length,
+    "Source type": p.source_type || p.type || "batch",
+    "Description": p.description || "-"
+  });
+}
+
+function renderStreamDetail(name) {
+  const s = DASHBOARD_STATE.streams.find((x) => x.name === name);
+  if (!s) return;
+
+  const running = s.jobs.filter((j) => normalizeStatus(j.status) === "running").length;
+  document.getElementById("streamTitle").textContent = `${s.name} — stream registry`;
+  document.getElementById("streamRuntimeTag").textContent = `${running}/${s.jobs.length} running`;
+
+  document.getElementById("streamFlow").innerHTML = s.jobs.length ? s.jobs.map((j, i) => `
+    ${i ? '<span class="da2">→</span>' : ""}
+    <div class="dn2 ${statusClass(j.status)}" onclick="openDrawerDynamic('${escapeJs(j.uid)}')">
+      <div class="t">${escapeHtml(j.name)}</div>
+      <div class="s">${escapeHtml(j.jobType)}</div>
+      <div class="s" style="margin-top:3px">${statusBadge(j.status)}</div>
+    </div>
+  `).join("") : `<div class="empty">No stream jobs found.</div>`;
+
+  document.getElementById("streamJobsBody").innerHTML = s.jobs.length ? s.jobs.map((j) => `
+    <tr style="cursor:pointer" onclick="openDrawerDynamic('${escapeJs(j.uid)}')">
+      <td class="jn">${escapeHtml(j.name)}</td>
+      <td class="mo">${escapeHtml(j.jobType)}</td>
+      <td>${statusBadge(j.status)}</td>
+      <td class="mo">${escapeHtml(j.trigger)}</td>
+      <td class="pp">${escapeHtml(shortPath(j.targetPath))}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty">No stream jobs found.</td></tr>`;
+
+  document.getElementById("streamMetaBody").innerHTML = renderKeyValues({
+    "Name": s.name,
+    "Job count": s.jobs.length,
+    "Running": running,
+    "Runtime source": DASHBOARD_STATE.streamStatus ? "stream_supervisor_status.json" : "unavailable",
+    "Description": s.description || "-"
+  });
+}
+
+function renderKeyValues(obj) {
+  return Object.entries(obj).map(([k, v]) => `
+    <div class="kv"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v)}</div></div>
+  `).join("");
+}
+
+function statusClass(status) {
+  const s = normalizeStatus(status);
+  if (["running", "success", "succeeded"].includes(s)) return "ok";
+  if (["failed", "error", "dead"].includes(s)) return "fail";
+  if (["defined", "unknown"].includes(s)) return "";
+  return "run";
+}
+
+function renderAlerts() {
+  const alerts = DASHBOARD_STATE.alerts;
+  document.getElementById("alertsBadge").textContent = alerts.length;
+  document.getElementById("alertsTitleTag").textContent = `${alerts.length} active`;
+
+  document.getElementById("alertsBody").innerHTML = alerts.length ? alerts.map((a) => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1a1f2e">
+      <div style="width:28px;height:28px;background:#78350f30;color:#fbbf24;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">!</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:500;color:#e2e8f0">${escapeHtml(a.title)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${escapeHtml(a.detail)}</div>
+      </div>
+      <span class="tag ${a.type}">${escapeHtml(a.level)}</span>
+    </div>
+  `).join("") : `<div class="empty">No active alerts.</div>`;
+}
+
+function openDrawerDynamic(uid) {
+  const job = DASHBOARD_STATE.jobs.find((j) => j.uid === uid || j.id === uid || j.name === uid);
+  if (!job) return;
+
+  document.getElementById("d-title").textContent = job.name;
+  document.getElementById("d-tags").innerHTML = [
+    `<span class="tag ${job.type === "stream" ? "t-bl" : "t-am"}">${escapeHtml(job.type)}</span>`,
+    `<span class="tag t-gy">${escapeHtml(job.jobType)}</span>`,
+    `<span class="tag ${["failed", "error"].includes(normalizeStatus(job.status)) ? "t-re" : "t-gr"}">${escapeHtml(job.status)}</span>`
+  ].join("");
+
+  document.getElementById("d-meta").innerHTML = renderKeyValues({
+    "Pipeline": job.pipeline,
+    "Job type": job.jobType,
+    "Target": shortPath(job.targetPath) || "-",
+    "Trigger": job.trigger || "-",
+    "Status": job.status || "-",
+    "PID": job.pid || "-",
+    "Heartbeat age": job.heartbeatAgeSeconds != null ? `${job.heartbeatAgeSeconds}s` : "-"
+  });
+
+  document.getElementById("logLive").textContent = job.type === "stream" ? "⬤ Live" : "";
   document.getElementById("logSearch").value = "";
-  document.querySelectorAll(".lb").forEach(function(b) { b.classList.add("on"); });
-  updateCount();
+  document.querySelectorAll(".lb").forEach((b) => b.classList.add("on"));
+
+  const body = document.getElementById("logBody");
+  body.innerHTML = `<div class="ll" data-level="INFO"><span class="ll-ts">-</span><span class="ll-lv INFO">INFO</span><span class="ll-msg">Loading logs...</span></div>`;
   document.getElementById("logDrawer").classList.add("open");
-  setTimeout(function() { body.scrollTop = body.scrollHeight; }, 50);
+  updateCount();
+
+  loadLogsForJob(job);
+}
+
+async function loadLogsForJob(job) {
+  let logUrl;
+
+  if (job.type === "stream") {
+    const logName = job.runtimeUnitName || job.name;
+    logUrl = `/api/runtime/logs/${encodeURIComponent(logName)}?kind=stream&lines=800`;
+  } else {
+    logUrl =
+      `/api/runtime/logs/${encodeURIComponent(job.uid)}` +
+      `?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}` +
+      `&task=${encodeURIComponent(job.name)}&lines=800`;
+  }
+
+  try {
+    const text = await apiText(logUrl);
+    DASHBOARD_STATE.lastLogText = text;
+    renderPlainLogs(text || "No log lines returned.");
+  } catch (e) {
+    const message = [
+      "Cannot load runtime logs.",
+      e.message,
+      "",
+      "Expected backend endpoint:",
+      job.type === "stream"
+        ? "GET /api/runtime/logs/{unit_name}?kind=stream&lines=800"
+        : "GET /api/runtime/logs/{job_id}?kind=batch&pipeline={dag_id}&task={task_id}&lines=800"
+    ].join("\n");
+    DASHBOARD_STATE.lastLogText = message;
+    renderPlainLogs(message);
+  }
+}
+
+function renderPlainLogs(text) {
+  const body = document.getElementById("logBody");
+  const lines = String(text).split("\n");
+  body.innerHTML = lines.map((line) => {
+    let level = "INFO";
+    if (/error|traceback|exception|failed/i.test(line)) level = "ERROR";
+    else if (/warn|warning/i.test(line)) level = "WARN";
+
+    const tsMatch = line.match(/(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/);
+    const ts = tsMatch ? tsMatch[1] : "-";
+
+    return `
+      <div class="ll" data-level="${level}">
+        <span class="ll-ts">${escapeHtml(ts)}</span>
+        <span class="ll-lv ${level}">${level}</span>
+        <span class="ll-msg">${escapeHtml(line)}</span>
+      </div>
+    `;
+  }).join("");
+
+  filterLogs();
+  body.scrollTop = body.scrollHeight;
 }
 
 function closeDrawer(e) {
@@ -804,92 +1200,148 @@ function toggleLevel(btn) {
 }
 
 function filterLogs() {
-  var q = document.getElementById("logSearch").value.toLowerCase();
-  var active = {};
-  document.querySelectorAll(".lb.on").forEach(function(b) { active[b.textContent] = true; });
-  document.querySelectorAll(".ll").forEach(function(l) {
-    var msg = l.querySelector(".ll-msg");
-    var vis = active[l.dataset.level] && (!q || msg.textContent.toLowerCase().indexOf(q) >= 0);
-    l.classList.toggle("hidden", !vis);
-    if (q && vis) {
-      var re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
-      msg.innerHTML = msg.textContent.replace(re, '<span class="hl">$1</span>');
+  const q = document.getElementById("logSearch").value.toLowerCase();
+  const active = {};
+  document.querySelectorAll(".lb.on").forEach((b) => { active[b.textContent] = true; });
+
+  document.querySelectorAll(".ll").forEach((line) => {
+    const msg = line.querySelector(".ll-msg");
+    if (!msg) return;
+
+    const original = msg.textContent;
+    const visible = active[line.dataset.level] && (!q || original.toLowerCase().includes(q));
+    line.classList.toggle("hidden", !visible);
+
+    if (q && visible) {
+      const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+      msg.innerHTML = escapeHtml(original).replace(re, '<span class="hl">$1</span>');
     } else {
-      msg.innerHTML = msg.textContent;
+      msg.textContent = original;
     }
   });
+
   updateCount();
 }
 
 function updateCount() {
-  var tot = document.querySelectorAll(".ll").length;
-  var vis = document.querySelectorAll(".ll:not(.hidden)").length;
-  document.getElementById("logCount").textContent = vis === tot ? tot + " lines" : vis + " of " + tot + " lines";
+  const total = document.querySelectorAll(".ll").length;
+  const visible = document.querySelectorAll(".ll:not(.hidden)").length;
+  document.getElementById("logCount").textContent = visible === total ? `${total} lines` : `${visible} of ${total} lines`;
 }
 
 function downloadLogs() {
-  var txt = [];
-  document.querySelectorAll(".ll:not(.hidden)").forEach(function(l) {
-    txt.push("[" + l.querySelector(".ll-ts").textContent + "] " + l.querySelector(".ll-lv").textContent + " " + l.querySelector(".ll-msg").textContent);
+  const txt = [];
+  document.querySelectorAll(".ll:not(.hidden)").forEach((line) => {
+    const ts = line.querySelector(".ll-ts")?.textContent || "-";
+    const lv = line.querySelector(".ll-lv")?.textContent || "INFO";
+    const msg = line.querySelector(".ll-msg")?.textContent || "";
+    txt.push(`[${ts}] ${lv} ${msg}`);
   });
-  var a = document.createElement("a");
+
+  const a = document.createElement("a");
   a.href = "data:text/plain;charset=utf-8," + encodeURIComponent(txt.join("\n"));
   a.download = "job-logs.txt";
   a.click();
 }
 
-function show(id, el) {
-  document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
-  document.querySelectorAll(".ni").forEach(function(n) { n.classList.remove("active"); });
-  document.getElementById("page-" + id).classList.add("active");
-  el.classList.add("active");
-  var titles = {
-    dashboard: "Dashboard", gold_p: "gold_price_pipeline", weather_p: "weather_forecast_pipeline",
-    events_p: "clickstream_user_events", monitor: "Job Monitor", dags: "Airflow DAGs",
-    lake: "Delta Lakehouse", infra: "Infrastructure", alerts: "Alerts"
-  };
-  document.getElementById("pt").textContent = titles[id] || id;
+function showPage(id, title) {
+  document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+  document.querySelectorAll(".ni").forEach((n) => n.classList.remove("active"));
+
+  const page = document.getElementById("page-" + id);
+  if (page) page.classList.add("active");
+
+  document.querySelectorAll(`[data-page="${id}"]`).forEach((n) => n.classList.add("active"));
+  document.getElementById("pt").textContent = title || id;
 }
 
-new Chart(document.getElementById("throughputChart"), {
-  type: "line",
-  data: {
-    labels: ["0s","15s","30s","45s","60s","75s","90s","105s","120s","135s","150s","165s","180s","195s","210s","225s","240s","255s","270s","285s"],
-    datasets: [{
-      label: "Events/batch",
-      data: [142,98,210,98,320,280,200,310,260,290,330,180,240,310,270,200,280,340,250,290],
-      borderColor: "#818cf8", backgroundColor: "rgba(129,140,248,0.07)",
-      borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.4
-    }]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color: "#475569", font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: "#1e2535" } },
-      y: { ticks: { color: "#475569", font: { size: 10 } }, grid: { color: "#1e2535" } }
-    }
-  }
+function escapeJs(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+document.addEventListener("click", (e) => {
+  const item = e.target.closest("[data-page]");
+  if (!item) return;
+  const id = item.dataset.page;
+  const titles = {
+    dashboard: "Dashboard",
+    monitor: "Job Monitor",
+    dags: "Airflow DAGs",
+    lake: "Delta Lakehouse",
+    infra: "Infrastructure",
+    alerts: "Alerts"
+  };
+  showPage(id, titles[id] || id);
 });
 
-new Chart(document.getElementById("stageChart"), {
-  type: "bar",
-  data: {
-    labels: ["api_to_bronze", "bronze_to_silver", "silver_to_gold"],
-    datasets: [
-      { label: "gold_price", data: [85, 60, 55], backgroundColor: "#78350f80", borderColor: "#fbbf24", borderWidth: 1 },
-      { label: "weather_forecast", data: [90, 75, 50], backgroundColor: "#1e3a5f80", borderColor: "#60a5fa", borderWidth: 1 }
-    ]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false, indexAxis: "y",
-    plugins: { legend: { labels: { color: "#94a3b8", font: { size: 10 }, boxWidth: 10 } } },
-    scales: {
-      x: { ticks: { color: "#475569", font: { size: 10 }, callback: function(v) { return v + "s"; } }, grid: { color: "#1e2535" } },
-      y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e2535" } }
+document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
+
+function renderCharts() {
+  renderStreamChart();
+  renderBatchChart();
+}
+
+function renderStreamChart() {
+  const ctx = document.getElementById("throughputChart");
+  const streamJobs = DASHBOARD_STATE.jobs.filter((j) => j.type === "stream");
+  const labels = streamJobs.map((j) => j.name);
+  const data = streamJobs.map((j) => j.heartbeatAgeSeconds ?? 0);
+
+  if (charts.stream) charts.stream.destroy();
+  charts.stream = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Heartbeat age (seconds)",
+        data,
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: "#94a3b8", font: { size: 10 }, boxWidth: 10 } } },
+      scales: {
+        x: { ticks: { color: "#475569", font: { size: 10 } }, grid: { color: "#1e2535" } },
+        y: { ticks: { color: "#475569", font: { size: 10 } }, grid: { color: "#1e2535" } }
+      }
     }
-  }
-});
+  });
+}
+
+function renderBatchChart() {
+  const ctx = document.getElementById("stageChart");
+  const labels = DASHBOARD_STATE.pipelines.map((p) => p.name);
+  const data = DASHBOARD_STATE.pipelines.map((p) => p.jobs.length);
+
+  if (charts.batch) charts.batch.destroy();
+  charts.batch = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Tasks per DAG",
+        data,
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { labels: { color: "#94a3b8", font: { size: 10 }, boxWidth: 10 } } },
+      scales: {
+        x: { ticks: { color: "#475569", font: { size: 10 }, precision: 0 }, grid: { color: "#1e2535" } },
+        y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e2535" } }
+      }
+    }
+  });
+}
+
+loadDashboard();
+setInterval(loadDashboard, REFRESH_MS);
 </script>
 </body>
+
 </html>

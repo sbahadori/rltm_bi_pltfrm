@@ -3,23 +3,39 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from apps.web import app
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI , HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+import time
 
-dash_app = FastAPI(title="BI Dashboard Config API")
 
-dash_app.add_middleware(
+
+app = FastAPI(title="BI Dashboard Config API")
+
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
 PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
 BATCH_CATALOG_PATH = PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"
 STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
+
+STREAM_STATUS_FILE = Path(
+    os.getenv(
+        "STREAM_STATUS_FILE",
+        "/runtime/spark_health/stream_supervisor_status.json"
+    )
+)
+
+AIRFLOW_LOG_DIR = Path(
+    os.getenv(
+        "AIRFLOW_LOG_DIR",
+        "/runtime/airflow_logs"
+    )
+)
 
 
 def now_iso() -> str:
@@ -139,13 +155,29 @@ def _build_pipelines(catalog: dict, registry: dict) -> list[dict]:
 
     return pipelines
 
+def _read_json_file(path: Path) -> dict:
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+
+def _tail_file(path: Path, lines: int = 300) -> str:
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Log file not found: {path}")
+
+    content = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(content[-lines:])
+
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
-@dash_app.get("/api/config")
+@app.get("/api/config")
 async def get_config():
     catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = _load_json(STREAM_REGISTRY_PATH) or {"streams": []}
@@ -159,3 +191,90 @@ async def get_config():
             "loaded_at": now_iso(),
         },
     })
+
+@app.get("/api/runtime/streams/status")
+async def get_stream_status():
+    data = _read_json_file(STREAM_STATUS_FILE)
+
+    now = int(time.time())
+
+    for unit_name, unit in data.get("units", {}).items():
+        pid = unit.get("pid")
+        returncode = unit.get("returncode")
+        heartbeat = unit.get("heartbeat") or {}
+
+        if pid and returncode is None:
+            computed_status = "running"
+        elif returncode == 0:
+            computed_status = "stopped"
+        elif returncode is not None:
+            computed_status = "failed"
+        else:
+            computed_status = "unknown"
+
+        unit["computed_status"] = computed_status
+
+        if "ts_epoch" in heartbeat:
+            unit["heartbeat_age_seconds"] = now - int(heartbeat["ts_epoch"])
+
+    return data
+
+
+STREAM_LOG_DIR = Path(
+    os.getenv(
+        "STREAM_LOG_DIR",
+        "/runtime/spark_health/logs"
+    )
+)
+
+
+@app.get("/api/runtime/streams/logs/{unit_name}")
+async def get_stream_log(
+    unit_name: str,
+    lines: int = Query(default=300, ge=10, le=2000)
+):
+    log_path = STREAM_LOG_DIR / f"{unit_name}.log"
+    return PlainTextResponse(_tail_text(log_path, lines))
+
+def _find_latest_airflow_log(dag_id: str, task_id: str) -> Path:
+    dag_dir = AIRFLOW_LOG_DIR / f"dag_id={dag_id}"
+
+    if not dag_dir.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Airflow log directory found for dag_id={dag_id}"
+        )
+
+    candidates = list(dag_dir.glob(f"**/task_id={task_id}/**/*.log"))
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No log found for dag_id={dag_id}, task_id={task_id}"
+        )
+
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+@app.get("/api/runtime/logs/{job_id}")
+async def get_runtime_logs(
+    job_id: str,
+    kind: str = Query(..., pattern="^(batch|stream)$"),
+    pipeline: str | None = None,
+    task: str | None = None,
+    lines: int = Query(default=300, ge=20, le=2000),
+):
+    if kind == "stream":
+        log_path = STREAM_LOG_DIR / f"{job_id}.log"
+        return PlainTextResponse(_tail_file(log_path, lines))
+
+    if kind == "batch":
+        if not pipeline or not task:
+            raise HTTPException(
+                status_code=400,
+                detail="pipeline and task are required for batch logs"
+            )
+        log_path = _find_latest_airflow_log(pipeline, task)
+        return PlainTextResponse(_tail_file(log_path, lines))
+
+    raise HTTPException(status_code=400, detail="Unsupported job kind")

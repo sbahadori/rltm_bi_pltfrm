@@ -1,5 +1,6 @@
 # env
 .env
+.env*
 
 # local runtime data
 minio_data/

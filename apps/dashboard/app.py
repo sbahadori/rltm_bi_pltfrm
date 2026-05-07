@@ -21,6 +21,22 @@ PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pl
 BATCH_CATALOG_PATH = PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"
 STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
 
+STREAM_STATUS_FILE = Path(os.getenv("STREAM_STATUS_FILE","/runtime/spark_health/stream_supervisor_status.json",))
+STREAM_LOG_DIR = Path(os.getenv("STREAM_LOG_DIR","/runtime/spark_health/logs",))
+AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR","/runtime/airflow_logs",))
+
+def _path_state(path: Path) -> dict[str, Any]:
+    exists = path.exists()
+    is_file = path.is_file()
+    is_dir = path.is_dir()
+
+    return {
+        "path": str(path),
+        "exists": exists,
+        "is_file": is_file,
+        "is_dir": is_dir,
+        "readable": os.access(path, os.R_OK) if exists else False,
+    }
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -193,5 +209,21 @@ async def get_config() -> JSONResponse:
                 "stream_registry_path": str(STREAM_REGISTRY_PATH),
                 "loaded_at": now_iso(),
             },
+        }
+    )
+
+@app.get("/api/runtime/mounts")
+async def get_runtime_mounts() -> JSONResponse:
+    return JSONResponse(
+        {
+            "stream_status_file": _path_state(STREAM_STATUS_FILE),
+            "stream_log_dir": _path_state(STREAM_LOG_DIR),
+            "airflow_log_dir": _path_state(AIRFLOW_LOG_DIR),
+            "env": {
+                "STREAM_STATUS_FILE": os.getenv("STREAM_STATUS_FILE", ""),
+                "STREAM_LOG_DIR": os.getenv("STREAM_LOG_DIR", ""),
+                "AIRFLOW_LOG_DIR": os.getenv("AIRFLOW_LOG_DIR", ""),
+            },
+            "checked_at": now_iso(),
         }
     )

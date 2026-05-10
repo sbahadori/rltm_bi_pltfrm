@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import time
-
+import requests
 from fastapi import FastAPI ,Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,13 +20,17 @@ app.add_middleware(
 
 PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
 BATCH_CATALOG_PATH = PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"
-STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
 
+STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
 STREAM_STATUS_FILE = Path(os.getenv("STREAM_STATUS_FILE","/runtime/spark_health/stream_supervisor_status.json",))
 STREAM_LOG_DIR = Path(os.getenv("STREAM_LOG_DIR","/runtime/spark_health/logs",))
-AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR","/runtime/airflow_logs",))
 STREAM_STATUS_STALE_SECONDS = int(os.getenv("STREAM_STATUS_STALE_SECONDS", "120"))
 STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS", "120"))
+
+AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR","/runtime/airflow_logs",))
+AIRFLOW_API_BASE = os.getenv("AIRFLOW_API_BASE", "http://airflow-api-server:8080")
+AIRFLOW_USER = os.getenv("AIRFLOW_USER", "admin")
+AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
 
 def _read_json_file(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -35,6 +39,15 @@ def _read_json_file(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
+def _airflow_get(path: str) -> dict[str, Any]:
+    url = f"{AIRFLOW_API_BASE.rstrip('/')}{path}"
+    response = requests.get(
+        url,
+        auth=(AIRFLOW_USER, AIRFLOW_PASSWORD),
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
 
 def _safe_int(value: Any) -> int | None:
     try:

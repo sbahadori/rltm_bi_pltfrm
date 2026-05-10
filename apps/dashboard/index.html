@@ -185,6 +185,10 @@ table{width:100%;border-collapse:collapse}th{text-align:left;padding:7px 10px;fo
 <script>
 const REFRESH_MS = 5000;
 const DASHBOARD_STATE = {config:null,pipelines:[],jobs:[],streams:[],streamStatus:null,alerts:[],selectedPipeline:null,selectedStream:null,lastError:null};
+
+const config = await apiJson("/api/config");
+const runtimeJobs = await apiJson("/api/runtime/jobs");
+
 let throughputChart = null;
 let stageChart = null;
 
@@ -252,7 +256,7 @@ async function loadDashboard(){
     const normalized=normalizeConfig(config);
     DASHBOARD_STATE.config=config;
     DASHBOARD_STATE.pipelines=normalized.pipelines;
-    DASHBOARD_STATE.jobs=normalized.jobs;
+    DASHBOARD_STATE.jobs=runtimeJobs.jobs;
     DASHBOARD_STATE.streams=normalized.streams;
     DASHBOARD_STATE.lastError=null;
     document.getElementById("configTag").innerHTML=`Config: <span style="color:#4ade80">loaded</span>`;
@@ -473,6 +477,14 @@ function findRuntimeUnitForJob(job, units) {
       u.unit_name === `${job.pipeline}_silver` && job.id.endsWith("__silver")
     );
   });
+}
+
+async function openJobDrawer(jobId) {
+  const job = findJob(jobId);
+  renderJobMeta(job);
+
+  const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(jobId)}`);
+  renderRunHistory(runs.runs);
 }
 
 document.getElementById("refreshBtn").addEventListener("click",loadDashboard);

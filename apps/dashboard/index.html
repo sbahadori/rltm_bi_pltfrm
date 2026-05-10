@@ -1,495 +1,166 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>rltm_bi_pltfrm Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0f1117;--panel:#161b27;--panel2:#1a2236;--line:#1e2535;--line2:#2d3748;
-  --text:#e2e8f0;--text2:#94a3b8;--muted:#64748b;--muted2:#475569;
-  --blue:#60a5fa;--blue2:#1e3a5f;--green:#4ade80;--amber:#fbbf24;--red:#f87171;--purple:#c084fc;
-}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:13px}
-.sidebar{width:250px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
-.logo{padding:14px 16px;border-bottom:1px solid var(--line)}
-.logo-top{display:flex;align-items:center;gap:9px}.logo-icon{width:30px;height:30px;background:#3b82f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}.logo-text{font-size:13px;font-weight:600;color:#f1f5f9}.logo-sub{font-size:10px;color:var(--muted2);margin-top:1px}.branch{margin-top:7px;font-size:10px;color:var(--muted2);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-family:monospace;display:inline-block}
-nav{padding:10px 8px;flex:1;overflow-y:auto}.nl{font-size:10px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:.8px;padding:0 8px;margin-bottom:4px}.ni{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;color:var(--text2);margin-bottom:1px;font-size:12px}.ni:hover{background:var(--line);color:var(--text)}.ni.active{background:#1e3a5f;color:var(--blue)}.ni svg{width:14px;height:14px;flex-shrink:0}.ni .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.nb{margin-left:auto;font-size:10px;border-radius:10px;padding:1px 6px;flex-shrink:0}.nb-r{background:#7f1d1d;color:#fca5a5}.nb-a{background:#78350f;color:#fcd34d}.nb-b{background:#1e3a5f;color:#93c5fd}.sf{padding:10px 16px;border-top:1px solid var(--line)}.av{width:26px;height:26px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--blue);flex-shrink:0}
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden}.topbar{background:var(--panel);border-bottom:1px solid var(--line);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}.tb-title{font-size:14px;font-weight:600;color:#f1f5f9}.tb-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:none}.bp{background:#3b82f6;color:#fff}.bg{background:transparent;color:var(--text2);border:1px solid var(--line)}.bg:hover{background:var(--line)}
-.tag{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}.t-bl{background:#1e3a5f;color:var(--blue)}.t-gr{background:#14532d30;color:var(--green)}.t-am{background:#78350f30;color:var(--amber)}.t-re{background:#7f1d1d30;color:var(--red)}.t-pu{background:#3b076430;color:var(--purple)}.t-gy{background:var(--line);color:var(--text2)}
-.content{flex:1;overflow-y:auto;padding:18px 20px;background:var(--bg)}.page{display:none}.page.active{display:block}.mr{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.mc{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}.ml{font-size:10px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}.mv{font-size:22px;font-weight:600;color:#f1f5f9;line-height:1}.ms{font-size:10px;color:var(--muted);margin-top:3px}.up{color:var(--green)!important}.dn{color:var(--red)!important}.wn{color:var(--amber)!important}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:16px}.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}.ct{font-size:12px;font-weight:600;color:var(--text)}.subtle{font-size:11px;color:var(--muted);line-height:1.6}.empty{font-size:12px;color:var(--muted);padding:12px;border:1px dashed var(--line);border-radius:6px;background:#0f111766}
-table{width:100%;border-collapse:collapse}th{text-align:left;padding:7px 10px;font-size:10px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--line)}td{padding:9px 10px;border-bottom:1px solid #1a1f2e;font-size:12px;color:var(--text2);vertical-align:top}tr:last-child td{border-bottom:none}tr:hover td{background:var(--panel2)}.jn{color:var(--text);font-weight:500}.mo{font-family:monospace;font-size:11px}.dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:5px}.dg{background:var(--green);box-shadow:0 0 4px #4ade8055}.da{background:var(--amber)}.dr{background:var(--red)}.dgr{background:var(--muted2)}.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}.cw{position:relative;height:190px}.dw{padding:8px 0;overflow-x:auto}.dr2{display:flex;align-items:center;gap:0;flex-wrap:nowrap;min-width:max-content}.dn2{display:inline-flex;flex-direction:column;align-items:flex-start;background:var(--line);border:1px solid var(--line2);border-radius:6px;padding:7px 10px;font-size:11px;cursor:pointer;min-width:160px;max-width:240px}.dn2 .t{color:var(--text);font-weight:500}.dn2 .s{color:var(--muted);font-size:10px;margin-top:2px}.dn2.run{border-color:#3b82f6}.dn2.ok{border-color:#4ade8055}.dn2.fail{border-color:#f8717155}.dn2.stm{border-color:#c084fc55;background:#3b076420}.da2{color:var(--line2);margin:0 6px;font-size:14px;flex-shrink:0}.pp{font-family:monospace;font-size:10px;background:var(--bg);border:1px solid var(--line);padding:2px 7px;border-radius:4px;color:var(--muted);word-break:break-all}.sl{font-size:10px;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
-.ic{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:13px}.in{font-size:13px;font-weight:600;color:var(--text)}.is{font-size:10px;color:var(--muted);margin-top:1px}.il{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}.ist{display:flex;justify-content:space-between;font-size:11px;margin-top:5px;gap:10px}.ist span:first-child{color:var(--muted)}.hb{height:3px;background:var(--line);border-radius:2px;margin-top:8px}.hf{height:100%;border-radius:2px}
-.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100}.ov.open{display:block}.dr3{position:fixed;right:0;top:0;bottom:0;width:min(720px,92vw);background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:101;transform:translateX(100%);transition:transform .2s ease}.ov.open .dr3{transform:translateX(0)}.dh{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px;flex-shrink:0}.dhi{flex:1}.dht{font-size:13px;font-weight:600;color:#f1f5f9}.dhg{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap}.dc{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer}.dc:hover{color:var(--text)}.dm{padding:8px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap;flex-shrink:0}.dmi{font-size:11px;color:var(--muted)}.dmi span{color:var(--text2)}.dtb{padding:7px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-shrink:0}.dtb input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:5px 9px;font-size:12px;color:var(--text);outline:none}.dtb input:focus{border-color:#3b82f6}.lbs{display:flex;gap:3px}.lb{padding:3px 7px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid transparent;opacity:.45}.lb.on{opacity:1}.lb.INFO{background:#1e3a5f22;color:var(--blue);border-color:#1e3a5f}.lb.WARN{background:#78350f22;color:var(--amber);border-color:#78350f}.lb.ERROR{background:#7f1d1d22;color:var(--red);border-color:#7f1d1d}.lb-body{flex:1;overflow-y:auto;padding:8px 16px;font-family:monospace;font-size:11.5px;line-height:1.8}.ll{display:flex;gap:9px;padding:1px 0}.ll:hover{background:var(--panel2);border-radius:3px}.ll.hidden{display:none}.ll-ts{color:var(--muted2);flex-shrink:0;width:76px}.ll-lv{flex-shrink:0;width:44px;font-weight:600}.ll-lv.INFO{color:var(--blue)}.ll-lv.WARN{color:var(--amber)}.ll-lv.ERROR{color:var(--red)}.ll-msg{color:var(--text2);flex:1;word-break:break-word;white-space:pre-wrap}.ll-msg .hl{background:#fbbf2430;color:var(--amber);border-radius:2px;padding:0 2px}.df{padding:7px 16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}.df span{font-size:11px;color:var(--muted2)}
-@media(max-width:980px){.sidebar{width:210px}.mr{grid-template-columns:repeat(2,1fr)}.g2,.g3{grid-template-columns:1fr}.topbar{height:auto;min-height:50px;padding:8px 14px}.tb-right{justify-content:flex-end}.content{padding:14px}.dr3{width:96vw}}
-@media(max-width:700px){body{display:block;overflow:auto}.sidebar{width:100%;height:auto}.main{height:auto}.content{overflow:visible}.mr{grid-template-columns:1fr}}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>rltm_bi_pltfrm Dashboard</title>
+  <style>
+    :root{
+      --bg:#0f1117; --panel:#161b27; --panel2:#111827; --card:#171d2b; --line:#263043;
+      --text:#e5e7eb; --muted:#94a3b8; --muted2:#64748b; --blue:#60a5fa; --green:#34d399;
+      --yellow:#fbbf24; --red:#f87171; --purple:#a78bfa; --cyan:#22d3ee; --shadow:0 20px 60px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px}
+    a{color:inherit;text-decoration:none}.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}.sidebar{background:#111724;border-right:1px solid var(--line);padding:20px 16px;position:sticky;top:0;height:100vh;overflow:auto}.brand{display:flex;gap:12px;align-items:center;margin-bottom:22px}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:grid;place-items:center;font-weight:800}.brand h1{font-size:16px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}.nav-title{font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.08em;margin:18px 8px 8px}.nav a,.nav button{width:100%;border:0;background:transparent;color:var(--muted);text-align:left;display:flex;align-items:center;gap:9px;padding:10px 10px;border-radius:12px;cursor:pointer;font:inherit}.nav a:hover,.nav button:hover,.nav .active{background:#1f2937;color:#fff}.pill{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted);margin-left:auto}.main{padding:20px 24px 40px;overflow:hidden}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.top h2{margin:0;font-size:22px}.statusline{display:flex;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:12px}.btn{border:1px solid var(--line);background:#1f2937;color:#fff;border-radius:12px;padding:9px 12px;cursor:pointer}.btn:hover{background:#273449}.grid{display:grid;gap:14px}.cards{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow)}.metric{font-size:30px;font-weight:800;margin:8px 0}.muted{color:var(--muted)}.small{font-size:12px}.two{grid-template-columns:1.25fr .75fr}.section{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:14px}.section-h{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}.section-h h3{margin:0;font-size:15px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px;font-weight:600;background:#111827}td{color:#dbe4f0}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}.tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;border:1px solid var(--line);color:var(--muted);margin:2px}.tag.batch{color:#fbbf24;border-color:#604b19;background:#2a2111}.tag.stream{color:#22d3ee;border-color:#155e75;background:#092d38}.tag.ok{color:#34d399;border-color:#14532d;background:#092516}.tag.bad{color:#f87171;border-color:#7f1d1d;background:#2a1111}.tag.warn{color:#fbbf24;border-color:#713f12;background:#2b2109}.tag.info{color:#93c5fd;border-color:#1e3a8a;background:#0f1d3a}.status{font-weight:700}.status.success,.status.running{color:var(--green)}.status.failed,.status.error{color:var(--red)}.status.restarting,.status.queued,.status.scheduled,.status.stale,.status.no_runs{color:var(--yellow)}.status.unknown,.status.defined,.status.not_running{color:var(--muted)}.clickable{cursor:pointer}.clickable:hover td{background:#1b2536}.empty{padding:20px;color:var(--muted);text-align:center}.alerts{display:grid;gap:10px;padding:14px}.alert{border:1px solid var(--line);border-radius:14px;padding:12px;background:#111827}.alert .lvl{font-size:11px;font-weight:800;margin-bottom:5px}.lvl.ERROR{color:var(--red)}.lvl.WARN{color:var(--yellow)}.lvl.INFO{color:var(--blue)}.drawer{position:fixed;inset:0;pointer-events:none;z-index:40}.drawer.open{pointer-events:auto}.overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;transition:.15s}.drawer.open .overlay{opacity:1}.panel{position:absolute;right:0;top:0;height:100%;width:min(780px,96vw);background:#0f172a;border-left:1px solid var(--line);transform:translateX(100%);transition:.2s;display:flex;flex-direction:column}.drawer.open .panel{transform:translateX(0)}.drawer-h{display:flex;justify-content:space-between;align-items:flex-start;padding:18px;border-bottom:1px solid var(--line)}.drawer-h h3{margin:0 0 6px}.x{border:0;background:transparent;color:#cbd5e1;font-size:24px;cursor:pointer}.drawer-body{padding:16px;overflow:auto}.meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}.meta{border:1px solid var(--line);border-radius:12px;padding:10px;background:#111827}.meta b{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.logs{background:#060b14;border:1px solid #1f2937;border-radius:14px;padding:12px;white-space:pre-wrap;max-height:340px;overflow:auto;color:#d1d5db}.tabs{display:flex;gap:8px;margin:12px 0}.tab{border:1px solid var(--line);background:#111827;color:var(--muted);border-radius:999px;padding:7px 12px;cursor:pointer}.tab.active{background:#1f2937;color:#fff}.hidden{display:none}.errbox{background:#2a1111;color:#fecaca;border:1px solid #7f1d1d;border-radius:14px;padding:12px;margin-bottom:14px}.okbox{background:#092516;color:#bbf7d0;border:1px solid #14532d;border-radius:14px;padding:12px;margin-bottom:14px}@media(max-width:1000px){.layout{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.cards,.two{grid-template-columns:1fr}.meta-grid{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-<aside class="sidebar">
-  <div class="logo">
-    <div class="logo-top">
-      <div class="logo-icon">BI</div>
-      <div><div class="logo-text">rltm_bi_pltfrm</div><div class="logo-sub">Real-Time BI Platform</div></div>
-    </div>
-    <div class="branch">branch: new_architecture_v2</div>
-  </div>
-  <nav>
-    <div style="margin-bottom:14px">
-      <div class="nl">Overview</div>
-      <div class="ni active" data-page="dashboard" onclick="showPage('dashboard',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-        <span class="txt">Dashboard</span>
-      </div>
-    </div>
-    <div style="margin-bottom:14px">
-      <div class="nl">Batch Pipelines</div>
-      <div id="batchNav"><div class="ni"><span class="txt">Loading batch pipelines...</span></div></div>
-    </div>
-    <div style="margin-bottom:14px">
-      <div class="nl">Streaming</div>
-      <div id="streamNav"><div class="ni"><span class="txt">Loading streams...</span></div></div>
-    </div>
-    <div style="margin-bottom:14px">
-      <div class="nl">Jobs</div>
-      <div class="ni" data-page="monitor" onclick="showPage('monitor',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 3h14v2H1zm0 4h14v2H1zm0 4h8v2H1z"/></svg>
-        <span class="txt">Job Monitor</span>
-      </div>
-      <div class="ni" data-page="dags" onclick="showPage('dags',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 1v4M11 1v4M1 7h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-        <span class="txt">Airflow DAGs</span>
-      </div>
-    </div>
-    <div style="margin-bottom:14px">
-      <div class="nl">Storage</div>
-      <div class="ni" data-page="lake" onclick="showPage('lake',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="6" ry="2"/><path d="M2 4v4c0 1.1 2.7 2 6 2s6-.9 6-2V4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 8v4c0 1.1 2.7 2 6 2s6-.9 6-2V8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-        <span class="txt">Delta Lakehouse</span>
-      </div>
-    </div>
-    <div style="margin-bottom:14px">
-      <div class="nl">System</div>
-      <div class="ni" data-page="infra" onclick="showPage('infra',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
-        <span class="txt">Infrastructure</span>
-      </div>
-      <div class="ni" data-page="alerts" onclick="showPage('alerts',this)">
-        <svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a5 5 0 00-5 5v3l-1 2h12l-1-2V6a5 5 0 00-5-5zm-1 13a1 1 0 002 0H7z"/></svg>
-        <span class="txt">Alerts</span><span class="nb nb-a" id="alertCountNav">0</span>
-      </div>
-    </div>
-  </nav>
-  <div class="sf">
-    <div style="display:flex;align-items:center;gap:8px">
-      <div class="av">AD</div>
-      <div><div style="font-size:12px;color:#e2e8f0;font-weight:500">admin</div><div style="font-size:10px;color:#64748b">Airflow · MinIO</div></div>
-    </div>
-  </div>
-</aside>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><div class="logo">BI</div><div><h1>rltm_bi_pltfrm</h1><p>Real-Time BI Platform</p></div></div>
+      <nav class="nav">
+        <div class="nav-title">Overview</div>
+        <button class="active" data-view="dashboard">Dashboard</button>
+        <div class="nav-title">Batch Pipelines</div>
+        <div id="batchNav"><div class="muted small" style="padding:8px 10px">Loading...</div></div>
+        <div class="nav-title">Streaming</div>
+        <div id="streamNav"><div class="muted small" style="padding:8px 10px">Loading...</div></div>
+        <div class="nav-title">Jobs</div>
+        <button data-view="jobs">Job Monitor</button>
+        <button data-view="dags">Airflow DAGs</button>
+        <button data-view="lakehouse">Delta Lakehouse</button>
+        <button data-view="alerts">Alerts <span id="alertCountNav" class="pill">0</span></button>
+      </nav>
+    </aside>
 
-<div class="main">
-  <div class="topbar">
-    <div class="tb-title" id="pt">Dashboard</div>
-    <div class="tb-right">
-      <span class="tag t-gy" id="runtimeTag">Runtime status: loading</span>
-      <span class="tag t-gy" id="configTag">Config: loading</span>
-      <span class="tag t-gy" id="lastRefreshTag">Never refreshed</span>
-      <button class="btn bg" id="refreshBtn" type="button">Refresh</button>
-    </div>
+    <main class="main">
+      <div class="top">
+        <div><h2 id="pageTitle">Dashboard</h2><div class="statusline"><span id="runtimeTag">Runtime: loading</span><span id="configTag">Config: loading</span><span id="refreshTag">Never refreshed</span></div></div>
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+      <div id="errorBox"></div>
+
+      <section id="view-dashboard">
+        <div class="grid cards">
+          <div class="card"><div class="muted small">Streaming jobs</div><div id="metricStreams" class="metric">-</div><div class="muted small">from stream registry</div></div>
+          <div class="card"><div class="muted small">Batch jobs</div><div id="metricBatch" class="metric">-</div><div class="muted small">from pipeline catalog</div></div>
+          <div class="card"><div class="muted small">Lakehouse targets</div><div id="metricDelta" class="metric">-</div><div class="muted small">distinct output paths</div></div>
+          <div class="card"><div class="muted small">Open issues</div><div id="metricIssues" class="metric">-</div><div class="muted small">derived alerts</div></div>
+        </div>
+        <div class="grid two">
+          <div class="section"><div class="section-h"><h3>Recent activity</h3><span id="recentCount" class="muted small">0 jobs</span></div><div class="table-wrap"><table><thead><tr><th>Job / Stream</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Output path</th></tr></thead><tbody id="recentBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+          <div class="section"><div class="section-h"><h3>Active alerts</h3><span id="alertCount" class="muted small">0 active</span></div><div id="alertsBox" class="alerts"><div class="empty">Loading...</div></div></div>
+        </div>
+      </section>
+
+      <section id="view-jobs" class="hidden section"><div class="section-h"><h3>All jobs</h3><span class="muted small">runtime-aware if APIs are available</span></div><div class="table-wrap"><table><thead><tr><th>Container</th><th>App name</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Trigger</th><th>Output</th><th>Action</th></tr></thead><tbody id="jobsBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody></table></div></section>
+      <section id="view-dags" class="hidden section"><div class="section-h"><h3>Catalog-driven DAGs</h3><span class="muted small">configs/batch/pipeline_catalog.json</span></div><div class="table-wrap"><table><thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Tags</th><th>Status</th></tr></thead><tbody id="dagsBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></section>
+      <section id="view-lakehouse" class="hidden section"><div class="section-h"><h3>Delta Lakehouse targets</h3><span class="muted small">derived from job target paths</span></div><div class="table-wrap"><table><thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Type</th></tr></thead><tbody id="lakeBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></section>
+      <section id="view-alerts" class="hidden section"><div class="section-h"><h3>Alerts</h3><span class="muted small">derived from config + runtime</span></div><div id="alertsFull" class="alerts"><div class="empty">Loading...</div></div></section>
+      <section id="view-detail" class="hidden section"><div class="section-h"><h3 id="detailTitle">Pipeline</h3><span id="detailMeta" class="muted small"></span></div><div id="detailBody" style="padding:16px"></div></section>
+    </main>
   </div>
 
-  <div class="content">
-    <div class="page active" id="page-dashboard">
-      <div class="mr">
-        <div class="mc"><div class="ml">Streaming jobs</div><div class="mv" id="metricStreams">-</div><div class="ms" id="metricStreamsSub">from stream registry</div></div>
-        <div class="mc"><div class="ml">Batch jobs</div><div class="mv" id="metricBatch">-</div><div class="ms" id="metricBatchSub">from pipeline catalog</div></div>
-        <div class="mc"><div class="ml">Lakehouse targets</div><div class="mv" id="metricDelta">-</div><div class="ms" id="metricDeltaSub">distinct output paths</div></div>
-        <div class="mc"><div class="ml">Open issues</div><div class="mv" id="metricIssues">-</div><div class="ms" id="metricIssuesSub">derived alerts</div></div>
+  <div id="drawer" class="drawer">
+    <div class="overlay" onclick="closeDrawer()"></div>
+    <div class="panel">
+      <div class="drawer-h"><div><h3 id="drawerTitle">Job</h3><div id="drawerTags"></div></div><button class="x" onclick="closeDrawer()">×</button></div>
+      <div class="drawer-body">
+        <div id="drawerMeta" class="meta-grid"></div>
+        <div class="tabs"><button class="tab active" data-tab="runs">Runs</button><button class="tab" data-tab="logs">Logs</button></div>
+        <div id="tab-runs"><div class="table-wrap"><table><thead><tr><th>Run ID</th><th>State</th><th>Started</th><th>Ended</th><th>Duration</th><th>Source</th></tr></thead><tbody id="runsBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
+        <div id="tab-logs" class="hidden"><pre id="logText" class="logs">Loading...</pre></div>
       </div>
-      <div class="g2">
-        <div class="card"><div class="ch"><span class="ct">Streaming heartbeat age</span><span class="tag t-bl">Runtime API</span></div><div class="cw"><canvas id="throughputChart"></canvas></div></div>
-        <div class="card"><div class="ch"><span class="ct">Batch pipeline task counts</span><span class="tag t-am">Catalog</span></div><div class="cw"><canvas id="stageChart"></canvas></div></div>
-      </div>
-      <div class="card">
-        <div class="ch"><span class="ct">Recent activity</span><span class="tag t-gy" id="recentCount">0 jobs</span></div>
-        <table><thead><tr><th>Job / Stream</th><th>Type</th><th>Runner</th><th>Status</th><th>Output path</th><th>Updated</th></tr></thead><tbody id="recentActivityBody"><tr><td colspan="6">Loading...</td></tr></tbody></table>
-      </div>
-    </div>
-
-    <div class="page" id="page-pipeline-detail">
-      <div class="card"><div class="ch"><span class="ct" id="pipelineTitle">Pipeline</span><span class="tag t-am" id="pipelineSchedule">schedule</span></div><div id="pipelineFlow" class="dw"></div></div>
-      <div class="card"><div class="ch"><span class="ct">Job specs</span></div><table><thead><tr><th>Job name</th><th>Type</th><th>Source</th><th>Dependencies</th><th>Target</th><th>Logs</th></tr></thead><tbody id="pipelineJobSpecBody"></tbody></table></div>
-      <div class="card"><div class="ch"><span class="ct">Pipeline metadata</span></div><div class="subtle" id="pipelineMeta"></div></div>
-    </div>
-
-    <div class="page" id="page-stream-detail">
-      <div class="card"><div class="ch"><span class="ct" id="streamTitle">Stream</span><span class="tag t-bl" id="streamStatusTag">runtime</span></div><div id="streamFlow" class="dw"></div></div>
-      <div class="g2">
-        <div class="card"><div class="ch"><span class="ct">Stream jobs</span></div><table><thead><tr><th>Job</th><th>Runner</th><th>Status</th><th>Trigger</th><th>Output</th><th>Logs</th></tr></thead><tbody id="streamJobBody"></tbody></table></div>
-        <div class="card"><div class="ch"><span class="ct">Runtime detail</span></div><div class="subtle" id="streamRuntimeDetail"></div></div>
-      </div>
-    </div>
-
-    <div class="page" id="page-monitor">
-      <div class="mr" style="grid-template-columns:repeat(3,1fr)">
-        <div class="mc"><div class="ml">Streaming</div><div class="mv up" id="monitorStreams">-</div><div class="ms">stream jobs</div></div>
-        <div class="mc"><div class="ml">Batch</div><div class="mv" id="monitorBatch">-</div><div class="ms">batch jobs</div></div>
-        <div class="mc"><div class="ml">Runtime status</div><div class="mv" id="monitorRuntime">-</div><div class="ms" id="monitorRuntimeSub">status API</div></div>
-      </div>
-      <div class="card"><div class="ch"><span class="ct">All jobs</span></div><table><thead><tr><th>Container</th><th>App name</th><th>Type</th><th>Runner</th><th>Status</th><th>Trigger</th><th>Output</th><th>Logs</th></tr></thead><tbody id="jobMonitorBody"><tr><td colspan="8">Loading...</td></tr></tbody></table></div>
-    </div>
-
-    <div class="page" id="page-dags">
-      <div class="card"><div class="ch"><span class="ct">Catalog-driven DAGs</span><span class="tag t-gy">configs/batch/pipeline_catalog.json</span></div><table><thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Tags</th><th>Status</th></tr></thead><tbody id="dagTableBody"><tr><td colspan="5">Loading...</td></tr></tbody></table></div>
-    </div>
-
-    <div class="page" id="page-lake">
-      <div class="card"><div class="ch"><span class="ct">Delta Lakehouse targets</span><span class="tag t-gy">derived from job target paths</span></div><table><thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Type</th></tr></thead><tbody id="lakeTableBody"><tr><td colspan="5">Loading...</td></tr></tbody></table></div>
-    </div>
-
-    <div class="page" id="page-infra">
-      <div class="sl">Phase 1 — Core Lakehouse</div>
-      <div class="g3" style="margin-bottom:16px">
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">MinIO</div><div class="is">Object storage · S3-compatible</div></div><div class="il" style="background:#78350f30;color:#fbbf24">S3</div></div><div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div><div class="ist"><span>Ports</span><span>:9000 / :9001</span></div><div class="ist"><span>Bucket</span><span class="mo">lakehouse</span></div></div>
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">Apache Spark</div><div class="is">Batch + streaming processing</div></div><div class="il" style="background:#1e3a5f;color:#60a5fa">Sp</div></div><div class="hb"><div class="hf" style="width:88%;background:#4ade80"></div></div><div class="ist"><span>Mode</span><span>Docker compose</span></div><div class="ist"><span>Role</span><span>Bronze/Silver/Gold runners</span></div></div>
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">PostgreSQL</div><div class="is">Warehouse / metadata candidate</div></div><div class="il" style="background:#14532d30;color:#4ade80">PG</div></div><div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div><div class="ist"><span>Port</span><span>:5432</span></div><div class="ist"><span>Use</span><span>future BI serving</span></div></div>
-      </div>
-      <div class="sl">Phase 2 — Streaming + Orchestration</div>
-      <div class="g3">
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">Kafka</div><div class="is">Event stream ingestion</div></div><div class="il" style="background:#78350f30;color:#fbbf24">Ka</div></div><div class="hb"><div class="hf" style="width:78%;background:#fbbf24"></div></div><div class="ist"><span>Topic</span><span class="mo">from stream registry</span></div></div>
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">spark-stream-supervisor</div><div class="is">Manages streaming jobs</div></div><div class="il" style="background:#14532d30;color:#4ade80">SV</div></div><div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div><div class="ist"><span>Registry</span><span class="mo">stream_registry.json</span></div></div>
-        <div class="ic"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div><div class="in">Airflow</div><div class="is">Catalog-driven batch DAGs</div></div><div class="il" style="background:#14532d30;color:#4ade80">Af</div></div><div class="hb"><div class="hf" style="width:99%;background:#4ade80"></div></div><div class="ist"><span>UI</span><span>:8090</span></div><div class="ist"><span>DAGs</span><span>batch_catalog_dags.py</span></div></div>
-      </div>
-    </div>
-
-    <div class="page" id="page-alerts">
-      <div class="card"><div class="ch"><span class="ct">Active alerts</span><span class="tag t-am" id="alertCountHeader">0 active</span></div><div id="alertsBody"><div class="empty">Loading alerts...</div></div></div>
     </div>
   </div>
-</div>
-
-<div class="ov" id="logDrawer" onclick="closeDrawer(event)">
-  <div class="dr3">
-    <div class="dh"><div class="dhi"><div class="dht" id="d-title">Logs</div><div class="dhg" id="d-tags"></div></div><button class="dc" type="button" onclick="document.getElementById('logDrawer').classList.remove('open')">✕</button></div>
-    <div class="dm" id="d-meta"></div>
-    <div class="dtb"><input type="text" id="logSearch" placeholder="Filter logs..." oninput="filterLogs()"><div class="lbs"><div class="lb INFO on" onclick="toggleLevel(this)">INFO</div><div class="lb WARN on" onclick="toggleLevel(this)">WARN</div><div class="lb ERROR on" onclick="toggleLevel(this)">ERROR</div></div><button class="btn bg" style="font-size:11px;padding:4px 10px" onclick="downloadLogs()">Export</button></div>
-    <div class="lb-body" id="logBody"></div>
-    <div class="df"><span id="logCount"></span><span id="logLive" style="color:#4ade80"></span></div>
-  </div>
-</div>
 
 <script>
 const REFRESH_MS = 5000;
-const DASHBOARD_STATE = {config:null,pipelines:[],jobs:[],streams:[],streamStatus:null,alerts:[],selectedPipeline:null,selectedStream:null,lastError:null};
+let STATE = { config:null, runtime:null, jobs:[], pipelines:[], alerts:[], selectedView:'dashboard' };
 
-const config = await apiJson("/api/config");
-const runtimeJobs = await apiJson("/api/runtime/jobs");
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+const fmt = (v) => v ? esc(v) : '-';
+const clsStatus = (s) => `status ${String(s||'unknown').toLowerCase()}`;
 
-let throughputChart = null;
-let stageChart = null;
+async function apiJson(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${url} failed: ${r.status}`); return await r.json(); }
+async function apiText(url){ const r = await fetch(url, {cache:'no-store'}); const t = await r.text(); if(!r.ok) throw new Error(t || `${url} failed: ${r.status}`); return t; }
 
-function esc(value){return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");}
-function fmt(value,fallback="-"){const s=value===null||value===undefined||value===""?fallback:value;return esc(s);}
-function uniq(arr){return Array.from(new Set((arr||[]).filter(Boolean)));}
-function nowTime(){return new Date().toLocaleTimeString();}
-async function apiJson(url){const res=await fetch(url,{cache:"no-store"});if(!res.ok){throw new Error(`${url} failed: ${res.status}`);}return await res.json();}
-async function apiText(url){const res=await fetch(url,{cache:"no-store"});const text=await res.text();if(!res.ok){throw new Error(text || `${url} failed: ${res.status}`);}return text;}
-
-function typeBadge(type){return type==="stream"?'<span class="tag t-bl">Stream</span>':'<span class="tag t-am">Batch</span>';}
-function layerBadge(path){const p=(path||"").toLowerCase();if(p.includes("/bronze")||p.includes("bronze_"))return '<span class="tag t-am">Bronze</span>';if(p.includes("/silver")||p.includes("silver_"))return '<span class="tag t-bl">Silver</span>';if(p.includes("/gold")||p.includes("gold_"))return '<span class="tag t-gr">Gold</span>';return '<span class="tag t-gy">Unknown</span>';}
-function inferLayer(path){const p=(path||"").toLowerCase();if(p.includes("bronze"))return "Bronze";if(p.includes("silver"))return "Silver";if(p.includes("gold"))return "Gold";return "Unknown";}
-function statusBadge(status){const raw=status||"unknown";const s=String(raw).toLowerCase();if(["running","success","succeeded","healthy","ok","active"].includes(s))return `<span class="dot dg"></span>${esc(raw)}`;if(["failed","error","unhealthy"].includes(s))return `<span class="dot dr"></span>${esc(raw)}`;if(["defined","unknown","stopped","unavailable"].includes(s))return `<span class="dot dgr"></span>${esc(raw)}`;return `<span class="dot da"></span>${esc(raw)}`;}
-function nodeClass(status,type){const s=String(status||"").toLowerCase();if(type==="stream")return s==="running"?"run":"stm";if(["failed","error"].includes(s))return "fail";if(["success","succeeded","defined"].includes(s))return "ok";return "run";}
-function iconSvg(kind){if(kind==="stream")return '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M1 8h3l2-5 3 10 2-5 2 3h2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';return '<svg fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>';}
-
-function normalizeConfig(config){
-  const pipelines=(config?.pipelines||[]).map(p=>({name:p.name||"",type:p.type||"batch",description:p.description||"",schedule:p.schedule ?? null,tags:p.tags||[],jobs:p.jobs||[]})).filter(p=>p.name);
-  const jobs=(config?.jobs||[]).map(j=>({
-    id:j.id || `${j.pipeline||"unknown"}__${j.name||"job"}`,
-    name:j.name||"",
-    pipeline:j.pipeline||"",
-    type:j.type||"batch",
-    job_type:j.job_type||"",
-    source_url:j.source_url||"",
-    dependencies:j.dependencies||[],
-    timeout_minutes:j.timeout_minutes||null,
-    tags:j.tags||[],
-    target_path:j.target_path||"",
-    schedule:j.schedule ?? null,
-    trigger:j.trigger || j.schedule || "on-demand",
-    heartbeat_file:j.heartbeat_file||"",
-    quarantine_path:j.quarantine_path||""
-  })).filter(j=>j.name);
-  const streams=pipelines.filter(p=>p.type==="stream");
-  return {pipelines,jobs,streams};
-}
-
-function findRuntimeUnit(job){
-  const units=DASHBOARD_STATE.streamStatus?.units||{};
-  const entries=Object.entries(units);
-  const match=entries.find(([name,u])=>name===job.name||u?.app_name===job.name||u?.name===job.name||u?.unit_name===job.name||name.includes(job.name));
-  return match?{unitName:match[0],unit:match[1]}:null;
-}
-function computedJobStatus(job){
-  if(job.type!=="stream")return job.runtime_status||"defined";
-  const m=findRuntimeUnit(job);
-  if(!m)return "unknown";
-  return m.unit?.computed_status || m.unit?.status || m.unit?.heartbeat?.status || (m.unit?.pid && m.unit?.returncode==null?"running":"unknown");
-}
-function jobUpdated(job){
-  if(job.type!=="stream")return "catalog";
-  const m=findRuntimeUnit(job);
-  const age=m?.unit?.heartbeat_age_seconds;
-  if(age===0)return "just now";
-  if(age!==undefined&&age!==null)return `${age}s ago`;
-  return "runtime unavailable";
-}
-function jobTrigger(job){return job.trigger || (job.schedule?job.schedule:"on-demand");}
+function showError(msg){ $('errorBox').innerHTML = msg ? `<div class="errbox">${esc(msg)}</div>` : ''; }
+function tag(text, kind='info'){ return `<span class="tag ${kind}">${esc(text)}</span>`; }
 
 async function loadDashboard(){
   try{
-    const config=await apiJson("/api/config");
-    const normalized=normalizeConfig(config);
-    DASHBOARD_STATE.config=config;
-    DASHBOARD_STATE.pipelines=normalized.pipelines;
-    DASHBOARD_STATE.jobs=runtimeJobs.jobs;
-    DASHBOARD_STATE.streams=normalized.streams;
-    DASHBOARD_STATE.lastError=null;
-    document.getElementById("configTag").innerHTML=`Config: <span style="color:#4ade80">loaded</span>`;
+    showError('');
+    const config = await apiJson('/api/config');
+    let runtime = null;
+    try{ runtime = await apiJson('/api/runtime/jobs'); }catch(e){ runtime = null; }
+    STATE.config = config;
+    STATE.runtime = runtime;
+    STATE.pipelines = config.pipelines || [];
+    STATE.jobs = runtime?.jobs || config.jobs || [];
+    STATE.alerts = buildAlerts(runtime, config);
+    renderAll();
+    $('configTag').textContent = `Config: ${STATE.pipelines.length} pipelines / ${STATE.jobs.length} jobs`;
+    $('runtimeTag').textContent = runtime ? 'Runtime: available' : 'Runtime: partial/unavailable';
+    $('refreshTag').textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
   }catch(e){
-    DASHBOARD_STATE.lastError=e;
-    document.getElementById("configTag").innerHTML=`Config: <span style="color:#f87171">failed</span>`;
-    renderFatalConfigError(e);
-    return;
+    showError(`Cannot load dashboard data: ${e.message}`);
+    $('configTag').textContent = 'Config: failed';
+    $('runtimeTag').textContent = 'Runtime: failed';
   }
-  try{
-    DASHBOARD_STATE.streamStatus=await apiJson("/api/runtime/streams/status");
-    document.getElementById("runtimeTag").innerHTML=`Runtime: <span style="color:#4ade80">available</span>`;
-  }catch(e){
-    DASHBOARD_STATE.streamStatus=null;
-    document.getElementById("runtimeTag").innerHTML=`Runtime: <span style="color:#fbbf24">unavailable</span>`;
-  }
-  DASHBOARD_STATE.alerts=deriveAlerts();
-  renderAll();
-  document.getElementById("lastRefreshTag").textContent=`Updated ${nowTime()}`;
 }
 
-function renderFatalConfigError(e){
-  document.getElementById("recentActivityBody").innerHTML=`<tr><td colspan="6"><span class="tag t-re">ERROR</span> Cannot load /api/config: ${esc(e.message)}</td></tr>`;
-  document.getElementById("jobMonitorBody").innerHTML=`<tr><td colspan="8">Cannot load jobs until /api/config is available.</td></tr>`;
-  document.getElementById("batchNav").innerHTML=`<div class="ni"><span class="txt">Config unavailable</span></div>`;
-  document.getElementById("streamNav").innerHTML=`<div class="ni"><span class="txt">Config unavailable</span></div>`;
-}
-function renderAll(){renderSidebar();renderCards();renderRecentActivity();renderJobMonitor();renderDagTable();renderLakeTable();renderAlerts();renderPipelineDetail(DASHBOARD_STATE.selectedPipeline || firstBatchName());renderStreamDetail(DASHBOARD_STATE.selectedStream || firstStreamName());renderCharts();}
-function firstBatchName(){return DASHBOARD_STATE.pipelines.find(p=>p.type==="batch")?.name||null;}
-function firstStreamName(){return DASHBOARD_STATE.streams[0]?.name||null;}
-
-function renderSidebar(){
-  const batches=DASHBOARD_STATE.pipelines.filter(p=>p.type==="batch");
-  document.getElementById("batchNav").innerHTML=batches.length?batches.map(p=>`<div class="ni" data-pipeline="${esc(p.name)}" onclick="selectPipeline('${esc(p.name)}',this)">${iconSvg("batch")}<span class="txt">${esc(p.name)}</span><span class="nb nb-a">Batch</span></div>`).join(""):'<div class="ni"><span class="txt">No batch pipelines</span></div>';
-  document.getElementById("streamNav").innerHTML=DASHBOARD_STATE.streams.length?DASHBOARD_STATE.streams.map(p=>`<div class="ni" data-stream="${esc(p.name)}" onclick="selectStream('${esc(p.name)}',this)">${iconSvg("stream")}<span class="txt">${esc(p.name)}</span><span class="nb nb-b">Stream</span></div>`).join(""):'<div class="ni"><span class="txt">No streams</span></div>';
-}
-function renderCards(){
-  const streamJobs=DASHBOARD_STATE.jobs.filter(j=>j.type==="stream");
-  const batchJobs=DASHBOARD_STATE.jobs.filter(j=>j.type==="batch");
-  const targets=uniq(DASHBOARD_STATE.jobs.map(j=>j.target_path));
-  document.getElementById("metricStreams").textContent=streamJobs.length;
-  document.getElementById("metricBatch").textContent=batchJobs.length;
-  document.getElementById("metricDelta").textContent=targets.length;
-  document.getElementById("metricIssues").textContent=DASHBOARD_STATE.alerts.length;
-  document.getElementById("metricStreamsSub").textContent=`${DASHBOARD_STATE.streams.length} streaming pipeline(s)`;
-  document.getElementById("metricBatchSub").textContent=`${DASHBOARD_STATE.pipelines.filter(p=>p.type==="batch").length} batch pipeline(s)`;
-  document.getElementById("metricDeltaSub").textContent="derived from job targets";
-  document.getElementById("metricIssuesSub").textContent=DASHBOARD_STATE.alerts.length?"needs attention":"no derived alerts";
-  document.getElementById("monitorStreams").textContent=streamJobs.length;
-  document.getElementById("monitorBatch").textContent=batchJobs.length;
-  document.getElementById("monitorRuntime").textContent=DASHBOARD_STATE.streamStatus?"OK":"N/A";
-  document.getElementById("monitorRuntimeSub").textContent=DASHBOARD_STATE.streamStatus?"status API reachable":"runtime endpoint unavailable";
-  document.getElementById("recentCount").textContent=`${DASHBOARD_STATE.jobs.length} jobs`;
-}
-function renderRecentActivity(){
-  const body=document.getElementById("recentActivityBody");
-  if(!DASHBOARD_STATE.jobs.length){body.innerHTML='<tr><td colspan="6">No jobs found in /api/config.</td></tr>';return;}
-  body.innerHTML=DASHBOARD_STATE.jobs.map(job=>{
-    const status=computedJobStatus(job);
-    return `<tr style="cursor:pointer" onclick="openJobLogs('${esc(job.id)}')"><td class="jn">${esc(job.name)}</td><td>${typeBadge(job.type)}</td><td class="mo">${esc(job.job_type)}</td><td>${statusBadge(status)}</td><td class="pp">${esc(job.target_path||"-")}</td><td>${esc(jobUpdated(job))}</td></tr>`;
-  }).join("");
-}
-function renderJobMonitor(){
-  const body=document.getElementById("jobMonitorBody");
-  if(!DASHBOARD_STATE.jobs.length){body.innerHTML='<tr><td colspan="8">No jobs found.</td></tr>';return;}
-  body.innerHTML=DASHBOARD_STATE.jobs.map(job=>`<tr style="cursor:pointer" onclick="openJobLogs('${esc(job.id)}')"><td class="mo">${job.type==="stream"?"spark-stream-supervisor":"airflow task"}</td><td class="jn">${esc(job.name)}</td><td>${typeBadge(job.type)}</td><td class="mo">${esc(job.job_type)}</td><td>${statusBadge(computedJobStatus(job))}</td><td class="mo">${esc(jobTrigger(job))}</td><td class="pp">${esc(job.target_path||"-")}</td><td style="color:#3b82f6">Logs</td></tr>`).join("");
-}
-function renderDagTable(){
-  const body=document.getElementById("dagTableBody");
-  const batches=DASHBOARD_STATE.pipelines.filter(p=>p.type==="batch");
-  if(!batches.length){body.innerHTML='<tr><td colspan="5">No batch DAGs found.</td></tr>';return;}
-  body.innerHTML=batches.map(p=>`<tr><td class="jn">${esc(p.name)}</td><td class="mo">${esc(p.schedule || "null (manual)")}</td><td>${esc((p.jobs||[]).join(" → "))}</td><td>${esc((p.tags||[]).join(" · "))}</td><td>${statusBadge("defined")}</td></tr>`).join("");
-}
-function renderLakeTable(){
-  const body=document.getElementById("lakeTableBody");
-  const rows=DASHBOARD_STATE.jobs.filter(j=>j.target_path).map(j=>({layer:inferLayer(j.target_path),path:j.target_path,pipeline:j.pipeline,job:j.name,type:j.type}));
-  if(!rows.length){body.innerHTML='<tr><td colspan="5">No target paths found.</td></tr>';return;}
-  body.innerHTML=rows.map(r=>`<tr><td>${layerBadge(r.path)}</td><td class="mo">${esc(r.path)}</td><td>${esc(r.pipeline)}</td><td>${esc(r.job)}</td><td>${typeBadge(r.type)}</td></tr>`).join("");
-}
-function deriveAlerts(){
+function buildAlerts(runtime, config){
   const alerts=[];
-  const streamJobs=DASHBOARD_STATE.jobs.filter(j=>j.type==="stream");
-
-  // RLBP-003 should not create one alert per stream when the runtime API itself is missing.
-  // Show a single platform-level warning and keep catalog data visible.
-  if(!DASHBOARD_STATE.streamStatus){
-    if(streamJobs.length){
-      alerts.push({
-        level:"WARN",
-        title:"Stream runtime API unavailable",
-        detail:"/api/runtime/streams/status did not respond. Catalog data is shown, but live stream status will remain unknown until RLBP-009 is implemented."
-      });
-    }
-    return alerts;
+  if(!runtime) alerts.push({level:'WARN',title:'Runtime jobs API unavailable',msg:'/api/runtime/jobs did not respond. Catalog data may still be shown.'});
+  const jobs = runtime?.jobs || config?.jobs || [];
+  for(const j of jobs){
+    const s = String(j.current_status || j.defined_status || '').toLowerCase();
+    if(['failed','error'].includes(s)) alerts.push({level:'ERROR',title:`${j.name} is ${s}`,msg:j.status_reason || `Pipeline: ${j.pipeline}`});
+    else if(['stale','restarting'].includes(s)) alerts.push({level:'WARN',title:`${j.name} is ${s}`,msg:j.status_reason || `Pipeline: ${j.pipeline}`});
   }
-
-  // Manual batch schedules are normal in this branch, so they are not treated as active alerts.
-  // They remain visible in the Airflow DAGs table as `null (manual)`.
-
-  streamJobs.forEach(j=>{
-    const status=String(computedJobStatus(j)||"unknown").toLowerCase();
-    if(["failed","error","unhealthy"].includes(status)){
-      alerts.push({
-        level:"ERROR",
-        title:`${j.name} status is ${status}`,
-        detail:"Runtime status indicates this stream job is unhealthy. Check the stream supervisor and job logs."
-      });
-    }else if(["stopped"].includes(status)){
-      alerts.push({
-        level:"WARN",
-        title:`${j.name} is stopped`,
-        detail:"The stream job is not running. Restart it from the supervisor or future control-plane API."
-      });
-    }
-  });
-
   return alerts;
 }
-function renderAlerts(){
-  const body=document.getElementById("alertsBody");
-  const count=DASHBOARD_STATE.alerts.length;
-  document.getElementById("alertCountNav").textContent=count;
-  document.getElementById("alertCountHeader").textContent=`${count} active`;
-  if(!count){body.innerHTML='<div class="empty">No active alerts derived from current config/runtime state.</div>';return;}
-  body.innerHTML=DASHBOARD_STATE.alerts.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1a1f2e"><div style="width:28px;height:28px;background:${a.level==="ERROR"?"#7f1d1d30":"#78350f30"};color:${a.level==="ERROR"?"#f87171":"#fbbf24"};border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px">${a.level==="ERROR"?"!":"i"}</div><div style="flex:1"><div style="font-size:12px;font-weight:500;color:#e2e8f0">${esc(a.title)}</div><div style="font-size:11px;color:#64748b;margin-top:2px">${esc(a.detail)}</div></div><span class="tag ${a.level==="ERROR"?"t-re":"t-am"}">${esc(a.level)}</span></div>`).join("");
-}
-function selectPipeline(name,el){DASHBOARD_STATE.selectedPipeline=name;showPage("pipeline-detail",el);renderPipelineDetail(name);}
-function selectStream(name,el){DASHBOARD_STATE.selectedStream=name;showPage("stream-detail",el);renderStreamDetail(name);}
-function renderPipelineDetail(name){
-  const p=DASHBOARD_STATE.pipelines.find(x=>x.name===name&&x.type==="batch")||DASHBOARD_STATE.pipelines.find(x=>x.type==="batch");
-  if(!p){document.getElementById("pipelineTitle").textContent="No batch pipeline";document.getElementById("pipelineFlow").innerHTML='<div class="empty">No batch pipelines found.</div>';document.getElementById("pipelineJobSpecBody").innerHTML='';return;}
-  DASHBOARD_STATE.selectedPipeline=p.name;
-  const jobs=DASHBOARD_STATE.jobs.filter(j=>j.pipeline===p.name);
-  document.getElementById("pipelineTitle").textContent=`${p.name} — catalog-driven DAG`;
-  document.getElementById("pipelineSchedule").textContent=p.schedule||"null (manual)";
-  document.getElementById("pipelineFlow").innerHTML=`<div class="dr2">${jobs.map((j,i)=>`${i?'<span class="da2">→</span>':''}<div class="dn2 ${nodeClass(computedJobStatus(j),j.type)}" onclick="openJobLogs('${esc(j.id)}')"><div class="t">${esc(j.name)}</div><div class="s">${esc(j.job_type)}</div><div class="s" style="margin-top:3px"><span class="tag t-gy" style="font-size:9px">${esc(j.target_path||j.source_url||"-")}</span></div></div>`).join("")}</div>`;
-  document.getElementById("pipelineJobSpecBody").innerHTML=jobs.map(j=>`<tr><td class="jn">${esc(j.name)}</td><td class="mo">${esc(j.job_type)}</td><td class="mo">${esc(j.source_url||"-")}</td><td>${esc((j.dependencies||[]).join(", ")||"-")}</td><td class="pp">${esc(j.target_path||"-")}</td><td><button class="btn bg" onclick="openJobLogs('${esc(j.id)}')">Logs</button></td></tr>`).join("")||'<tr><td colspan="6">No jobs.</td></tr>';
-  document.getElementById("pipelineMeta").innerHTML=`<div>Type: <span class="tag t-am">Batch</span></div><div>Description: ${esc(p.description||"-")}</div><div>Tags: ${esc((p.tags||[]).join(" · ")||"-")}</div><div>Jobs: ${esc((p.jobs||[]).join(" → ")||"-")}</div>`;
-}
-function renderStreamDetail(name){
-  const p=DASHBOARD_STATE.streams.find(x=>x.name===name)||DASHBOARD_STATE.streams[0];
-  if(!p){document.getElementById("streamTitle").textContent="No stream";document.getElementById("streamFlow").innerHTML='<div class="empty">No stream pipelines found.</div>';document.getElementById("streamJobBody").innerHTML='';return;}
-  DASHBOARD_STATE.selectedStream=p.name;
-  const jobs=DASHBOARD_STATE.jobs.filter(j=>j.pipeline===p.name);
-  const statuses=jobs.map(computedJobStatus);
-  const streamHealthy=statuses.length&&statuses.every(s=>String(s).toLowerCase()==="running");
-  document.getElementById("streamTitle").textContent=`${p.name} — stream registry`;
-  document.getElementById("streamStatusTag").className=`tag ${streamHealthy?"t-gr":"t-am"}`;
-  document.getElementById("streamStatusTag").textContent=streamHealthy?"Live":"Runtime partial/unknown";
-  document.getElementById("streamFlow").innerHTML=`<div class="dr2"><div class="dn2 stm"><div class="t">Source</div><div class="s">${esc(p.description||"stream source")}</div></div>${jobs.map(j=>`<span class="da2">→</span><div class="dn2 ${nodeClass(computedJobStatus(j),j.type)}" onclick="openJobLogs('${esc(j.id)}')"><div class="t">${esc(j.name)}</div><div class="s">${esc(j.job_type)}</div><div class="s">${esc(jobTrigger(j))}</div></div>`).join("")}<span class="da2">→</span><div class="dn2 ok"><div class="t">Delta target</div><div class="s">${esc(jobs[jobs.length-1]?.target_path||"-")}</div></div></div>`;
-  document.getElementById("streamJobBody").innerHTML=jobs.map(j=>`<tr><td class="jn">${esc(j.name)}</td><td class="mo">${esc(j.job_type)}</td><td>${statusBadge(computedJobStatus(j))}</td><td class="mo">${esc(jobTrigger(j))}</td><td class="pp">${esc(j.target_path||"-")}</td><td><button class="btn bg" onclick="openJobLogs('${esc(j.id)}')">Logs</button></td></tr>`).join("")||'<tr><td colspan="6">No stream jobs.</td></tr>';
-  const units=DASHBOARD_STATE.streamStatus?.units||{};
-  document.getElementById("streamRuntimeDetail").innerHTML=DASHBOARD_STATE.streamStatus?`<div>Runtime status file loaded.</div><div>Supervisor units: ${esc(Object.keys(units).join(", ")||"-")}</div><div>Selected jobs: ${esc(jobs.map(j=>`${j.name}: ${computedJobStatus(j)}`).join(" · "))}</div>`:'<div><span class="tag t-am">Unavailable</span> Runtime endpoint /api/runtime/streams/status is not available yet.</div>';
-}
-function showPage(id,el){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".ni").forEach(n=>n.classList.remove("active"));const page=document.getElementById("page-"+id);if(page)page.classList.add("active");if(el)el.classList.add("active");const titles={dashboard:"Dashboard",monitor:"Job Monitor",dags:"Airflow DAGs",lake:"Delta Lakehouse",infra:"Infrastructure",alerts:"Alerts","pipeline-detail":DASHBOARD_STATE.selectedPipeline||"Pipeline","stream-detail":DASHBOARD_STATE.selectedStream||"Stream"};document.getElementById("pt").textContent=titles[id]||id;}
 
-function renderCharts(){
-  const streamJobs=DASHBOARD_STATE.jobs.filter(j=>j.type==="stream");
-  const labels=streamJobs.map(j=>j.name);
-  const data=streamJobs.map(j=>{const m=findRuntimeUnit(j);const age=m?.unit?.heartbeat_age_seconds;return age===undefined||age===null?0:Math.max(0,Number(age));});
-  const c1=document.getElementById("throughputChart");
-  if(throughputChart)throughputChart.destroy();
-  throughputChart=new Chart(c1,{type:"line",data:{labels:labels.length?labels:["runtime unavailable"],datasets:[{label:"Heartbeat age seconds",data:data.length?data:[0],borderColor:"#818cf8",backgroundColor:"rgba(129,140,248,0.07)",borderWidth:1.5,pointRadius:3,fill:true,tension:.35}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#475569",font:{size:10}},grid:{color:"#1e2535"}},y:{ticks:{color:"#475569",font:{size:10}},grid:{color:"#1e2535"}}}}});
-  const batches=DASHBOARD_STATE.pipelines.filter(p=>p.type==="batch");
-  const c2=document.getElementById("stageChart");
-  if(stageChart)stageChart.destroy();
-  stageChart=new Chart(c2,{type:"bar",data:{labels:batches.map(p=>p.name),datasets:[{label:"Tasks",data:batches.map(p=>(p.jobs||[]).length),backgroundColor:"#1e3a5f80",borderColor:"#60a5fa",borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{labels:{color:"#94a3b8",font:{size:10},boxWidth:10}}},scales:{x:{ticks:{color:"#475569",font:{size:10}},grid:{color:"#1e2535"}},y:{ticks:{color:"#94a3b8",font:{size:10}},grid:{color:"#1e2535"}}}}});
-}
+function renderAll(){ renderSidebar(); renderMetrics(); renderRecent(); renderJobs(); renderDags(); renderLake(); renderAlerts(); }
 
-async function openJobLogs(jobId){
-  const job=DASHBOARD_STATE.jobs.find(j=>j.id===jobId);
-  if(!job)return;
-  document.getElementById("d-title").textContent=job.name;
-  document.getElementById("d-tags").innerHTML=`${typeBadge(job.type)}<span class="tag t-gy">${esc(job.job_type)}</span><span class="tag t-gr">${esc(computedJobStatus(job))}</span>`;
-  document.getElementById("d-meta").innerHTML=[["Pipeline",job.pipeline],["Job type",job.job_type],["Target",job.target_path||"-"],["Trigger",jobTrigger(job)],["Status",computedJobStatus(job)]].map(m=>`<div class="dmi">${esc(m[0])}: <span>${esc(m[1])}</span></div>`).join("");
-  document.getElementById("logLive").textContent=job.type==="stream"?"⬤ Live":"";
-  document.getElementById("logBody").innerHTML='<div class="ll"><span class="ll-lv INFO">INFO</span><span class="ll-msg">Loading logs...</span></div>';
-  document.getElementById("logSearch").value="";
-  document.querySelectorAll(".lb").forEach(b=>b.classList.add("on"));
-  document.getElementById("logDrawer").classList.add("open");
-  let url="";
-  if(job.type==="stream"){
-    const unit=findRuntimeUnit(job)?.unitName || job.name;
-    url=`/api/runtime/logs/${encodeURIComponent(unit)}?kind=stream&lines=800`;
-  }else{
-    url=`/api/runtime/logs/${encodeURIComponent(job.id)}?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}&task=${encodeURIComponent(job.name)}&lines=800`;
-  }
-  try{const text=await apiText(url);renderPlainLogs(text||"No log content returned.");}
-  catch(e){renderPlainLogs(`ERROR ${e.message}\nINFO Expected endpoint: ${url}\nINFO This is normal until RLBP-011 runtime logs API is implemented.`);}
+function renderSidebar(){
+  const batch = STATE.pipelines.filter(p=>p.type==='batch');
+  const streams = STATE.pipelines.filter(p=>p.type==='stream');
+  $('batchNav').innerHTML = batch.length ? batch.map(p=>`<button data-detail="${esc(p.name)}">${esc(p.name)} <span class="pill">${(p.jobs||[]).length}</span></button>`).join('') : '<div class="muted small" style="padding:8px 10px">No batch pipelines</div>';
+  $('streamNav').innerHTML = streams.length ? streams.map(p=>`<button data-detail="${esc(p.name)}">${esc(p.name)} <span class="pill">${(p.jobs||[]).length}</span></button>`).join('') : '<div class="muted small" style="padding:8px 10px">No streams</div>';
+  document.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>openPipelineDetail(b.dataset.detail));
+  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 }
-function renderPlainLogs(text){
-  const body=document.getElementById("logBody");
-  const lines=String(text||"").split("\n");
-  body.innerHTML=lines.map(line=>{let level="INFO";if(/ERROR|Traceback|Exception|failed/i.test(line))level="ERROR";else if(/WARN|warning/i.test(line))level="WARN";return `<div class="ll" data-level="${level}"><span class="ll-ts">-</span><span class="ll-lv ${level}">${level}</span><span class="ll-msg">${esc(line)}</span></div>`;}).join("");
-  updateCount();setTimeout(()=>{body.scrollTop=body.scrollHeight;},50);
+function showView(v){ STATE.selectedView=v; document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden')); $(`view-${v}`).classList.remove('hidden'); $('pageTitle').textContent = v==='dashboard'?'Dashboard':v.charAt(0).toUpperCase()+v.slice(1); }
+function openPipelineDetail(name){ const p=STATE.pipelines.find(x=>x.name===name); if(!p) return; showView('detail'); $('pageTitle').textContent = p.name; $('detailTitle').textContent = p.name; $('detailMeta').innerHTML = `${tag(p.type,p.type)} ${tag(p.schedule||'manual','info')}`; const jobs=STATE.jobs.filter(j=>j.pipeline===p.name); $('detailBody').innerHTML = `<p class="muted">${esc(p.description||'')}</p><div class="table-wrap"><table><thead><tr><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Target</th><th>Action</th></tr></thead><tbody>${jobs.map(jobRowSimple).join('') || '<tr><td colspan="6" class="empty">No jobs</td></tr>'}</tbody></table></div>`; }
+function jobRowSimple(j){ return `<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.name)}</td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type)}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td class="mono">${esc(j.target_path||'')}</td><td>Open</td></tr>`; }
+
+function renderMetrics(){ const streams=STATE.jobs.filter(j=>j.type==='stream').length; const batch=STATE.jobs.filter(j=>j.type==='batch').length; const targets=new Set(STATE.jobs.map(j=>j.target_path).filter(Boolean)); $('metricStreams').textContent=streams; $('metricBatch').textContent=batch; $('metricDelta').textContent=targets.size; $('metricIssues').textContent=STATE.alerts.length; }
+function renderRecent(){ $('recentCount').textContent=`${STATE.jobs.length} jobs`; $('recentBody').innerHTML = STATE.jobs.length ? STATE.jobs.slice(0,10).map(j=>`<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.name)}<div class="muted small">${esc(j.pipeline)}</div></td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type||'')}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td>${esc(j.latest_run_state||'-')}<div class="muted small">${esc(j.latest_run_id||'')}</div></td><td class="mono">${esc(j.target_path||'')}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No jobs found</td></tr>'; }
+function renderJobs(){ $('jobsBody').innerHTML = STATE.jobs.length ? STATE.jobs.map(j=>`<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.type==='stream'?'spark-stream-supervisor':'airflow')}</td><td>${esc(j.name)}<div class="muted small">${esc(j.id)}</div></td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type||'')}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td>${esc(j.latest_run_state||'-')}<div class="muted small">${esc(j.latest_run_started_at||'')}</div></td><td>${esc(j.trigger||j.schedule||'manual')}</td><td class="mono">${esc(j.target_path||'')}</td><td>Runs / Logs</td></tr>`).join('') : '<tr><td colspan="9" class="empty">No jobs</td></tr>'; }
+function renderDags(){ const batch=STATE.pipelines.filter(p=>p.type==='batch'); $('dagsBody').innerHTML = batch.length ? batch.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.schedule||'manual')}</td><td>${(p.jobs||[]).map(x=>tag(x,'info')).join('')}</td><td>${(p.tags||[]).map(x=>tag(x,'info')).join('')}</td><td>${tag('catalog-defined','info')}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No DAGs</td></tr>'; }
+function renderLake(){ const rows=[]; for(const j of STATE.jobs){ if(!j.target_path) continue; let layer='unknown'; if(j.target_path.includes('/bronze')) layer='bronze'; if(j.target_path.includes('/silver')) layer='silver'; if(j.target_path.includes('/gold')) layer='gold'; rows.push(`<tr><td>${tag(layer,'info')}</td><td class="mono">${esc(j.target_path)}</td><td>${esc(j.pipeline)}</td><td>${esc(j.name)}</td><td>${tag(j.type,j.type)}</td></tr>`); } $('lakeBody').innerHTML = rows.join('') || '<tr><td colspan="5" class="empty">No target paths</td></tr>'; }
+function renderAlerts(){ $('alertCount').textContent=`${STATE.alerts.length} active`; $('alertCountNav').textContent=STATE.alerts.length; const html = STATE.alerts.length ? STATE.alerts.map(a=>`<div class="alert"><div class="lvl ${a.level}">${esc(a.level)}</div><b>${esc(a.title)}</b><div class="muted small" style="margin-top:5px">${esc(a.msg)}</div></div>`).join('') : '<div class="okbox">No active runtime alerts.</div>'; $('alertsBox').innerHTML=html; $('alertsFull').innerHTML=html; }
+
+async function openJob(jobId){
+  const job = STATE.jobs.find(j=>j.id===jobId || j.name===jobId); if(!job) return;
+  $('drawer').classList.add('open'); $('drawerTitle').textContent = job.name; $('drawerTags').innerHTML = `${tag(job.type,job.type)} ${tag(job.current_status||job.defined_status||'defined', statusKind(job.current_status||job.defined_status))}`;
+  $('drawerMeta').innerHTML = metaHtml([['Pipeline',job.pipeline],['Job ID',job.id],['Runner',job.job_type],['Status',job.current_status||job.defined_status],['Latest run',job.latest_run_id||'-'],['Reason',job.status_reason||'-'],['Target',job.target_path||'-'],['Runtime source',job.runtime_source||'-']]);
+  showTab('runs'); $('runsBody').innerHTML='<tr><td colspan="6" class="empty">Loading runs...</td></tr>'; $('logText').textContent='Loading logs...';
+  try{ const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`); renderRuns(runs.runs||[]); }catch(e){ $('runsBody').innerHTML=`<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`; }
+  try{ const kind=job.type==='stream'?'stream':'batch'; const qs = kind==='batch' ? `?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}&task=${encodeURIComponent(job.name)}&lines=800` : `?kind=stream&lines=800`; $('logText').textContent = await apiText(`/api/runtime/logs/${encodeURIComponent(job.type==='stream'?(job.runtime_unit_name||job.name):job.id)}${qs}`); }catch(e){ $('logText').textContent = `ERROR: ${e.message}`; }
 }
-function closeDrawer(e){if(e.target===document.getElementById("logDrawer")){document.getElementById("logDrawer").classList.remove("open");}}
-function toggleLevel(btn){btn.classList.toggle("on");filterLogs();}
-function filterLogs(){
-  const q=document.getElementById("logSearch").value.toLowerCase();
-  const active={};document.querySelectorAll(".lb.on").forEach(b=>{active[b.textContent]=true;});
-  document.querySelectorAll(".ll").forEach(l=>{const msg=l.querySelector(".ll-msg");const text=msg.textContent;const vis=active[l.dataset.level]&&(!q||text.toLowerCase().includes(q));l.classList.toggle("hidden",!vis);if(q&&vis){const re=new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi");msg.innerHTML=esc(text).replace(re,'<span class="hl">$1</span>');}else{msg.textContent=text;}});
-  updateCount();
-}
-function updateCount(){const tot=document.querySelectorAll(".ll").length;const vis=document.querySelectorAll(".ll:not(.hidden)").length;document.getElementById("logCount").textContent=vis===tot?`${tot} lines`:`${vis} of ${tot} lines`;}
-function downloadLogs(){const txt=[];document.querySelectorAll(".ll:not(.hidden)").forEach(l=>{txt.push(`[${l.querySelector(".ll-ts").textContent}] ${l.querySelector(".ll-lv").textContent} ${l.querySelector(".ll-msg").textContent}`);});const a=document.createElement("a");a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(txt.join("\n"));a.download="job-logs.txt";a.click();}
-
-function findRuntimeUnitForJob(job, units) {
-  const values = Object.values(units || {});
-
-  return values.find((u) => {
-    const aliases = u.aliases || [];
-    return (
-      u.unit_name === job.name ||
-      aliases.includes(job.name) ||
-      u.unit_name === `${job.pipeline}__${job.name}` ||
-      u.unit_name === `${job.pipeline}_bronze` && job.id.endsWith("__bronze") ||
-      u.unit_name === `${job.pipeline}_silver` && job.id.endsWith("__silver")
-    );
-  });
-}
-
-async function openJobDrawer(jobId) {
-  const job = findJob(jobId);
-  renderJobMeta(job);
-
-  const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(jobId)}`);
-  renderRunHistory(runs.runs);
-}
-
-document.getElementById("refreshBtn").addEventListener("click",loadDashboard);
+function statusKind(s){ s=String(s||'').toLowerCase(); if(['success','running'].includes(s)) return 'ok'; if(['failed','error'].includes(s)) return 'bad'; if(['restarting','stale','queued','no_runs'].includes(s)) return 'warn'; return 'info'; }
+function metaHtml(items){ return items.map(([k,v])=>`<div class="meta"><b>${esc(k)}</b><span class="mono">${esc(v)}</span></div>`).join(''); }
+function renderRuns(runs){ $('runsBody').innerHTML = runs.length ? runs.map(r=>`<tr><td class="mono">${esc(r.run_id||r.dag_run_id)}</td><td class="${clsStatus(r.effective_state||r.task_state||r.state)}">${esc(r.effective_state||r.task_state||r.state||'unknown')}</td><td>${esc(r.started_at||'-')}</td><td>${esc(r.ended_at||'-')}</td><td>${r.duration_seconds ?? '-'}</td><td>${esc(r.source||'')}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No runs found</td></tr>'; }
+function closeDrawer(){ $('drawer').classList.remove('open'); }
+function showTab(tab){ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab)); $('tab-runs').classList.toggle('hidden',tab!=='runs'); $('tab-logs').classList.toggle('hidden',tab!=='logs'); }
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
+$('refreshBtn').onclick = loadDashboard;
 loadDashboard();
-setInterval(loadDashboard,REFRESH_MS);
+setInterval(loadDashboard, REFRESH_MS);
 </script>
 </body>
 </html>

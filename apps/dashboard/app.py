@@ -3,8 +3,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI ,Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -24,6 +25,78 @@ STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_re
 STREAM_STATUS_FILE = Path(os.getenv("STREAM_STATUS_FILE","/runtime/spark_health/stream_supervisor_status.json",))
 STREAM_LOG_DIR = Path(os.getenv("STREAM_LOG_DIR","/runtime/spark_health/logs",))
 AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR","/runtime/airflow_logs",))
+STREAM_STATUS_STALE_SECONDS = int(os.getenv("STREAM_STATUS_STALE_SECONDS", "120"))
+STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS", "120"))
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _compute_stream_unit_status(unit: dict[str, Any], now_epoch: int) -> dict[str, Any]:
+    pid = unit.get("pid")
+    returncode = unit.get("returncode")
+    retries = _safe_int(unit.get("retries")) or 0
+    max_retries = _safe_int(unit.get("max_retries")) or 0
+    heartbeat = unit.get("heartbeat") or {}
+
+    heartbeat_ts = (
+        _safe_int(heartbeat.get("ts_epoch"))
+        or _safe_int(heartbeat.get("timestamp_epoch"))
+        or _safe_int(heartbeat.get("last_update_ts_epoch"))
+    )
+
+    heartbeat_age_seconds = None
+    if heartbeat_ts is not None:
+        heartbeat_age_seconds = max(0, now_epoch - heartbeat_ts)
+
+    heartbeat_status = str(heartbeat.get("status", "")).lower()
+
+    if returncode is not None:
+        if retries >= max_retries and max_retries > 0:
+            computed_status = "failed"
+            status_reason = f"process exited with returncode={returncode} and reached max retries"
+        elif int(returncode) == 0:
+            computed_status = "stopped"
+            status_reason = "process exited successfully"
+        else:
+            computed_status = "restarting"
+            status_reason = f"process exited with returncode={returncode}; retry may be scheduled"
+    elif pid is not None:
+        if heartbeat_status == "error":
+            computed_status = "error"
+            status_reason = "heartbeat reports error"
+        elif heartbeat_age_seconds is not None and heartbeat_age_seconds > STREAM_HEARTBEAT_STALE_SECONDS:
+            computed_status = "stale"
+            status_reason = f"heartbeat is stale: {heartbeat_age_seconds}s"
+        else:
+            computed_status = "running"
+            status_reason = "process is running"
+    else:
+        computed_status = "unknown"
+        status_reason = "no pid and no returncode"
+
+    is_healthy = computed_status == "running"
+
+    return {
+        "computed_status": computed_status,
+        "status_reason": status_reason,
+        "is_healthy": is_healthy,
+        "heartbeat_age_seconds": heartbeat_age_seconds,
+        "heartbeat_status": heartbeat_status or None,
+    }
 
 def _path_state(path: Path) -> dict[str, Any]:
     exists = path.exists()
@@ -227,3 +300,100 @@ async def get_runtime_mounts() -> JSONResponse:
             "checked_at": now_iso(),
         }
     )
+
+@app.get("/api/runtime/streams/status")
+async def get_stream_runtime_status(raw: bool = Query(default=False)) -> JSONResponse:
+    now_epoch = int(time.time())
+
+    if not STREAM_STATUS_FILE.exists():
+        return JSONResponse(
+            {
+                "available": False,
+                "status": "unavailable",
+                "reason": f"stream status file not found: {STREAM_STATUS_FILE}",
+                "stream_status_file": str(STREAM_STATUS_FILE),
+                "observed_at_epoch": now_epoch,
+                "observed_at": now_iso(),
+                "units": {},
+            },
+            status_code=200,
+        )
+
+    try:
+        data = _read_json_file(STREAM_STATUS_FILE)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "available": False,
+                "status": "error",
+                "reason": f"failed to read stream status file: {exc}",
+                "stream_status_file": str(STREAM_STATUS_FILE),
+                "observed_at_epoch": now_epoch,
+                "observed_at": now_iso(),
+                "units": {},
+            },
+            status_code=200,
+        )
+
+    supervisor_ts = _safe_int(data.get("ts_epoch"))
+    supervisor_age_seconds = None
+    if supervisor_ts is not None:
+        supervisor_age_seconds = max(0, now_epoch - supervisor_ts)
+
+    supervisor_stale = (
+        supervisor_age_seconds is not None
+        and supervisor_age_seconds > STREAM_STATUS_STALE_SECONDS
+    )
+
+    units = data.get("units", {}) or {}
+    enriched_units: dict[str, Any] = {}
+
+    for unit_name, unit in units.items():
+        if not isinstance(unit, dict):
+            continue
+
+        computed = _compute_stream_unit_status(unit, now_epoch)
+
+        enriched_units[unit_name] = {
+            **unit,
+            **computed,
+            "unit_name": unit_name,
+        }
+
+    any_failed = any(
+        u.get("computed_status") in {"failed", "error"}
+        for u in enriched_units.values()
+    )
+    any_running = any(
+        u.get("computed_status") == "running"
+        for u in enriched_units.values()
+    )
+
+    if supervisor_stale:
+        overall_status = "stale"
+    elif any_failed:
+        overall_status = "degraded"
+    elif any_running:
+        overall_status = "running"
+    elif enriched_units:
+        overall_status = "not_running"
+    else:
+        overall_status = "empty"
+
+    payload = {
+        "available": True,
+        "status": overall_status,
+        "stream_status_file": str(STREAM_STATUS_FILE),
+        "observed_at_epoch": now_epoch,
+        "observed_at": now_iso(),
+        "supervisor_ts_epoch": supervisor_ts,
+        "supervisor_ts_iso": data.get("ts_iso"),
+        "supervisor_age_seconds": supervisor_age_seconds,
+        "supervisor_stale": supervisor_stale,
+        "units": enriched_units,
+    }
+
+    if raw:
+        payload["raw"] = data
+
+    return JSONResponse(payload)

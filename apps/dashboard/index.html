@@ -460,6 +460,21 @@ function filterLogs(){
 function updateCount(){const tot=document.querySelectorAll(".ll").length;const vis=document.querySelectorAll(".ll:not(.hidden)").length;document.getElementById("logCount").textContent=vis===tot?`${tot} lines`:`${vis} of ${tot} lines`;}
 function downloadLogs(){const txt=[];document.querySelectorAll(".ll:not(.hidden)").forEach(l=>{txt.push(`[${l.querySelector(".ll-ts").textContent}] ${l.querySelector(".ll-lv").textContent} ${l.querySelector(".ll-msg").textContent}`);});const a=document.createElement("a");a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(txt.join("\n"));a.download="job-logs.txt";a.click();}
 
+function findRuntimeUnitForJob(job, units) {
+  const values = Object.values(units || {});
+
+  return values.find((u) => {
+    const aliases = u.aliases || [];
+    return (
+      u.unit_name === job.name ||
+      aliases.includes(job.name) ||
+      u.unit_name === `${job.pipeline}__${job.name}` ||
+      u.unit_name === `${job.pipeline}_bronze` && job.id.endsWith("__bronze") ||
+      u.unit_name === `${job.pipeline}_silver` && job.id.endsWith("__silver")
+    );
+  });
+}
+
 document.getElementById("refreshBtn").addEventListener("click",loadDashboard);
 loadDashboard();
 setInterval(loadDashboard,REFRESH_MS);

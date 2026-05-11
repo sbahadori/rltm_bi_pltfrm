@@ -196,6 +196,8 @@ services:
     user: "0:0"
     environment:
       STREAM_LOG_DIR: /tmp/health/logs
+      PYTHONPATH: /workspace/rltm_bi_pltfrm
+      JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&

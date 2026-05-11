@@ -126,9 +126,24 @@ def main() -> None:
         args.layer,
         layer_spec.get("engine"),
     )
-    logger.info("Building Spark session")
-    subprocess.run(cmd, shell=True, check=True)
-    logger.info("Spark session created")
+    
+    logger.info("Submitting stream engine command: %s", cmd)
+
+    try:
+        subprocess.run(cmd, shell=True, check=True)
+        logger.info(
+            "Stream engine exited successfully stream_name=%s layer=%s",
+            args.stream_name,
+            args.layer,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.exception(
+            "Stream engine failed stream_name=%s layer=%s returncode=%s",
+            args.stream_name,
+            args.layer,
+            exc.returncode,
+        )
+        raise
 
 if __name__ == "__main__":
     main()

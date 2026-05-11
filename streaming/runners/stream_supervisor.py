@@ -10,6 +10,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from shared.runtime.job_run_registry import append_job_event, new_run_id
 
 def _bootstrap_repo_path() -> Path:
@@ -34,15 +43,15 @@ POLL_INTERVAL_SEC = 5
 @dataclass
 class UnitState:
     unit_name: str
-    run_id: str | None = None
     stream_name: str
     layer: str  # bronze | silver
     enabled: bool
-    pid: int | None = None
-    returncode: int | None = None
     retries: int = 0
     max_retries: int = 10
     backoff_seconds: int = 10
+    pid: int | None = None
+    returncode: int | None = None
+    run_id: str | None = None
     heartbeat_file: str | None = None
     checkpoint_dir: str | None = None
     last_start_ts_epoch: int | None = None

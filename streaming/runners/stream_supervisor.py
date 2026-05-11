@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
+from shared.runtime.job_run_registry import append_job_event, new_run_id
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -20,6 +20,7 @@ def _bootstrap_repo_path() -> Path:
 
 
 REPO_ROOT = _bootstrap_repo_path()
+
 
 from streaming.specs.stream_spec_utils import (  # noqa: E402
     load_stream_registry,
@@ -33,6 +34,7 @@ POLL_INTERVAL_SEC = 5
 @dataclass
 class UnitState:
     unit_name: str
+    run_id: str | None = None
     stream_name: str
     layer: str  # bronze | silver
     enabled: bool
@@ -148,6 +150,25 @@ class StreamSupervisor:
             env=os.environ.copy(),
         )
 
+        run_id = new_run_id(state.unit_name)
+        state.run_id = run_id
+        try:
+            append_job_event(
+                event_type="stream_started",
+                run_id=run_id,
+                type="stream",
+                unit_name=state.unit_name,
+                stream_name=state.stream_name,
+                layer=state.layer,
+                job_id=f"{state.stream_name}__{state.layer}",
+                job=f"{state.layer}_{state.stream_name}",
+                pipeline=state.stream_name,
+                status="running",
+                pid=proc.pid,
+            )
+        except Exception as exc:
+            print(f"[supervisor][WARN] registry write failed: {exc}", flush=True)
+
         self.processes[state.unit_name] = proc
         state.pid = proc.pid
         state.returncode = None
@@ -189,6 +210,25 @@ class StreamSupervisor:
                     state.pid = proc.pid
                     state.returncode = None
                 continue
+            
+            try:
+                append_job_event(
+                    event_type="stream_exited",
+                    run_id=getattr(state, "run_id", None),
+                    type="stream",
+                    unit_name=unit_name,
+                    stream_name=state.stream_name,
+                    layer=state.layer,
+                    job_id=f"{state.stream_name}__{state.layer}",
+                    job=f"{state.layer}_{state.stream_name}",
+                    pipeline=state.stream_name,
+                    status="failed" if rc != 0 else "stopped",
+                    returncode=rc,
+                    retries=state.retries,
+                    max_retries=state.max_retries,
+                )
+            except Exception as exc:
+                print(f"[supervisor][WARN] registry write failed: {exc}", flush=True)
 
             state = self.states.get(unit_name)
 

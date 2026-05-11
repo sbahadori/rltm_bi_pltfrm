@@ -7,7 +7,21 @@ from pathlib import Path
 
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
+import time
 
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+    
+from shared.runtime.job_run_registry import (
+    append_job_event,
+    exception_to_text,
+    new_run_id,
+)
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -78,7 +92,21 @@ def verify_bronze_written(spark: SparkSession, target_path: str) -> None:
 
 def main():
     args = parse_args()
+    run_id = new_run_id(f"{args.pipeline_name}__{args.job_name}")
+    started = time.time()
+
+    append_job_event(
+        event_type="batch_started",
+        run_id=run_id,
+        type="batch",
+        pipeline=args.pipeline_name,
+        job=args.job_name,
+        job_id=f"{args.pipeline_name}__{args.job_name}",
+        status="running",
+    )
     spark = None
+    records_written = 0
+    target_path = None
 
     try:
         print(
@@ -120,8 +148,9 @@ def main():
             row=row,
             schema=runtime_ctx["schema"],
         )
+        records_written = df.count()
 
-        print(f"[STEP] dataframe created rows={df.count()}", flush=True)
+        print(f"[STEP] dataframe created rows={records_written}", flush=True)
 
         write_bronze_dataframe(df, runtime_ctx["bronze_write"])
 
@@ -131,15 +160,51 @@ def main():
 
         verify_bronze_written(spark, target_path)
 
+        ended = time.time()
+
+        append_job_event(
+            event_type="batch_succeeded",
+            run_id=run_id,
+            type="batch",
+            pipeline=args.pipeline_name,
+            job=args.job_name,
+            job_id=f"{args.pipeline_name}__{args.job_name}",
+            status="success",
+            started_at_epoch=int(started),
+            ended_at_epoch=int(ended),
+            duration_seconds=round(ended - started, 3),
+            target_path=target_path,
+            records_written=records_written,
+        )
+
         print(
             f"[SUCCESS] Wrote Bronze rows for job '{args.job_name}' to {target_path}",
             flush=True,
         )
 
+    except Exception as exc:
+        ended = time.time()
+
+        append_job_event(
+            event_type="batch_failed",
+            run_id=run_id,
+            type="batch",
+            pipeline=args.pipeline_name,
+            job=args.job_name,
+            job_id=f"{args.pipeline_name}__{args.job_name}",
+            status="failed",
+            started_at_epoch=int(started),
+            ended_at_epoch=int(ended),
+            duration_seconds=round(ended - started, 3),
+            error=str(exc),
+            traceback=exception_to_text(exc),
+        )
+
+        raise
+
     finally:
         if spark is not None:
             spark.stop()
-
 
 if __name__ == "__main__":
     main()

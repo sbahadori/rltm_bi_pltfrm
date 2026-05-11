@@ -41,3 +41,7 @@ Thumbs.db
 # downloads
 downloads/
 downloads/**
+
+
+
+runtime/job_runs/*.jsonl

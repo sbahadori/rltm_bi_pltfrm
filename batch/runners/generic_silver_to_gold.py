@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-
+import time
 from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql.functions import col, expr, lit, row_number
@@ -17,7 +17,19 @@ from pyspark.sql.types import (
     StructType,
     TimestampType,
 )
+import sys
+from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+    
+from shared.runtime.job_run_registry import (
+    append_job_event,
+    exception_to_text,
+    new_run_id,
+)
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -206,6 +218,19 @@ def merge_to_target(
 
 def main():
     args = parse_args()
+    run_id = new_run_id(f"{args.pipeline_name}__{args.job_name}")
+    started = time.time()
+
+    append_job_event(
+        event_type="batch_started",
+        run_id=run_id,
+        type="batch",
+        pipeline=args.pipeline_name,
+        job=args.job_name,
+        job_id=f"{args.pipeline_name}__{args.job_name}",
+        status="running",
+    )
+
     spark = build_spark()
 
     try:
@@ -257,7 +282,38 @@ def main():
 
             writer.save(target_path)
 
+        append_job_event(
+            event_type="batch_succeeded",
+            run_id=run_id,
+            type="batch",
+            pipeline=args.pipeline_name,
+            job=args.job_name,
+            job_id=f"{args.pipeline_name}__{args.job_name}",
+            status="success",
+            started_at_epoch=int(started),
+            ended_at_epoch=int(time.time()),
+            duration_seconds=round(time.time() - started, 3),
+        )
+
         print(f"Wrote Gold rows to {target_path}")
+
+    except Exception as exc:
+        append_job_event(
+            event_type="batch_failed",
+            run_id=run_id,
+            type="batch",
+            pipeline=args.pipeline_name,
+            job=args.job_name,
+            job_id=f"{args.pipeline_name}__{args.job_name}",
+            status="failed",
+            started_at_epoch=int(started),
+            ended_at_epoch=int(time.time()),
+            duration_seconds=round(time.time() - started, 3),
+            error=str(exc),
+            traceback=exception_to_text(exc),
+        )
+        raise
+  
     finally:
         spark.stop()
 

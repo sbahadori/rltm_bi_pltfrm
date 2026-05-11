@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-
+import logging
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -87,13 +87,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--layer", required=True, choices=["bronze", "silver"])
     return parser.parse_args()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
+)
+
+logger = logging.getLogger("stream_service")
+
 
 def main() -> None:
     args = parse_args()
 
     spec = get_stream_spec(args.registry, args.stream_name)
     validate_stream_spec(spec)
-
+    logger.info(
+        "Starting stream service stream_name=%s layer=%s registry=%s",
+        args.stream_name,
+        args.layer,
+        args.registry,
+    )
     layer_spec = spec[args.layer]
     engine = layer_spec["engine"]
 
@@ -106,13 +120,15 @@ def main() -> None:
     entrypoint = ENGINE_ENTRYPOINTS[engine]
     cmd = build_submit_command(entrypoint, args.registry, spec["name"])
 
-    print(
-        f"Executing stream '{spec['name']}' layer '{args.layer}' command:\n{cmd}",
-        flush=True,
+    logger.info(
+        "Loaded stream spec stream_name=%s layer=%s engine=%s",
+        args.stream_name,
+        args.layer,
+        layer_spec.get("engine"),
     )
-
+    logger.info("Building Spark session")
     subprocess.run(cmd, shell=True, check=True)
-
+    logger.info("Spark session created")
 
 if __name__ == "__main__":
     main()

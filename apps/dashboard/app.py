@@ -984,28 +984,35 @@ def _find_latest_airflow_log(
     dag_id: str,
     task_id: str,
     dag_run_id: str | None = None,
-) -> Path | None:
-    dag_dir = AIRFLOW_LOG_DIR / f"dag_id={dag_id}"
-
+) -> Path:
     candidates: list[Path] = []
+
+    dag_dir = AIRFLOW_LOG_DIR / f"dag_id={dag_id}"
 
     if dag_run_id:
         run_dir = dag_dir / f"run_id={dag_run_id}"
         candidates.extend(run_dir.glob(f"task_id={task_id}/**/*.log"))
 
-    if not candidates:
+    if not candidates and dag_dir.exists():
         candidates.extend(dag_dir.glob(f"**/task_id={task_id}/**/*.log"))
+        candidates.extend(dag_dir.glob(f"**/*{task_id}*.log"))
+
+    if not candidates and AIRFLOW_LOG_DIR.exists():
+        candidates.extend(
+            AIRFLOW_LOG_DIR.glob(f"**/dag_id={dag_id}/**/task_id={task_id}/**/*.log")
+        )
+        candidates.extend(
+            AIRFLOW_LOG_DIR.glob(f"**/*{dag_id}*{task_id}*.log")
+        )
+
+    candidates = [p for p in candidates if p.is_file()]
 
     if not candidates:
-        # Airflow log layout fallback.
-        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/{dag_id}/**/{task_id}/**/*.log"))
-        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/{task_id}/**/*.log"))
-
-    if not candidates:
-        return None
+        raise FileNotFoundError(
+            f"No Airflow log found for dag_id={dag_id}, task_id={task_id}"
+        )
 
     return max(candidates, key=lambda p: p.stat().st_mtime)
-
 
 # -----------------------------------------------------------------------------
 # Routes
@@ -1046,8 +1053,21 @@ async def get_stream_runtime_status(raw: bool = Query(default=False)) -> JSONRes
 
 @app.get("/api/runtime/jobs")
 async def get_runtime_jobs() -> JSONResponse:
-    return JSONResponse(_runtime_jobs_payload())
+    bundle = _load_config_bundle()
+    runtime = _enrich_runtime_jobs(bundle["jobs"])
 
+    return JSONResponse(
+        {
+            "jobs": runtime["jobs"],
+            "stream_status": runtime["stream_status"],
+            "meta": {
+                "loaded_at": runtime["loaded_at"],
+                "airflow_api_base": AIRFLOW_API_BASE,
+                "batch_catalog_path": str(BATCH_CATALOG_PATH),
+                "stream_registry_path": str(STREAM_REGISTRY_PATH),
+            },
+        }
+    )
 
 @app.get("/api/runtime/runs/{job_id}")
 async def get_runtime_runs(
@@ -1125,11 +1145,11 @@ async def get_runtime_runs(
 @app.get("/api/runtime/logs/{job_id}")
 async def get_runtime_logs(
     job_id: str,
-    kind: str | None = Query(default=None),
-    pipeline: str | None = Query(default=None),
-    task: str | None = Query(default=None),
-    dag_run_id: str | None = Query(default=None),
-    lines: int = Query(default=300, ge=10, le=5000),
+    kind: str = Query(default="batch", pattern="^(batch|stream)$"),
+    pipeline: str | None = None,
+    task: str | None = None,
+    dag_run_id: str | None = None,
+    lines: int = Query(default=500, ge=10, le=5000),
 ) -> PlainTextResponse:
     job = _job_from_config(job_id)
     effective_kind = kind or (job.get("type") if job else None)

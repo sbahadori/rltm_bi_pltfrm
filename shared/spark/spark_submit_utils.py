@@ -8,8 +8,8 @@ from typing import Any
 
 DEFAULT_SPARK_PACKAGES = [
     "io.delta:delta-spark_2.12:3.2.0",
-    "org.apache.hadoop:hadoop-aws:3.3.4",
-    "com.amazonaws:aws-java-sdk-bundle:1.12.262",
+    # "org.apache.hadoop:hadoop-aws:3.3.4",
+    # "com.amazonaws:aws-java-sdk-bundle:1.12.262",
 ]
 
 DEFAULT_SPARK_CONF = {

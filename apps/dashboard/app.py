@@ -101,6 +101,57 @@ def _read_json_file(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
+def _resolve_repo_path(path_str: str) -> Path:
+    path = Path(path_str)
+
+    if path.is_absolute():
+        return path
+
+    return (PIPELINE_REPO_ROOT / path).resolve()
+
+
+def _load_manifest(manifest_ref: str) -> dict[str, Any]:
+    manifest_path = _resolve_repo_path(manifest_ref)
+
+    if not manifest_path.exists():
+        return {}
+
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _enabled_manifest_tables(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        table
+        for table in manifest.get("tables", [])
+        if table.get("enabled", True)
+    ]
+
+
+def _manifest_table_target_path(
+    manifest: dict[str, Any],
+    table: dict[str, Any],
+) -> str:
+    if table.get("target_path"):
+        return table["target_path"]
+
+    defaults = manifest.get("defaults", {}) or {}
+    template = defaults.get("target_path_template", "")
+
+    if not template:
+        return ""
+
+    try:
+        return template.format(
+            source_id=manifest.get("source_id", ""),
+            table_id=table.get("table_id", ""),
+        )
+    except Exception:
+        return ""
+
 
 def _safe_int(value: Any) -> int | None:
     try:
@@ -556,17 +607,72 @@ def _build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
             if not job.get("enabled", True):
                 continue
 
+            job_name = job.get("name", "")
+            job_type = job.get("job_type", "")
+            execution_strategy = job.get("execution_strategy", "")
+
+            # -----------------------------------------------------------------
+            # Manifest-driven JDBC ingestion:
+            # one Airflow task per source table.
+            # Do NOT expose the base manifest job as a runnable/loggable task.
+            # -----------------------------------------------------------------
+            if (
+                job_type == "generic_jdbc_manifest_to_bronze"
+                and execution_strategy == "one_task_per_table"
+            ):
+                manifest_ref = job.get("manifest_ref", "")
+                manifest = _load_manifest(manifest_ref)
+                source_id = manifest.get("source_id", "")
+
+                for table in _enabled_manifest_tables(manifest):
+                    table_id = table.get("table_id", "")
+
+                    if not table_id:
+                        continue
+
+                    task_id = f"{job_name}__{table_id}"
+                    target_path = _manifest_table_target_path(manifest, table)
+
+                    jobs.append(
+                        {
+                            "id": f"{pipeline_name}__{task_id}",
+                            "name": task_id,
+                            "pipeline": pipeline_name,
+                            "type": "batch",
+                            "job_type": job_type,
+                            "runner": job_type,
+                            "source_type": job.get("source_type", "jdbc"),
+                            "source_url": table.get("source_table", ""),
+                            "source_id": source_id,
+                            "table_id": table_id,
+                            "base_job_name": job_name,
+                            "manifest_ref": manifest_ref,
+                            "dependencies": job.get("dependencies", []),
+                            "timeout_minutes": job.get("execution_timeout_minutes", 30),
+                            "tags": job.get("tags", []) or pipeline_tags,
+                            "target_path": target_path,
+                            "schedule": schedule,
+                            "defined": True,
+                            "source": "catalog_manifest",
+                        }
+                    )
+
+                continue
+
+            # -----------------------------------------------------------------
+            # Existing non-manifest batch jobs.
+            # -----------------------------------------------------------------
             spec = job.get("spec", {}) or {}
             source = spec.get("source", {}) or {}
 
-            job_name = job.get("name", "")
             jobs.append(
                 {
                     "id": f"{pipeline_name}__{job_name}",
                     "name": job_name,
                     "pipeline": pipeline_name,
                     "type": "batch",
-                    "job_type": job.get("job_type", ""),
+                    "job_type": job_type,
+                    "runner": job_type,
                     "source_url": source.get("base_url", ""),
                     "dependencies": job.get("dependencies", []),
                     "timeout_minutes": job.get("execution_timeout_minutes", 30),
@@ -579,7 +685,6 @@ def _build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
             )
 
     return jobs
-
 
 def _build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
@@ -640,6 +745,34 @@ def _build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
 
     return jobs
 
+def _pipeline_batch_job_names(pipeline: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+
+    for job in pipeline.get("jobs", []):
+        if not job.get("enabled", True):
+            continue
+
+        job_name = job.get("name", "")
+        job_type = job.get("job_type", "")
+        execution_strategy = job.get("execution_strategy", "")
+
+        if (
+            job_type == "generic_jdbc_manifest_to_bronze"
+            and execution_strategy == "one_task_per_table"
+        ):
+            manifest = _load_manifest(job.get("manifest_ref", ""))
+
+            for table in _enabled_manifest_tables(manifest):
+                table_id = table.get("table_id", "")
+
+                if table_id:
+                    names.append(f"{job_name}__{table_id}")
+
+            continue
+
+        names.append(job_name)
+
+    return names
 
 def _build_pipelines(
     catalog: dict[str, Any],
@@ -659,11 +792,7 @@ def _build_pipelines(
                 "description": pipeline.get("description", ""),
                 "schedule": dag.get("schedule"),
                 "tags": dag.get("tags", []),
-                "jobs": [
-                    j.get("name", "")
-                    for j in pipeline.get("jobs", [])
-                    if j.get("enabled", True)
-                ],
+                "jobs": _pipeline_batch_job_names(pipeline),
             }
         )
 

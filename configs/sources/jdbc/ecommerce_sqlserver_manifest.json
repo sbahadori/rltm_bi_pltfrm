@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "source_id": "ecommerce_sqlserver",
+  "source_type": "jdbc",
+  "connection_ref": "ecommerce_sqlserver",
+  "enabled": true,
+
+  "defaults": {
+    "read_mode": "full",
+    "num_partitions": 1,
+    "fetch_size": 10000,
+
+    "bronze_format": "delta",
+    "bronze_mode": "overwrite",
+    "target_path_template": "s3a://lakehouse/bronze/{source_id}/{table_id}",
+
+    "partition_by": [
+      "ingest_year",
+      "ingest_month",
+      "ingest_day"
+    ],
+
+    "add_ingestion_metadata": true,
+    "add_row_hash": false
+  },
+
+  "tables": [
+    {
+      "table_id": "brands",
+      "enabled": true,
+      "source_table": "dbo.brands",
+      "primary_key": ["post_id"],
+      "columns": [
+        "post_id",
+        "post_title",
+        "posttype_id",
+        "posttype",
+        "posttypename",
+        "is_product",
+        "slug",
+        "excerpt",
+        "content",
+        "hits",
+        "post_type",
+        "parent_id",
+        "search_term",
+        "created_at",
+        "updated_at",
+        "sort",
+        "status",
+        "CreatedDateTime",
+        "CreatedDate",
+        "Hour"
+      ]
+    },
+
+    {
+      "table_id": "products",
+      "enabled": true,
+      "source_table": "dbo.products",
+      "primary_key": ["id"],
+      "columns": [
+        "id",
+        "title",
+        "slug",
+        "post_id",
+        "brand",
+        "cats",
+        "brand_id",
+        "price",
+        "sale_price",
+        "stock_quantity",
+        "stock_backorder",
+        "min_price",
+        "max_price",
+        "maxdiscount",
+        "available",
+        "haschilds",
+        "parent_id",
+        "campaigns",
+        "discounts",
+        "expdate",
+        "hasgift",
+        "onsale",
+        "search_term",
+        "orders_last90days",
+        "orders_last60days",
+        "orders_last30days",
+        "orders",
+        "hits",
+        "status",
+        "updated_at",
+        "created_at",
+        "barcode",
+        "CreatedDateTime",
+        "CreatedDate",
+        "Hour"
+      ]
+    }
+  ]
+}

@@ -222,20 +222,21 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
     global _last_batch_state, _last_error_state
 
     try:
-        if batch_df.isEmpty():
+        row_count = batch_df.count()
+
+        if row_count == 0:
+            _last_error_state = {}
             _last_batch_state = {
                 "last_batch_id": batch_id,
                 **_utc_now_fields("last_batch"),
-                "last_input_rows": row_count,
-                "last_batch_rows": row_count,
-                "last_written_rows": row_count,
+                "last_input_rows": 0,
+                "last_batch_rows": 0,
+                "last_written_rows": 0,
                 "last_write_ok": True,
-                "last_message": "write_ok",
+                "last_message": "empty_batch",
             }
             write_heartbeat("running", _last_batch_state)
             return
-
-        row_count = batch_df.count()
 
         writer = batch_df.write.format("delta").mode("append")
         partition_cols = _runtime["partition_by"]
@@ -270,7 +271,7 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
 
         write_heartbeat("error", _last_error_state)
         raise
-    
+
 def main() -> None:
     global _query, _spark, _runtime
 

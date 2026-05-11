@@ -1,0 +1,1307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>rltm_bi_pltfrm Dashboard</title>
+  <style>
+    :root{
+      --bg:#0f1117;
+      --panel:#151a24;
+      --panel2:#1b2130;
+      --line:#2a3142;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --blue:#60a5fa;
+      --green:#34d399;
+      --yellow:#fbbf24;
+      --red:#f87171;
+      --purple:#a78bfa;
+      --cyan:#22d3ee;
+      --shadow:0 10px 30px rgba(0,0,0,.25);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size:14px;
+    }
+    a{color:inherit}
+    .app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+    .side{
+      background:#111827;
+      border-right:1px solid var(--line);
+      padding:20px 16px;
+      position:sticky;
+      top:0;
+      height:100vh;
+      overflow:auto;
+    }
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:22px}
+    .logo{
+      width:42px;height:42px;border-radius:12px;
+      background:linear-gradient(135deg,var(--blue),var(--purple));
+      display:grid;place-items:center;font-weight:800;color:white;
+      box-shadow:var(--shadow);
+    }
+    .brand h1{font-size:16px;margin:0}
+    .brand p{font-size:12px;margin:2px 0 0;color:var(--muted)}
+    .nav-title{
+      color:var(--muted);
+      text-transform:uppercase;
+      font-size:11px;
+      letter-spacing:.12em;
+      margin:18px 8px 8px;
+    }
+    .nav-btn{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:transparent;
+      color:var(--text);
+      border:0;
+      padding:10px 10px;
+      border-radius:12px;
+      cursor:pointer;
+      text-align:left;
+      margin:2px 0;
+    }
+    .nav-btn:hover,.nav-btn.active{background:#1f2937}
+    .nav-btn small{color:var(--muted)}
+    .main{padding:22px;overflow:auto}
+    .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:16px;
+      margin-bottom:18px;
+    }
+    .top h2{font-size:24px;margin:0}
+    .sub{color:var(--muted);font-size:13px;margin-top:4px}
+    .actions{display:flex;align-items:center;gap:10px}
+    .btn{
+      border:1px solid var(--line);
+      background:var(--panel2);
+      color:var(--text);
+      padding:9px 12px;
+      border-radius:12px;
+      cursor:pointer;
+    }
+    .btn:hover{border-color:#3b82f6}
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      border:1px solid var(--line);
+      background:var(--panel2);
+      border-radius:999px;
+      padding:7px 10px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .dot{width:8px;height:8px;border-radius:999px;background:var(--muted);display:inline-block}
+    .dot.green{background:var(--green)}
+    .dot.yellow{background:var(--yellow)}
+    .dot.red{background:var(--red)}
+    .grid{display:grid;gap:16px}
+    .cards{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+    .card .label{color:var(--muted);font-size:12px}
+    .card .value{font-size:28px;font-weight:800;margin-top:6px}
+    .card .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .two{grid-template-columns:1.15fr .85fr}
+    .section{display:none}
+    .section.active{display:block}
+    .section-title{
+      display:flex;align-items:center;justify-content:space-between;
+      margin:18px 0 12px;
+    }
+    .section-title h3{margin:0;font-size:18px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{font-size:12px;color:var(--muted);font-weight:600;text-align:left}
+    tr:hover td{background:rgba(255,255,255,.025)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px}
+    .muted{color:var(--muted)}
+    .tag{
+      display:inline-flex;align-items:center;border-radius:999px;
+      padding:3px 8px;font-size:12px;border:1px solid var(--line);
+      background:var(--panel2);color:var(--muted);margin:1px 2px 1px 0;
+    }
+    .tag.batch{color:#fbbf24;border-color:rgba(251,191,36,.3)}
+    .tag.stream{color:#22d3ee;border-color:rgba(34,211,238,.3)}
+    .tag.success,.tag.running{color:var(--green);border-color:rgba(52,211,153,.35)}
+    .tag.failed,.tag.error{color:var(--red);border-color:rgba(248,113,113,.35)}
+    .tag.warning,.tag.restarting,.tag.queued,.tag.scheduled{color:var(--yellow);border-color:rgba(251,191,36,.35)}
+    .tag.unknown,.tag.defined,.tag.no_runs{color:var(--muted)}
+    .clickable{cursor:pointer}
+    .alert{
+      border:1px solid var(--line);
+      background:var(--panel2);
+      border-radius:14px;
+      padding:12px;
+      margin-bottom:10px;
+    }
+    .alert h4{margin:0 0 4px;font-size:14px}
+    .alert p{margin:0;color:var(--muted);font-size:12px}
+    .drawer{
+      position:fixed;right:0;top:0;height:100vh;width:min(860px,92vw);
+      background:#0b1020;
+      border-left:1px solid var(--line);
+      transform:translateX(102%);
+      transition:.22s ease;
+      z-index:20;
+      box-shadow:-18px 0 50px rgba(0,0,0,.45);
+      display:flex;flex-direction:column;
+    }
+    .drawer.open{transform:translateX(0)}
+    .drawer-head{
+      padding:18px;border-bottom:1px solid var(--line);
+      display:flex;justify-content:space-between;gap:10px;align-items:flex-start;
+    }
+    .drawer-head h3{margin:0;font-size:18px}
+    .drawer-body{padding:18px;overflow:auto}
+    .drawer-close{background:transparent;color:var(--text);border:0;font-size:22px;cursor:pointer}
+    .tabs{display:flex;gap:8px;margin:14px 0}
+    .tab{padding:8px 11px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:10px;cursor:pointer}
+    .tab.active{border-color:var(--blue);color:var(--blue)}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+    pre{
+      background:#050816;border:1px solid var(--line);border-radius:12px;
+      padding:12px;overflow:auto;white-space:pre-wrap;color:#d1d5db;
+      max-height:52vh;
+    }
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:8px;font-size:13px;margin:7px 0}
+    .kv .k{color:var(--muted)}
+    .error-box{
+      background:rgba(248,113,113,.08);
+      border:1px solid rgba(248,113,113,.25);
+      color:#fecaca;
+      border-radius:12px;
+      padding:12px;
+      margin:10px 0;
+      white-space:pre-wrap;
+    }
+    @media(max-width:1100px){
+      .app{grid-template-columns:1fr}
+      .side{position:relative;height:auto}
+      .cards,.two{grid-template-columns:1fr}
+    }
+    .log-summary-grid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:12px;
+      margin-bottom:12px;
+    }
+
+    .log-summary-card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+    }
+
+    .log-summary-card .label{
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    .log-summary-card .value{
+      font-size:22px;
+      font-weight:800;
+      margin-top:4px;
+    }
+
+    .log-timeline{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .log-event{
+      display:grid;
+      grid-template-columns:92px 90px 1fr;
+      gap:12px;
+      align-items:start;
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:11px 12px;
+    }
+
+    .log-event-time{
+      color:var(--muted);
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:12px;
+    }
+
+    .log-event-level{
+      display:inline-flex;
+      width:max-content;
+      border-radius:999px;
+      padding:3px 8px;
+      font-size:12px;
+      border:1px solid var(--line);
+    }
+
+    .log-event-level.info{
+      color:var(--blue);
+      border-color:rgba(96,165,250,.35);
+    }
+
+    .log-event-level.warn{
+      color:var(--yellow);
+      border-color:rgba(251,191,36,.35);
+    }
+
+    .log-event-level.error{
+      color:var(--red);
+      border-color:rgba(248,113,113,.35);
+    }
+
+    .log-event-title{
+      font-weight:700;
+      margin-bottom:3px;
+    }
+
+    .log-event-detail{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.45;
+    }
+
+    .raw-log-details{
+      margin-top:16px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:12px;
+      background:var(--panel);
+    }
+
+    .raw-log-details summary{
+      cursor:pointer;
+      color:var(--muted);
+      font-weight:600;
+    }
+
+    .raw-log-box{
+      margin-top:12px;
+      max-height:360px;
+      background:#050816;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">BI</div>
+      <div>
+        <h1>rltm_bi_pltfrm</h1>
+        <p>Runtime-aware BI Platform</p>
+      </div>
+    </div>
+
+    <button class="nav-btn active" data-section="dashboard">Dashboard <small>Overview</small></button>
+
+    <div class="nav-title">Batch Pipelines</div>
+    <div id="batchNav"><div class="muted" style="padding:8px">Loading...</div></div>
+
+    <div class="nav-title">Streaming</div>
+    <div id="streamNav"><div class="muted" style="padding:8px">Loading...</div></div>
+
+    <div class="nav-title">Jobs</div>
+    <button class="nav-btn" data-section="jobs">Job Monitor <small id="jobNavCount">0</small></button>
+    <button class="nav-btn" data-section="dags">Airflow DAGs <small>runs</small></button>
+
+    <div class="nav-title">Storage</div>
+    <button class="nav-btn" data-section="lake">Delta Lakehouse <small>paths</small></button>
+
+    <div class="nav-title">System</div>
+    <button class="nav-btn" data-section="infra">Infrastructure <small>dev</small></button>
+    <button class="nav-btn" data-section="alerts">Alerts <small id="alertNavCount">0</small></button>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <h2 id="pageTitle">Dashboard</h2>
+        <div class="sub">
+          <span id="runtimeTag">Runtime: loading</span>
+          ·
+          <span id="configTag">Config: loading</span>
+          ·
+          <span id="refreshTag">Never refreshed</span>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="pill"><span id="healthDot" class="dot"></span><span id="healthText">Loading</span></span>
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </div>
+
+    <section id="dashboard" class="section active">
+      <div class="grid cards">
+        <div class="card"><div class="label">Streaming jobs</div><div id="metricStreams" class="value">-</div><div class="hint">from stream registry</div></div>
+        <div class="card"><div class="label">Batch jobs</div><div id="metricBatch" class="value">-</div><div class="hint">from pipeline catalog + Airflow</div></div>
+        <div class="card"><div class="label">Lakehouse targets</div><div id="metricTargets" class="value">-</div><div class="hint">distinct output paths</div></div>
+        <div class="card"><div class="label">Open issues</div><div id="metricIssues" class="value">-</div><div class="hint">derived runtime alerts</div></div>
+      </div>
+
+      <div class="grid two">
+        <div class="card">
+          <div class="section-title"><h3>Recent activity</h3><span id="recentCount" class="muted">0 jobs</span></div>
+          <table>
+            <thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Latest run</th><th>Duration</th><th>Output</th></tr></thead>
+            <tbody id="recentBody"><tr><td colspan="6">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="section-title"><h3>Active alerts</h3><span id="alertCount" class="muted">0 active</span></div>
+          <div id="alertsBody">Loading alerts...</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pipelineDetail" class="section">
+      <div class="card">
+        <div class="section-title"><h3 id="pipelineTitle">Pipeline</h3><span id="pipelineSchedule" class="tag">schedule</span></div>
+        <div id="pipelineMeta" class="muted"></div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Latest run</th><th>Target</th><th>Action</th></tr></thead>
+          <tbody id="pipelineJobsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="streamDetail" class="section">
+      <div class="card">
+        <div class="section-title"><h3 id="streamTitle">Stream</h3><span id="streamRuntimeBadge" class="tag">runtime</span></div>
+        <div id="streamMeta" class="muted"></div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Job</th><th>Runner</th><th>Status</th><th>Progress</th><th>Health</th><th>Output</th><th>Action</th></tr></thead>
+          <tbody id="streamJobsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="jobs" class="section">
+      <div class="card">
+        <div class="section-title"><h3>All jobs</h3><span id="allJobsCount" class="muted">0</span></div>
+        <table>
+          <thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Stream progress</th><th>Stream health</th><th>Latest run</th><th>Output</th><th>Action</th></tr></thead>
+          <tbody id="jobsBody"><tr><td colspan="10">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="dags" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Airflow DAGs</h3><span class="muted">batch pipelines</span></div>
+        <table>
+          <thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Latest state</th><th>Tags</th></tr></thead>
+          <tbody id="dagsBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="lake" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Delta Lakehouse targets</h3><span class="muted">derived from job target paths</span></div>
+        <table>
+          <thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Status</th></tr></thead>
+          <tbody id="lakeBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="infra" class="section">
+      <div class="grid cards">
+        <div class="card"><div class="label">Dashboard API</div><div class="value">FastAPI</div><div class="hint">/api/config + /api/runtime/*</div></div>
+        <div class="card"><div class="label">Airflow</div><div class="value">8090</div><div class="hint">DAG runs + task logs</div></div>
+        <div class="card"><div class="label">MinIO</div><div class="value">9001</div><div class="hint">S3-compatible lakehouse</div></div>
+        <div class="card"><div class="label">Stream Supervisor</div><div class="value">Spark</div><div class="hint">spark_health + logs</div></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="section-title"><h3>Runtime mounts</h3><button class="btn" onclick="loadMounts()">Check mounts</button></div>
+        <pre id="mountsBody">Click "Check mounts"</pre>
+      </div>
+    </section>
+
+    <section id="alerts" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Alerts</h3><span id="alertsPageCount" class="muted">0</span></div>
+        <div id="alertsPageBody">Loading...</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="drawer" class="drawer">
+  <div class="drawer-head">
+    <div>
+      <h3 id="drawerTitle">Job</h3>
+      <div id="drawerTags" style="margin-top:8px"></div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
+  </div>
+  <div class="drawer-body">
+    <div id="drawerMeta"></div>
+    <div class="tabs">
+      <button class="tab active" data-tab="runsTab">Runs</button>
+      <button class="tab" data-tab="logsTab">Logs</button>
+      <button class="tab" data-tab="rawTab">Raw</button>
+    </div>
+    <div id="runsTab" class="tab-panel active">
+      <table>
+        <thead><tr><th>Run ID</th><th>State</th><th>Start</th><th>End</th><th>Duration</th><th>Try</th></tr></thead>
+        <tbody id="runsBody"><tr><td colspan="6">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="logsTab" class="tab-panel">
+      <div id="logSummaryCards" class="log-summary-grid"></div>
+
+      <div class="section-title" style="margin-top:14px">
+        <h3>Execution timeline</h3>
+        <span id="logLineCount" class="muted">0 events</span>
+      </div>
+
+      <div id="logTimeline" class="log-timeline">
+        <div class="muted">Loading...</div>
+      </div>
+
+      <details class="raw-log-details">
+        <summary>Show raw technical log</summary>
+        <pre id="logsBody" class="raw-log-box">Loading...</pre>
+      </details>
+    </div>
+    <div id="rawTab" class="tab-panel">
+      <pre id="rawBody">{}</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const REFRESH_MS = 5000;
+
+const state = {
+  config: null,
+  runtime: null,
+  jobs: [],
+  pipelines: [],
+  alerts: [],
+  selectedPipeline: null,
+  selectedStream: null,
+  lastError: null
+};
+
+function esc(v){
+  return String(v ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+async function apiJson(url){
+  const res = await fetch(url, {cache:"no-store"});
+  const text = await res.text();
+  if(!res.ok){
+    throw new Error(`${url} failed: ${res.status} ${text.slice(0,180)}`);
+  }
+  return text ? JSON.parse(text) : {};
+}
+
+async function apiText(url){
+  const res = await fetch(url, {cache:"no-store"});
+  const text = await res.text();
+  if(!res.ok){
+    throw new Error(`${url} failed: ${res.status}\n${text}`);
+  }
+  return text;
+}
+
+function showSectionError(elementId, error, colspan = 10){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+
+  el.innerHTML = `
+    <tr>
+      <td colspan="${colspan}">
+        <div class="alert error">
+          <b>Failed to render this section</b>
+          <div class="muted mono">${esc(error?.message || String(error))}</div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function safeRender(label, fn){
+  try{
+    fn();
+  }catch(e){
+    console.error(`[dashboard] ${label} render failed`, e);
+  }
+}
+
+async function loadDashboard(){
+  try{
+    const config = await apiJson("/api/config");
+    const runtime = await apiJson("/api/runtime/jobs");
+
+    state.config = config;
+    state.runtime = runtime;
+    state.jobs = runtime.jobs || [];
+    state.pipelines = config.pipelines || [];
+    state.lastError = null;
+    state.alerts = buildAlerts();
+
+    renderAll();
+
+  }catch(e){
+    console.error("[dashboard] refresh failed", e);
+
+    state.lastError = e;
+    state.alerts = buildAlerts();
+
+    document.getElementById("configTag").textContent = "Config: error";
+    document.getElementById("runtimeTag").textContent = "Runtime: error";
+    document.getElementById("refreshTag").textContent = `Failed: ${new Date().toLocaleTimeString()}`;
+
+    const targets = [
+      ["recentBody", 6],
+      ["jobsBody", 10],
+      ["dagsBody", 5],
+      ["lakeBody", 5],
+    ];
+
+    for(const [id, colspan] of targets){
+      const el = document.getElementById(id);
+      if(el){
+        el.innerHTML = `<tr><td colspan="${colspan}"><div class="error-box">${esc(e.message || String(e))}</div></td></tr>`;
+      }
+    }
+
+    const alertsBody = document.getElementById("alertsBody");
+    if(alertsBody){
+      alertsBody.innerHTML = `<div class="error-box">${esc(e.message || String(e))}</div>`;
+    }
+  }
+}
+
+function statusClass(s){
+  s = String(s || "unknown").toLowerCase();
+  if(["success","running"].includes(s)) return "success";
+  if(["failed","error","airflow_unavailable","airflow_task_unavailable"].includes(s)) return "failed";
+  if(["queued","scheduled","restarting","up_for_retry"].includes(s)) return "warning";
+  return s;
+}
+
+function statusTag(s){
+  const val = s || "unknown";
+  return `<span class="tag ${statusClass(val)}">${esc(val)}</span>`;
+}
+
+function typeTag(type){
+  return `<span class="tag ${type === "stream" ? "stream" : "batch"}">${esc(type)}</span>`;
+}
+
+function shortDate(v){
+  if(!v) return "-";
+  try{
+    return new Date(v).toLocaleString();
+  }catch(e){ return v; }
+}
+
+function fmtDuration(v){
+  if(v === null || v === undefined || v === "") return "-";
+  const n = Number(v);
+  if(Number.isNaN(n)) return "-";
+  if(n < 60) return `${n.toFixed(1)}s`;
+  return `${(n/60).toFixed(1)}m`;
+}
+
+function valueOrDash(v){
+  return v === null || v === undefined || v === "" ? "-" : v;
+}
+
+function safeArray(v){
+  return Array.isArray(v) ? v : [];
+}
+
+function boolBadge(v){
+  if(v === true) return `<span class="tag success">OK</span>`;
+  if(v === false) return `<span class="tag failed">FAILED</span>`;
+  return `<span class="tag unknown">-</span>`;
+}
+
+function fmtAge(seconds){
+  if(seconds === null || seconds === undefined || seconds === "") return "-";
+  const n = Number(seconds);
+  if(Number.isNaN(n)) return "-";
+  if(n < 60) return `${Math.round(n)}s ago`;
+  if(n < 3600) return `${Math.round(n / 60)}m ago`;
+  return `${(n / 3600).toFixed(1)}h ago`;
+}
+
+function streamProgressHtml(job){
+  if(job.type !== "stream"){
+    return `<span class="muted">-</span>`;
+  }
+
+  const isBronze = String(job.id || "").endsWith("__bronze");
+  const isSilver = String(job.id || "").endsWith("__silver");
+
+  const validationLine = isSilver
+    ? `<br/><b>valid:</b> ${esc(valueOrDash(job.last_valid_rows))} / <b>invalid:</b> ${esc(valueOrDash(job.last_invalid_rows))}`
+    : `<br/><b>validation:</b> <span class="muted">N/A at Bronze layer</span>`;
+
+  return `
+    <div class="mono">
+      <b>batch:</b> ${esc(valueOrDash(job.last_batch_id))}
+      <br/>
+      <b>input:</b> ${esc(valueOrDash(job.last_input_rows ?? job.last_batch_rows))}
+      ${validationLine}
+    </div>
+  `;
+}
+
+function streamHealthHtml(job){
+  if(job.type !== "stream"){
+    return `<span class="muted">-</span>`;
+  }
+
+  return `
+    <div>
+      <div>${boolBadge(job.last_write_ok)}</div>
+      <div class="muted" style="margin-top:4px">
+        heartbeat: ${esc(fmtAge(job.heartbeat_age_seconds))}
+      </div>
+      <div class="muted">
+        last batch: ${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}
+      </div>
+    </div>
+  `;
+}
+
+function layerFromPath(pathValue){
+  const p = String(pathValue || "").toLowerCase();
+  if(p.includes("/bronze")) return "Bronze";
+  if(p.includes("/silver")) return "Silver";
+  if(p.includes("/gold")) return "Gold";
+  return "-";
+}
+
+function showSection(id){
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+  const el = document.getElementById(id);
+  if(el) el.classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(`.nav-btn[data-section="${id}"]`).forEach(b => b.classList.add("active"));
+
+  const titleMap = {
+    dashboard:"Dashboard",
+    jobs:"Job Monitor",
+    dags:"Airflow DAGs",
+    lake:"Delta Lakehouse",
+    infra:"Infrastructure",
+    alerts:"Alerts",
+    pipelineDetail:"Pipeline",
+    streamDetail:"Stream"
+  };
+  document.getElementById("pageTitle").textContent = titleMap[id] || "Dashboard";
+}
+
+function buildAlerts(){
+  const alerts = [];
+  const runtimeMeta = state.runtime?.meta || {};
+  if(state.lastError){
+    alerts.push({
+      level:"ERROR",
+      title:"Dashboard API load error",
+      message:state.lastError.message || String(state.lastError)
+    });
+  }
+  if(state.runtime && runtimeMeta.stream_status_available === false){
+    alerts.push({
+      level:"WARN",
+      title:"Stream runtime status unavailable",
+      message:"/api/runtime/streams/status is unavailable. Catalog data is shown, but live stream status may be unknown."
+    });
+  }
+  for(const job of state.jobs){
+    const s = String(job.current_status || "").toLowerCase();
+    if(["failed","error","airflow_unavailable","airflow_task_unavailable"].includes(s)){
+      alerts.push({
+        level:"ERROR",
+        title:`${job.name} is ${job.current_status}`,
+        message:job.status_reason || `${job.pipeline} / ${job.type}`
+      });
+    }else if(["restarting","stale","unknown"].includes(s)){
+      alerts.push({
+        level:"WARN",
+        title:`${job.name} is ${job.current_status}`,
+        message:job.status_reason || `${job.pipeline} / ${job.type}`
+      });
+    }
+  }
+  return alerts;
+}
+
+
+function renderAll(){
+  const configOk = !!state.config;
+  const runtimeOk = !!state.runtime && !state.runtime?.meta?.runtime_error;
+  document.getElementById("configTag").textContent = `Config: ${configOk ? "loaded" : "error"}`;
+  document.getElementById("runtimeTag").textContent = `Runtime: ${runtimeOk ? "loaded" : "partial"}`;
+  document.getElementById("refreshTag").textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
+
+  const bad = state.alerts.some(a => a.level === "ERROR");
+  const warn = state.alerts.some(a => a.level === "WARN");
+  const dot = document.getElementById("healthDot");
+  dot.className = `dot ${bad ? "red" : warn ? "yellow" : "green"}`;
+  document.getElementById("healthText").textContent = bad ? "Issues" : warn ? "Warnings" : "Healthy";
+
+  renderNav();
+  renderCards();
+  renderRecent();
+  renderJobs();
+  renderDags();
+  renderLake();
+  renderAlerts();
+  if(state.selectedPipeline) renderPipelineDetail(state.selectedPipeline);
+  if(state.selectedStream) renderStreamDetail(state.selectedStream);
+}
+
+function renderNav(){
+  const batch = (state.pipelines || []).filter(p => p.type === "batch");
+  const streams = (state.pipelines || []).filter(p => p.type === "stream");
+
+  document.getElementById("batchNav").innerHTML = batch.length ? batch.map(p => `
+    <button class="nav-btn" onclick="openPipeline('${esc(p.name)}')">
+      <span>${esc(p.name)}</span><small>${esc(p.jobs?.length || 0)}</small>
+    </button>
+  `).join("") : `<div class="muted" style="padding:8px">No batch pipelines</div>`;
+
+  document.getElementById("streamNav").innerHTML = streams.length ? streams.map(p => `
+    <button class="nav-btn" onclick="openStream('${esc(p.name)}')">
+      <span>${esc(p.name)}</span><small>${esc(p.jobs?.length || 0)}</small>
+    </button>
+  `).join("") : `<div class="muted" style="padding:8px">No streams</div>`;
+
+  document.getElementById("jobNavCount").textContent = state.jobs.length;
+  document.getElementById("alertNavCount").textContent = state.alerts.length;
+}
+
+function renderCards(){
+  const streamCount = state.jobs.filter(j => j.type === "stream").length;
+  const batchCount = state.jobs.filter(j => j.type === "batch").length;
+
+  const targets = new Set(
+    state.jobs
+      .map(j => j.stream_target_path || j.target_path)
+      .filter(Boolean)
+  );
+
+  document.getElementById("metricStreams").textContent = streamCount;
+  document.getElementById("metricBatch").textContent = batchCount;
+  document.getElementById("metricTargets").textContent = targets.size;
+  document.getElementById("metricIssues").textContent = state.alerts.length;
+}
+
+function renderRecent(){
+  const jobs = [...state.jobs].sort((a,b) => {
+    const ax = Date.parse(a.started_at || a.ended_at || 0) || 0;
+    const bx = Date.parse(b.started_at || b.ended_at || 0) || 0;
+    return bx - ax;
+  }).slice(0,8);
+
+  document.getElementById("recentCount").textContent = `${state.jobs.length} jobs`;
+
+  document.getElementById("recentBody").innerHTML = jobs.length ? jobs.map(j => `
+    <tr class="clickable" onclick="openJob('${esc(j.id)}')">
+      <td><b>${esc(j.name)}</b><div class="muted mono">${esc(j.pipeline)}</div></td>
+      <td>${typeTag(j.type)}</td>
+      <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
+      <td>${fmtDuration(j.duration_seconds)}</td>
+      <td class="mono">
+        ${esc(j.stream_target_path || j.target_path || "-")}
+        ${j.type === "stream" ? `<div class="muted">batch ${esc(valueOrDash(j.last_batch_id))} · input ${esc(valueOrDash(j.last_input_rows ?? j.last_batch_rows))}</div>` : ""}
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="6">No jobs found.</td></tr>`;
+}
+
+function renderJobs(){
+  const body = document.getElementById("jobsBody");
+  if(!body) return;
+
+  const jobs = safeArray(state.jobs);
+
+  const count = document.getElementById("allJobsCount");
+  if(count) count.textContent = jobs.length;
+
+  if(!jobs.length){
+    body.innerHTML = `<tr><td colspan="10">No jobs found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = jobs.map(j => `
+    <tr>
+      <td class="mono">${esc(j.pipeline || "-")}</td>
+      <td>
+        ${esc(j.name || "-")}
+        <div class="muted mono">${esc(j.id || "-")}</div>
+      </td>
+      <td>${esc(j.type || "-")}</td>
+      <td class="mono">${esc(j.job_type || "-")}</td>
+      <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
+      <td>${streamProgressHtml(j)}</td>
+      <td>${streamHealthHtml(j)}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderDags(){
+  const body = document.getElementById("dagsBody");
+  if(!body) return;
+
+  const pipelines = safeArray(state.pipelines);
+  const allJobs = safeArray(state.jobs);
+
+  const batchPipelines = pipelines.filter(p => p.type === "batch");
+
+  if(!batchPipelines.length){
+    body.innerHTML = `<tr><td colspan="5">No batch pipelines found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = batchPipelines.map(p => {
+    const jobs = allJobs.filter(j => j.pipeline === p.name && j.type === "batch");
+
+    const latest =
+      jobs.find(j => j.latest_dag_run_state && j.latest_dag_run_state !== "no_runs") ||
+      jobs.find(j => j.latest_run_state && j.latest_run_state !== "no_runs") ||
+      null;
+
+    return `
+      <tr>
+        <td class="mono">${esc(p.name || "-")}</td>
+        <td>${esc(p.schedule || "manual/null")}</td>
+        <td>${esc((p.jobs || []).join(" → "))}</td>
+        <td>${statusTag(latest?.latest_dag_run_state || latest?.latest_run_state || "no_runs")}</td>
+        <td>${safeArray(p.tags).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderLake(){
+  const body = document.getElementById("lakeBody");
+  if(!body) return;
+
+  const jobs = safeArray(state.jobs);
+
+  const rows = jobs
+    .map(j => {
+      const path = j.stream_target_path || j.target_path || "";
+
+      return {
+        layer: layerFromPath(path),
+        path,
+        pipeline: j.pipeline || "-",
+        job: j.name || "-",
+        status: j.current_status || j.latest_run_state || "defined",
+      };
+    })
+    .filter(r => r.path);
+
+  if(!rows.length){
+    body.innerHTML = `<tr><td colspan="5">No target paths found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td>${esc(r.layer)}</td>
+      <td class="mono">${esc(r.path)}</td>
+      <td class="mono">${esc(r.pipeline)}</td>
+      <td>${esc(r.job)}</td>
+      <td>${statusTag(r.status)}</td>
+    </tr>
+  `).join("");
+}
+
+function renderAlerts(){
+  const html = state.alerts.length ? state.alerts.map(a => `
+    <div class="alert">
+      <span class="tag ${a.level === "ERROR" ? "failed" : "warning"}">${esc(a.level)}</span>
+      <h4>${esc(a.title)}</h4>
+      <p>${esc(a.message)}</p>
+    </div>
+  `).join("") : `<div class="muted">No active alerts.</div>`;
+  document.getElementById("alertsBody").innerHTML = html;
+  document.getElementById("alertsPageBody").innerHTML = html;
+  document.getElementById("alertCount").textContent = `${state.alerts.length} active`;
+  document.getElementById("alertsPageCount").textContent = `${state.alerts.length} active`;
+}
+
+function openPipeline(name){
+  state.selectedPipeline = name;
+  state.selectedStream = null;
+  renderPipelineDetail(name);
+  showSection("pipelineDetail");
+}
+
+function openStream(name){
+  state.selectedStream = name;
+  state.selectedPipeline = null;
+  renderStreamDetail(name);
+  showSection("streamDetail");
+}
+
+function renderPipelineDetail(name){
+  const p = state.pipelines.find(x => x.name === name);
+  const jobs = state.jobs.filter(j => j.pipeline === name);
+  document.getElementById("pipelineTitle").textContent = name;
+  document.getElementById("pipelineSchedule").textContent = p?.schedule || "manual/null";
+  document.getElementById("pipelineMeta").innerHTML = `
+    ${esc(p?.description || "")}
+    <div style="margin-top:8px">${(p?.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+  `;
+  document.getElementById("pipelineJobsBody").innerHTML = jobs.map(j => `
+    <tr>
+      <td>${esc(j.name)}</td><td>${typeTag(j.type)}</td><td>${statusTag(j.current_status || "defined")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderStreamDetail(name){
+  const p = state.pipelines.find(x => x.name === name);
+  const jobs = state.jobs.filter(j => j.pipeline === name);
+  const failed = jobs.some(j => ["failed","error"].includes(String(j.current_status).toLowerCase()));
+  document.getElementById("streamTitle").textContent = name;
+  document.getElementById("streamRuntimeBadge").outerHTML = `<span id="streamRuntimeBadge" class="tag ${failed ? "failed" : "running"}">${failed ? "degraded" : "runtime"}</span>`;
+  document.getElementById("streamMeta").innerHTML = `${esc(p?.description || "")}`;
+  document.getElementById("streamJobsBody").innerHTML = jobs.map(j => `
+    <tr>
+      <td>
+        ${esc(j.name)}
+        <div class="muted mono">${esc(j.runtime_unit_name || "-")}</div>
+      </td>
+      <td class="mono">${esc(j.job_type || "-")}</td>
+      <td>${statusTag(j.current_status || "unknown")}</td>
+      <td>${streamProgressHtml(j)}</td>
+      <td>${streamHealthHtml(j)}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("");
+}
+
+async function openJob(jobId){
+  const job = state.jobs.find(j => j.id === jobId || j.name === jobId);
+  if(!job) return;
+
+  document.getElementById("drawerTitle").textContent = job.name;
+  document.getElementById("drawerTags").innerHTML = `${typeTag(job.type)} ${statusTag(job.current_status || "defined")} <span class="tag">${esc(job.runtime_source || job.source || "catalog")}</span>`;
+  document.getElementById("drawerMeta").innerHTML = `
+    <div class="kv"><div class="k">Pipeline</div><div class="mono">${esc(job.pipeline)}</div></div>
+    <div class="kv"><div class="k">Job ID</div><div class="mono">${esc(job.id)}</div></div>
+    <div class="kv"><div class="k">Runner</div><div class="mono">${esc(job.job_type || "-")}</div></div>
+    <div class="kv"><div class="k">Target</div><div class="mono">${esc(job.stream_target_path || job.target_path || "-")}</div></div>
+    <div class="kv"><div class="k">Reason</div><div>${esc(job.status_reason || "-")}</div></div>
+    ${job.type === "stream" ? `
+      <div class="kv"><div class="k">Runtime unit</div><div class="mono">${esc(job.runtime_unit_name || "-")}</div></div>
+      <div class="kv"><div class="k">Heartbeat age</div><div>${esc(fmtAge(job.heartbeat_age_seconds))}</div></div>
+      <div class="kv"><div class="k">Last batch</div><div class="mono">${esc(valueOrDash(job.last_batch_id))}</div></div>
+      <div class="kv"><div class="k">Last batch time</div><div>${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}</div></div>
+      <div class="kv"><div class="k">Input rows</div><div>${esc(valueOrDash(job.last_input_rows ?? job.last_batch_rows))}</div></div>
+      ${String(job.id || "").endsWith("__silver") ? `
+        <div class="kv"><div class="k">Valid / Invalid</div><div>${esc(valueOrDash(job.last_valid_rows))} / ${esc(valueOrDash(job.last_invalid_rows))}</div></div>
+      ` : `
+        <div class="kv"><div class="k">Validation</div><div class="muted">N/A at Bronze layer</div></div>
+      `}
+      <div class="kv"><div class="k">Write status</div><div>${boolBadge(job.last_write_ok)}</div></div>
+      <div class="kv"><div class="k">Stream target</div><div class="mono">${esc(job.stream_target_path || job.target_path || "-")}</div></div>
+  ` : ""}
+
+  `;
+  document.getElementById("rawBody").textContent = JSON.stringify(job, null, 2);
+  document.getElementById("runsBody").innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
+  document.getElementById("logsBody").textContent = "Loading...";
+  document.getElementById("drawer").classList.add("open");
+  activateTab("runsTab");
+
+  try{
+    const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`);
+    const rows = (runs.runs || []).map(r => `
+      <tr>
+        <td class="mono">${esc(r.dag_run_id || r.unit_name || "-")}</td>
+        <td>${statusTag(r.state || r.task_state || r.dag_run_state || "unknown")}</td>
+        <td>${shortDate(r.started_at)}</td>
+        <td>${shortDate(r.ended_at)}</td>
+        <td>${fmtDuration(r.duration_seconds)}</td>
+        <td>${esc(r.try_number ?? "-")}</td>
+      </tr>
+    `);
+    document.getElementById("runsBody").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6">No runs found.</td></tr>`;
+  }catch(e){
+    document.getElementById("runsBody").innerHTML = `<tr><td colspan="6"><div class="error-box">${esc(e.message)}</div></td></tr>`;
+  }
+
+  try{
+    let url;
+    if(job.type === "batch"){
+      url = `/api/runtime/logs/${encodeURIComponent(job.id)}?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}&task=${encodeURIComponent(job.name)}&lines=800`;
+    }else{
+      const unit = job.runtime_unit_name || job.name;
+      url = `/api/runtime/logs/${encodeURIComponent(unit)}?kind=stream&lines=800`;
+    }
+    const text = await apiText(url);
+    renderStructuredLogs(text || "No log content.");
+  }catch(e){
+    renderStructuredLogs(`ERROR ${e.message}`);
+  }
+}
+
+function closeDrawer(){
+  document.getElementById("drawer").classList.remove("open");
+}
+
+function activateTab(id){
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  document.querySelector(`.tab[data-tab="${id}"]`)?.classList.add("active");
+  document.getElementById(id)?.classList.add("active");
+}
+
+async function loadMounts(){
+  const el = document.getElementById("mountsBody");
+  el.textContent = "Loading...";
+  try{
+    const data = await apiJson("/api/runtime/mounts");
+    el.textContent = JSON.stringify(data, null, 2);
+  }catch(e){
+    el.textContent = e.message;
+  }
+}
+
+function parseLogLine(line){
+  const raw = line || "";
+
+  let time = "-";
+  let level = "info";
+  let message = raw.trim();
+
+  const sparkMatch = raw.match(/^(\d{2}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(INFO|WARN|ERROR)\s+([^:]+):\s*(.*)$/);
+  const pyMatch = raw.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d+)\s+(INFO|WARN|ERROR)\s+([^ ]+)\s+-\s*(.*)$/);
+  const appMatch = raw.match(/^\[(START|STEP|SUCCESS|ERROR|WARN|BRONZE_WRITE_OK|SILVER_WRITE_OK|GOLD_WRITE_OK)\]\s*(.*)$/);
+
+  if(sparkMatch){
+    time = sparkMatch[1].split(" ").pop();
+    level = sparkMatch[2].toLowerCase() === "warn" ? "warn" : sparkMatch[2].toLowerCase();
+    message = `${sparkMatch[3]}: ${sparkMatch[4]}`;
+  }else if(pyMatch){
+    time = pyMatch[1].split(" ")[1].replace(",", ".");
+    level = pyMatch[2].toLowerCase() === "warn" ? "warn" : pyMatch[2].toLowerCase();
+    message = `${pyMatch[3]}: ${pyMatch[4]}`;
+  }else if(appMatch){
+    level = appMatch[1] === "ERROR" ? "error" : appMatch[1] === "WARN" ? "warn" : "info";
+    message = `${appMatch[1]} ${appMatch[2]}`;
+  }else if(raw.includes("Traceback") || raw.includes("Exception") || raw.includes("ERROR")){
+    level = "error";
+  }else if(raw.includes("WARN")){
+    level = "warn";
+  }
+
+  return {
+    raw,
+    time,
+    level,
+    message,
+    category: classifyLogMessage(message, raw),
+  };
+}
+
+function classifyLogMessage(message, raw){
+  const text = `${message} ${raw}`.toLowerCase();
+
+  if(text.includes("traceback") || text.includes("exception") || text.includes("failed")){
+    return "error";
+  }
+
+  if(text.includes("falling behind")){
+    return "performance";
+  }
+
+  if(text.includes("write finished") || text.includes("write_ok") || text.includes("wrote")){
+    return "write";
+  }
+
+  if(text.includes("connected to spark cluster") || text.includes("executor updated") || text.includes("schedulerbackend is ready")){
+    return "spark_ready";
+  }
+
+  if(text.includes("resolvetowritestream") || text.includes("streaming dataframes")){
+    return "stream_query";
+  }
+
+  if(text.includes("adminclientconfig") || text.includes("kafka")){
+    return "kafka";
+  }
+
+  if(text.includes("heartbeat")){
+    return "heartbeat";
+  }
+
+  if(text.includes("added jar") || text.includes("copying") || text.includes("ivy") || text.includes("blockmanager") || text.includes("sparkcontext")){
+    return "noise";
+  }
+
+  return "general";
+}
+
+function eventTitle(evt){
+  switch(evt.category){
+    case "error":
+      return "Execution error detected";
+    case "performance":
+      return "Streaming batch is falling behind";
+    case "write":
+      return "Data write completed";
+    case "spark_ready":
+      return "Spark application is running";
+    case "stream_query":
+      return "Streaming query initialized";
+    case "kafka":
+      return "Kafka source configured";
+    case "heartbeat":
+      return "Heartbeat updated";
+    default:
+      if(evt.level === "warn") return "Warning";
+      if(evt.level === "error") return "Error";
+      return "Runtime event";
+  }
+}
+
+function shouldShowInTimeline(evt){
+  if(evt.category === "noise") return false;
+
+  const text = evt.message.toLowerCase();
+
+  const lowValue = [
+    "added jar",
+    "copying /tmp",
+    "blockmanager",
+    "sparkcontext: added file",
+    "memoryStore started",
+    "securitymanager",
+    "jettyutils",
+    "callback server starting",
+  ];
+
+  return !lowValue.some(x => text.includes(x.toLowerCase()));
+}
+
+function summarizeLogs(events){
+  const meaningful = events.filter(shouldShowInTimeline);
+
+  return {
+    total: events.length,
+    shown: meaningful.length,
+    errors: meaningful.filter(e => e.level === "error").length,
+    warnings: meaningful.filter(e => e.level === "warn").length,
+    writes: meaningful.filter(e => e.category === "write").length,
+    performance: meaningful.filter(e => e.category === "performance").length,
+  };
+}
+
+function renderStructuredLogs(rawText){
+  const lines = String(rawText || "")
+    .split(/\r?\n/)
+    .map(x => x.trimEnd())
+    .filter(Boolean);
+
+  const events = lines.map(parseLogLine);
+  const meaningful = events.filter(shouldShowInTimeline);
+  const summary = summarizeLogs(events);
+
+  document.getElementById("logsBody").textContent = rawText || "No raw log content.";
+
+  document.getElementById("logSummaryCards").innerHTML = `
+    <div class="log-summary-card">
+      <div class="label">Raw lines</div>
+      <div class="value">${summary.total}</div>
+    </div>
+    <div class="log-summary-card">
+      <div class="label">Shown events</div>
+      <div class="value">${summary.shown}</div>
+    </div>
+    <div class="log-summary-card">
+      <div class="label">Warnings</div>
+      <div class="value">${summary.warnings}</div>
+    </div>
+    <div class="log-summary-card">
+      <div class="label">Errors</div>
+      <div class="value">${summary.errors}</div>
+    </div>
+  `;
+
+  document.getElementById("logLineCount").textContent = `${meaningful.length} events`;
+
+  if(!meaningful.length){
+    document.getElementById("logTimeline").innerHTML = `
+      <div class="muted">No meaningful runtime events found. Raw technical log is available below.</div>
+    `;
+    return;
+  }
+
+  document.getElementById("logTimeline").innerHTML = meaningful.slice(-80).map(evt => `
+    <div class="log-event">
+      <div class="log-event-time">${esc(evt.time)}</div>
+      <div><span class="log-event-level ${esc(evt.level)}">${esc(evt.level.toUpperCase())}</span></div>
+      <div>
+        <div class="log-event-title">${esc(eventTitle(evt))}</div>
+        <div class="log-event-detail">${esc(evt.message)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+document.querySelectorAll(".nav-btn[data-section]").forEach(btn => {
+  btn.addEventListener("click", () => showSection(btn.dataset.section));
+});
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+});
+
+document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
+
+loadDashboard();
+setInterval(loadDashboard, REFRESH_MS);
+</script>
+</body>
+</html>

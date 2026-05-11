@@ -12,6 +12,67 @@ services:
     networks:
       - rltm_shared_net
 
+  dashboard-api:
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: docker/dashboard/Dockerfile
+    container_name: dashboard-api
+    restart: unless-stopped
+    env_file:
+      - ${PROJECT_ROOT}/.env
+    environment:
+      JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
+      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+      STREAM_STATUS_FILE: /runtime/spark_health/stream_supervisor_status.json
+      STREAM_LOG_DIR: /runtime/spark_health/logs
+      AIRFLOW_LOG_DIR: /runtime/airflow_logs
+      AIRFLOW_API_BASE: http://airflow-api-server:8080
+      AIRFLOW_USER: admin
+      AIRFLOW_PASSWORD: admin
+    volumes:
+      - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm:ro
+      - ${PROJECT_ROOT}/spark_health:/runtime/spark_health:ro
+      - ${PROJECT_ROOT}/airflow/logs:/runtime/airflow_logs:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)\""
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - rltm_shared_net
+    
+  dashboard:
+    image: nginx:alpine
+    container_name: dashboard
+    restart: unless-stopped
+    ports:
+      - "9090:80"
+    volumes:
+      - ${PROJECT_ROOT}/apps/dashboard/index.html:/usr/share/nginx/html/index.html:ro
+      - ${PROJECT_ROOT}/apps/dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      dashboard-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - rltm_shared_net
+
 networks:
   rltm_shared_net:
     external: true
+
+
+# داشبورد روی:
+# http://localhost:9090
+# فروشگاه دمو روی:
+# http://localhost:8091

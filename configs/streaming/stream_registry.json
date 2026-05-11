@@ -55,20 +55,62 @@
         "heartbeat_file": "/tmp/health/silver_clickstream_user_events.json",
         "trigger_interval": "30 seconds",
         "field_map": {
-          "event_id": "$.event_id",
-          "event_ts": "$.event_ts",
-          "event_type": "$.event_type",
-          "source": "$.source",
-          "user_id": "$.user_id",
-          "anonymous_id": "$.anonymous_id",
-          "session_id": "$.session_id",
-          "page_url": "$.page_url",
-          "item_id": "$.properties.item_id",
-          "item_title": "$.properties.item_title",
-          "backend_event_name": "$.properties.backend_event_name",
-          "message": "$.properties.message",
-          "search_query": "$.properties.search_query",
-          "results_count": "$.properties.results_count"
+          "event_id": {
+            "path": "$.event_id",
+            "cast": "string"
+          },
+          "event_ts": {
+            "path": "$.event_ts",
+            "cast": "timestamp"
+          },
+          "event_type": {
+            "path": "$.event_type",
+            "cast": "string"
+          },
+          "source": {
+            "path": "$.source",
+            "cast": "string"
+          },
+          "user_id": {
+            "path": "$.user_id",
+            "cast": "string"
+          },
+          "anonymous_id": {
+            "path": "$.anonymous_id",
+            "cast": "string"
+          },
+          "session_id": {
+            "path": "$.session_id",
+            "cast": "string"
+          },
+          "page_url": {
+            "path": "$.page_url",
+            "cast": "string"
+          },
+          "item_id": {
+            "path": "$.properties.item_id",
+            "cast": "string"
+          },
+          "item_title": {
+            "path": "$.properties.item_title",
+            "cast": "string"
+          },
+          "backend_event_name": {
+            "path": "$.properties.backend_event_name",
+            "cast": "string"
+          },
+          "message": {
+            "path": "$.properties.message",
+            "cast": "string"
+          },
+          "search_query": {
+            "path": "$.properties.search_query",
+            "cast": "string"
+          },
+          "results_count": {
+            "path": "$.properties.results_count",
+            "cast": "long"
+          }
         },
         "required_fields": [
           "event_type",
@@ -90,7 +132,7 @@
             "expr": "coalesce(user_id, anonymous_id)"
           }
         },
-        "transform_plugin": "spark_apps.transforms.clickstream:apply_clickstream_transform"
+        "transform_plugin": null
       },
       "restart_policy": {
         "max_retries": 10,

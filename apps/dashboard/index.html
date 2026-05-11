@@ -391,7 +391,7 @@
         <div class="section-title"><h3 id="streamTitle">Stream</h3><span id="streamRuntimeBadge" class="tag">runtime</span></div>
         <div id="streamMeta" class="muted"></div>
         <table style="margin-top:12px">
-          <thead><tr><th>Job</th><th>Runner</th><th>Status</th><th>Reason</th><th>Output</th><th>Action</th></tr></thead>
+          <thead><tr><th>Job</th><th>Runner</th><th>Status</th><th>Progress</th><th>Health</th><th>Output</th><th>Action</th></tr></thead>
           <tbody id="streamJobsBody"></tbody>
         </table>
       </div>
@@ -401,7 +401,7 @@
       <div class="card">
         <div class="section-title"><h3>All jobs</h3><span id="allJobsCount" class="muted">0</span></div>
         <table>
-          <thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Duration</th><th>Output</th><th>Action</th></tr></thead>
+          <thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Stream progress</th><th>Stream health</th><th>Latest run</th><th>Output</th><th>Action</th></tr></thead>
           <tbody id="jobsBody"><tr><td colspan="9">Loading...</td></tr></tbody>
         </table>
       </div>
@@ -566,6 +566,48 @@ function fmtDuration(v){
   return `${(n/60).toFixed(1)}m`;
 }
 
+function valueOrDash(v){
+  return v === null || v === undefined || v === "" ? "-" : v;
+}
+
+function boolBadge(v){
+  if(v === true) return `<span class="tag success">OK</span>`;
+  if(v === false) return `<span class="tag failed">FAILED</span>`;
+  return `<span class="tag unknown">-</span>`;
+}
+
+function fmtAge(seconds){
+  if(seconds === null || seconds === undefined || seconds === "") return "-";
+  const n = Number(seconds);
+  if(Number.isNaN(n)) return "-";
+  if(n < 60) return `${Math.round(n)}s ago`;
+  if(n < 3600) return `${Math.round(n / 60)}m ago`;
+  return `${(n / 3600).toFixed(1)}h ago`;
+}
+
+function streamProgressHtml(job){
+  if(job.type !== "stream"){
+    return `<span class="muted">-</span>`;
+  }
+
+  const isBronze = String(job.id || "").endsWith("__bronze");
+  const isSilver = String(job.id || "").endsWith("__silver");
+
+  const validationLine = isSilver
+    ? `<br/><b>valid:</b> ${esc(valueOrDash(job.last_valid_rows))} / <b>invalid:</b> ${esc(valueOrDash(job.last_invalid_rows))}`
+    : `<br/><b>validation:</b> <span class="muted">N/A at Bronze layer</span>`;
+
+  return `
+    <div class="mono">
+      <b>batch:</b> ${esc(valueOrDash(job.last_batch_id))}
+      <br/>
+      <b>input:</b> ${esc(valueOrDash(job.last_input_rows ?? job.last_batch_rows))}
+      ${validationLine}
+    </div>
+  `;
+}
+
+
 function layerFromPath(path){
   path = String(path || "");
   if(path.includes("/bronze")) return "Bronze";
@@ -726,7 +768,10 @@ function renderRecent(){
       <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
       <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
       <td>${fmtDuration(j.duration_seconds)}</td>
-      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td class="mono">
+        ${esc(j.stream_target_path || j.target_path || "-")}
+        ${j.type === "stream" ? `<div class="muted">batch ${esc(valueOrDash(j.last_batch_id))} · input ${esc(valueOrDash(j.last_input_rows ?? j.last_batch_rows))}</div>` : ""}
+      </td>
     </tr>
   `).join("") : `<tr><td colspan="6">No jobs found.</td></tr>`;
 }
@@ -740,12 +785,14 @@ function renderJobs(){
       <td>${typeTag(j.type)}</td>
       <td class="mono">${esc(j.job_type || "-")}</td>
       <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
+      <td>${streamProgressHtml(j)}</td>
+      <td>${streamHealthHtml(j)}</td>
       <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
       <td>${fmtDuration(j.duration_seconds)}</td>
       <td class="mono">${esc(j.target_path || "-")}</td>
       <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
     </tr>
-  `).join("") : `<tr><td colspan="9">No jobs found.</td></tr>`;
+  `).join("") : `<tr><td colspan="10">No jobs found.</td></tr>`;
 }
 
 function renderDags(){
@@ -834,11 +881,15 @@ function renderStreamDetail(name){
   document.getElementById("streamMeta").innerHTML = `${esc(p?.description || "")}`;
   document.getElementById("streamJobsBody").innerHTML = jobs.map(j => `
     <tr>
-      <td>${esc(j.name)}<div class="muted mono">${esc(j.runtime_unit_name || "-")}</div></td>
+      <td>
+        ${esc(j.name)}
+        <div class="muted mono">${esc(j.runtime_unit_name || "-")}</div>
+      </td>
       <td class="mono">${esc(j.job_type || "-")}</td>
       <td>${statusTag(j.current_status || "unknown")}</td>
-      <td>${esc(j.status_reason || "-")}</td>
-      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td>${streamProgressHtml(j)}</td>
+      <td>${streamHealthHtml(j)}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
       <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
     </tr>
   `).join("");
@@ -856,6 +907,21 @@ async function openJob(jobId){
     <div class="kv"><div class="k">Runner</div><div class="mono">${esc(job.job_type || "-")}</div></div>
     <div class="kv"><div class="k">Target</div><div class="mono">${esc(job.target_path || "-")}</div></div>
     <div class="kv"><div class="k">Reason</div><div>${esc(job.status_reason || "-")}</div></div>
+    ${job.type === "stream" ? `
+      <div class="kv"><div class="k">Runtime unit</div><div class="mono">${esc(job.runtime_unit_name || "-")}</div></div>
+      <div class="kv"><div class="k">Heartbeat age</div><div>${esc(fmtAge(job.heartbeat_age_seconds))}</div></div>
+      <div class="kv"><div class="k">Last batch</div><div class="mono">${esc(valueOrDash(job.last_batch_id))}</div></div>
+      <div class="kv"><div class="k">Last batch time</div><div>${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}</div></div>
+      <div class="kv"><div class="k">Input rows</div><div>${esc(valueOrDash(job.last_input_rows ?? job.last_batch_rows))}</div></div>
+      ${String(job.id || "").endsWith("__silver") ? `
+        <div class="kv"><div class="k">Valid / Invalid</div><div>${esc(valueOrDash(job.last_valid_rows))} / ${esc(valueOrDash(job.last_invalid_rows))}</div></div>
+      ` : `
+        <div class="kv"><div class="k">Validation</div><div class="muted">N/A at Bronze layer</div></div>
+      `}
+      <div class="kv"><div class="k">Write status</div><div>${boolBadge(job.last_write_ok)}</div></div>
+      <div class="kv"><div class="k">Stream target</div><div class="mono">${esc(job.stream_target_path || job.target_path || "-")}</div></div>
+  ` : ""}
+
   `;
   document.getElementById("rawBody").textContent = JSON.stringify(job, null, 2);
   document.getElementById("runsBody").innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;

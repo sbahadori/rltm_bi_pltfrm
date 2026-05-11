@@ -415,7 +415,7 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
 
                 if unit is None and isinstance(unit_match, dict):
                     unit = unit_match
-
+                heartbeat = unit.get("heartbeat", {}) if unit else {}
                 runtime_job.update(
                     {
                         "current_status": unit.get("computed_status", "unknown") if unit else "unknown",
@@ -429,6 +429,36 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "returncode": unit.get("returncode") if unit else None,
                         "retries": unit.get("retries") if unit else None,
                         "max_retries": unit.get("max_retries") if unit else None,
+                        
+                        "heartbeat_status": heartbeat.get("status"),
+                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds") if unit else None,
+
+                        "query_started": heartbeat.get("query_started"),
+                        "topic": heartbeat.get("topic"),
+
+                        "last_batch_id": heartbeat.get("last_batch_id"),
+                        "last_batch_ts_epoch": heartbeat.get("last_batch_ts_epoch"),
+                        "last_batch_ts_iso": heartbeat.get("last_batch_ts_iso"),
+
+                        "last_input_rows": heartbeat.get("last_input_rows"),
+                        "last_batch_rows": heartbeat.get("last_batch_rows"),
+                        "last_written_rows": heartbeat.get("last_written_rows"),
+
+                        "last_valid_rows": heartbeat.get("last_valid_rows"),
+                        "last_invalid_rows": heartbeat.get("last_invalid_rows"),
+                        "last_written_valid_rows": heartbeat.get("last_written_valid_rows"),
+                        "last_written_invalid_rows": heartbeat.get("last_written_invalid_rows"),
+
+                        "last_write_ok": heartbeat.get("last_write_ok"),
+                        "last_message": heartbeat.get("last_message"),
+                        "last_error": heartbeat.get("last_error"),
+
+                        "stream_target_path": (
+                            heartbeat.get("silver_path")
+                            or heartbeat.get("bronze_path")
+                            or job.get("target_path")
+                        ),
+                        "quarantine_path": heartbeat.get("quarantine_path") or job.get("quarantine_path"),
                     }
                 )
 

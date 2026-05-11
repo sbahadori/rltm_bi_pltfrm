@@ -36,6 +36,8 @@ _stop_event = threading.Event()
 _query: Optional[object] = None
 _spark: Optional[SparkSession] = None
 _runtime: dict = {}
+_last_batch_state: dict = {}
+_last_error_state: dict = {}
 
 def wait_for_kafka_topic(spark: SparkSession) -> None:
     wait_seconds = int(_runtime.get("startup_wait_seconds", 60))
@@ -77,6 +79,15 @@ def parse_args():
     parser.add_argument("--stream-name", required=True)
     return parser.parse_args()
 
+def _utc_now_fields(prefix: str = "last_batch") -> dict:
+    now_epoch = int(time.time())
+    return {
+        f"{prefix}_ts_epoch": now_epoch,
+        f"{prefix}_ts_iso": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(now_epoch),
+        ),
+    }
 
 def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> None:
     p = Path(_runtime["heartbeat_file"])
@@ -90,7 +101,14 @@ def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> No
         "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "topic": _runtime["topic"],
         "bronze_path": _runtime["bronze_path"],
+        "checkpoint_path": _runtime["checkpoint_path"],
+        "query_started": bool(_query is not None),
     }
+
+    # Preserve useful stream progress across heartbeat_loop updates.
+    payload.update(_last_batch_state)
+    payload.update(_last_error_state)
+
     if extra:
         payload.update(extra)
 
@@ -200,36 +218,59 @@ def build_bronze_df(spark: SparkSession) -> DataFrame:
 
     return apply_derived_fields(base, _runtime["derived_fields"])
 
-
 def write_batch(batch_df: DataFrame, batch_id: int) -> None:
+    global _last_batch_state, _last_error_state
+
     try:
         if batch_df.isEmpty():
-            write_heartbeat("running", {"last_batch_id": batch_id, "last_batch_rows": 0})
+            _last_batch_state = {
+                "last_batch_id": batch_id,
+                **_utc_now_fields("last_batch"),
+                "last_input_rows": row_count,
+                "last_batch_rows": row_count,
+                "last_written_rows": row_count,
+                "last_write_ok": True,
+                "last_message": "write_ok",
+            }
+            write_heartbeat("running", _last_batch_state)
             return
 
         row_count = batch_df.count()
 
         writer = batch_df.write.format("delta").mode("append")
         partition_cols = _runtime["partition_by"]
+
         if partition_cols:
             writer = writer.partitionBy(*partition_cols)
 
         writer.save(_runtime["bronze_path"])
 
-        write_heartbeat(
-            "running",
-            {
-                "last_batch_id": batch_id,
-                "last_batch_rows": row_count,
-                "last_write_ok": True,
-            },
-        )
+        _last_error_state = {}
+        _last_batch_state = {
+            "last_batch_id": batch_id,
+            **_utc_now_fields("last_batch"),
+            "last_input_rows": row_count,
+            "last_batch_rows": row_count,
+            "last_written_rows": row_count,
+            "last_write_ok": True,
+            "last_message": "write_ok",
+        }
+
+        write_heartbeat("running", _last_batch_state)
+
     except Exception as exc:
         logger.exception("[bronze] batch_id=%s write failed: %s", batch_id, exc)
-        write_heartbeat("error", {"last_batch_id": batch_id, "last_error": str(exc)})
+
+        _last_error_state = {
+            "last_batch_id": batch_id,
+            **_utc_now_fields("last_error"),
+            "last_write_ok": False,
+            "last_error": str(exc),
+        }
+
+        write_heartbeat("error", _last_error_state)
         raise
-
-
+    
 def main() -> None:
     global _query, _spark, _runtime
 

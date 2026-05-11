@@ -54,6 +54,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stream-name", required=True)
     return parser.parse_args()
 
+def _utc_now_fields(prefix: str = "last_batch") -> dict:
+    now_epoch = int(time.time())
+    return {
+        f"{prefix}_ts_epoch": now_epoch,
+        f"{prefix}_ts_iso": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(now_epoch),
+        ),
+    }
 
 def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> None:
     p = Path(_runtime["heartbeat_file"])
@@ -414,12 +423,16 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
     try:
         if batch_df.isEmpty():
             _last_batch_state = {
-                "last_batch_id": batch_id,
-                "last_batch_rows": 0,
-                "last_valid_rows": 0,
-                "last_invalid_rows": 0,
-                "last_write_ok": True,
-                "last_message": "empty_batch",
+            "last_batch_id": batch_id,
+            **_utc_now_fields("last_batch"),
+            "last_input_rows": input_count,
+            "last_batch_rows": total_count,
+            "last_valid_rows": valid_count,
+            "last_invalid_rows": invalid_count,
+            "last_written_valid_rows": written_valid,
+            "last_written_invalid_rows": written_invalid,
+            "last_write_ok": True,
+            "last_message": "write_ok",
             }
             write_heartbeat("running", _last_batch_state)
             logger.info("[silver] batch_id=%s empty batch", batch_id)
@@ -477,6 +490,7 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
         _last_error_state = {}
         _last_batch_state = {
             "last_batch_id": batch_id,
+            **_utc_now_fields("last_batch"),
             "last_input_rows": input_count,
             "last_batch_rows": total_count,
             "last_valid_rows": valid_count,
@@ -484,7 +498,9 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
             "last_written_valid_rows": written_valid,
             "last_written_invalid_rows": written_invalid,
             "last_write_ok": True,
+            "last_message": "write_ok",
         }
+
 
         write_heartbeat("running", _last_batch_state)
 
@@ -493,6 +509,7 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
 
         _last_error_state = {
             "last_batch_id": batch_id,
+            **_utc_now_fields("last_error"),
             "last_write_ok": False,
             "last_error": str(exc),
         }

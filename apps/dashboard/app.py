@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 
+
 # -----------------------------------------------------------------------------
 # Paths / configuration
 # -----------------------------------------------------------------------------
@@ -70,6 +71,12 @@ AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
 STREAM_STATUS_STALE_SECONDS = int(os.getenv("STREAM_STATUS_STALE_SECONDS", "120"))
 STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS", "120"))
 
+JOB_RUN_REGISTRY_FILE = Path(
+    os.getenv(
+        "JOB_RUN_REGISTRY_FILE",
+        "/workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl",
+    )
+)
 
 # -----------------------------------------------------------------------------
 # Generic helpers
@@ -172,6 +179,332 @@ def _normalize_state(value: Any) -> str:
 
     return str(value).strip().lower() or "unknown"
 
+def _epoch_to_iso(value: Any) -> str | None:
+    try:
+        if value is None:
+            return None
+
+        return datetime.fromtimestamp(
+            int(value),
+            tz=timezone.utc,
+        ).isoformat()
+    except Exception:
+        return None
+
+
+def _read_job_run_registry(limit: int = 2000) -> list[dict[str, Any]]:
+    """
+    Read runtime/job_runs/job_runs.jsonl and return normalized records.
+
+    The registry is append-only JSONL. Invalid lines are skipped intentionally,
+    because observability must not break the dashboard.
+    """
+    if not JOB_RUN_REGISTRY_FILE.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+
+    try:
+        with JOB_RUN_REGISTRY_FILE.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                records.append(_normalize_registry_record(record))
+    except Exception:
+        return []
+
+    records = sorted(
+        records,
+        key=lambda r: int(r.get("ts_epoch") or 0),
+    )
+
+    return records[-limit:]
+
+
+def _normalize_registry_record(record: dict[str, Any]) -> dict[str, Any]:
+    started_at = (
+        record.get("started_at")
+        or _epoch_to_iso(record.get("started_at_epoch"))
+        or record.get("ts")
+    )
+
+    ended_at = (
+        record.get("ended_at")
+        or _epoch_to_iso(record.get("ended_at_epoch"))
+    )
+
+    return {
+        **record,
+        "state": record.get("status") or "unknown",
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_seconds": record.get("duration_seconds"),
+        "source": "job_run_registry",
+    }
+
+
+def _registry_match_keys_for_job(job: dict[str, Any]) -> set[str]:
+    """
+    Build all possible identifiers that can refer to the same runtime job.
+
+    Batch example:
+      gold_price_pipeline__gold_price_ingest
+      gold_price_ingest
+
+    Stream example:
+      clickstream_user_events__bronze
+      clickstream_user_events_bronze
+      bronze_clickstream_user_events
+    """
+    keys: set[str] = set()
+
+    job_id = str(job.get("id") or "")
+    job_name = str(job.get("name") or "")
+    pipeline = str(job.get("pipeline") or "")
+    job_type = str(job.get("type") or "")
+
+    for value in [job_id, job_name]:
+        if value:
+            keys.add(value)
+
+    if job_type == "stream":
+        if job_id.endswith("__bronze"):
+            keys.add(f"{pipeline}_bronze")
+            keys.add(f"bronze_{pipeline}")
+
+        if job_id.endswith("__silver"):
+            keys.add(f"{pipeline}_silver")
+            keys.add(f"silver_{pipeline}")
+
+        runtime_unit = job.get("runtime_unit_name")
+        if runtime_unit:
+            keys.add(str(runtime_unit))
+
+        for alias in job.get("runtime_aliases") or []:
+            keys.add(str(alias))
+
+    return keys
+
+
+def _registry_records_for_job(
+    job: dict[str, Any],
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    keys = _registry_match_keys_for_job(job)
+
+    matched: list[dict[str, Any]] = []
+
+    for record in _read_job_run_registry():
+        candidates = {
+            str(record.get("job_id") or ""),
+            str(record.get("job") or ""),
+            str(record.get("unit_name") or ""),
+            str(record.get("run_id") or ""),
+        }
+
+        if keys.intersection(candidates):
+            matched.append(record)
+
+    return matched[-limit:]
+
+
+def _registry_runs_for_job(
+    job: dict[str, Any],
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """
+    Convert registry events into run-level records.
+
+    For batch:
+      batch_started + batch_succeeded/batch_failed are merged by run_id.
+
+    For stream:
+      stream_started is returned as a running run.
+      stream_exited updates the same run if run_id matches.
+    """
+    records = _registry_records_for_job(job, limit=500)
+
+    by_run_id: dict[str, dict[str, Any]] = {}
+
+    for record in records:
+        run_id = str(record.get("run_id") or record.get("event_id") or "")
+
+        if not run_id:
+            continue
+
+        existing = by_run_id.get(run_id, {})
+
+        merged = {
+            **existing,
+            **record,
+            "run_id": run_id,
+            "job_id": record.get("job_id") or job.get("id"),
+            "job_name": record.get("job") or job.get("name"),
+            "pipeline": record.get("pipeline") or job.get("pipeline"),
+            "type": record.get("type") or job.get("type"),
+            "state": record.get("status") or existing.get("state") or "unknown",
+            "source": "job_run_registry",
+        }
+
+        if not merged.get("started_at"):
+            merged["started_at"] = (
+                record.get("started_at")
+                or _epoch_to_iso(record.get("started_at_epoch"))
+                or record.get("ts")
+            )
+
+        if record.get("ended_at") or record.get("ended_at_epoch"):
+            merged["ended_at"] = (
+                record.get("ended_at")
+                or _epoch_to_iso(record.get("ended_at_epoch"))
+            )
+
+        if record.get("duration_seconds") is not None:
+            merged["duration_seconds"] = record.get("duration_seconds")
+
+        by_run_id[run_id] = merged
+
+    runs = sorted(
+        by_run_id.values(),
+        key=lambda r: int(r.get("ts_epoch") or r.get("started_at_epoch") or 0),
+        reverse=True,
+    )
+
+    return runs[:limit]
+
+
+def _latest_registry_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
+    runs = _registry_runs_for_job(job, limit=1)
+    return runs[0] if runs else None
+
+def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
+    stream_status = _load_stream_status(raw=False)
+
+    enriched_jobs: list[dict[str, Any]] = []
+
+    for job in config_jobs:
+        runtime_job = {
+            **job,
+            "current_status": "defined",
+            "latest_run_state": None,
+            "latest_run_id": None,
+            "started_at": None,
+            "ended_at": None,
+            "duration_seconds": None,
+            "status_reason": None,
+            "runtime_source": "catalog",
+            "runtime_available": False,
+        }
+
+        latest_registry = _latest_registry_run_for_job(job)
+
+        if job.get("type") == "stream":
+            unit_match = _find_stream_unit_for_job(job, stream_status)
+
+            if unit_match:
+                unit = unit_match.get("unit") if isinstance(unit_match, dict) else None
+                unit_name = unit_match.get("unitName") or unit_match.get("unit_name") if isinstance(unit_match, dict) else None
+
+                if unit is None and isinstance(unit_match, dict):
+                    unit = unit_match
+
+                runtime_job.update(
+                    {
+                        "current_status": unit.get("computed_status", "unknown") if unit else "unknown",
+                        "latest_run_state": unit.get("computed_status", "unknown") if unit else "unknown",
+                        "status_reason": unit.get("status_reason") if unit else "No stream unit found",
+                        "is_healthy": unit.get("is_healthy", False) if unit else False,
+                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds") if unit else None,
+                        "runtime_unit_name": unit_name or unit.get("unit_name") if unit else None,
+                        "runtime_source": "stream_supervisor",
+                        "runtime_available": True,
+                        "returncode": unit.get("returncode") if unit else None,
+                        "retries": unit.get("retries") if unit else None,
+                        "max_retries": unit.get("max_retries") if unit else None,
+                    }
+                )
+
+            elif latest_registry:
+                runtime_job.update(
+                    {
+                        "current_status": latest_registry.get("state", "unknown"),
+                        "latest_run_state": latest_registry.get("state"),
+                        "latest_run_id": latest_registry.get("run_id"),
+                        "started_at": latest_registry.get("started_at"),
+                        "ended_at": latest_registry.get("ended_at"),
+                        "duration_seconds": latest_registry.get("duration_seconds"),
+                        "status_reason": latest_registry.get("error") or latest_registry.get("message"),
+                        "runtime_source": "job_run_registry",
+                        "runtime_available": True,
+                    }
+                )
+
+            else:
+                runtime_job.update(
+                    {
+                        "current_status": "unknown",
+                        "latest_run_state": "unknown",
+                        "status_reason": "No matching stream supervisor unit or registry run found",
+                        "runtime_source": "stream_supervisor",
+                        "runtime_available": bool(stream_status.get("available")),
+                    }
+                )
+
+        elif job.get("type") == "batch":
+            latest_registry = _latest_registry_run_for_job(job)
+
+            if latest_registry:
+                runtime_job.update(
+                    {
+                        "current_status": latest_registry.get("state", "unknown"),
+                        "latest_run_state": latest_registry.get("state"),
+                        "latest_run_id": latest_registry.get("run_id"),
+                        "started_at": latest_registry.get("started_at"),
+                        "ended_at": latest_registry.get("ended_at"),
+                        "duration_seconds": latest_registry.get("duration_seconds"),
+                        "status_reason": latest_registry.get("error") or latest_registry.get("message"),
+                        "runtime_source": "job_run_registry",
+                        "runtime_available": True,
+                    }
+                )
+            else:
+                # Fallback to Airflow if registry has no event for this job.
+                latest_airflow = _latest_task_run_for_job(
+                    dag_id=job.get("pipeline", ""),
+                    task_id=job.get("name", ""),
+                )
+
+                runtime_job.update(
+                    {
+                        "current_status": latest_airflow.get("current_status", "no_runs"),
+                        "latest_run_state": latest_airflow.get("latest_run_state"),
+                        "latest_run_id": latest_airflow.get("latest_run_id"),
+                        "latest_dag_run_state": latest_airflow.get("latest_dag_run_state"),
+                        "started_at": latest_airflow.get("started_at"),
+                        "ended_at": latest_airflow.get("ended_at"),
+                        "duration_seconds": latest_airflow.get("duration_seconds"),
+                        "try_number": latest_airflow.get("try_number"),
+                        "status_reason": latest_airflow.get("status_reason"),
+                        "runtime_source": "airflow",
+                        "runtime_available": latest_airflow.get("airflow_available", False),
+                    }
+                )
+
+        enriched_jobs.append(runtime_job)
+
+    return {
+        "jobs": enriched_jobs,
+        "stream_status": stream_status,
+        "loaded_at": now_iso(),
+    }
 
 # -----------------------------------------------------------------------------
 # Catalog builders
@@ -331,6 +664,21 @@ def _build_pipelines(
 
     return pipelines
 
+def _load_config_bundle() -> dict[str, Any]:
+    catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
+    registry = _load_json(STREAM_REGISTRY_PATH) or {"streams": []}
+
+    return {
+        "catalog": catalog,
+        "registry": registry,
+        "pipelines": _build_pipelines(catalog, registry),
+        "jobs": _build_batch_jobs(catalog) + _build_stream_jobs(registry),
+        "meta": {
+            "batch_catalog_path": str(BATCH_CATALOG_PATH),
+            "stream_registry_path": str(STREAM_REGISTRY_PATH),
+            "loaded_at": now_iso(),
+        },
+    }
 
 def _load_config_payload() -> dict[str, Any]:
     catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
@@ -1035,6 +1383,7 @@ async def get_runtime_mounts() -> JSONResponse:
             "stream_status_file": _path_state(STREAM_STATUS_FILE),
             "stream_log_dir": _path_state(STREAM_LOG_DIR),
             "airflow_log_dir": _path_state(AIRFLOW_LOG_DIR),
+            "job_run_registry_file": _path_state(JOB_RUN_REGISTRY_FILE),
             "env": {
                 "STREAM_STATUS_FILE": os.getenv("STREAM_STATUS_FILE", ""),
                 "STREAM_LOG_DIR": os.getenv("STREAM_LOG_DIR", ""),
@@ -1104,42 +1453,46 @@ async def get_runtime_runs(
         return JSONResponse(payload)
 
     if job.get("type") == "stream":
+        registry_runs = _registry_runs_for_job(job, limit=limit)
+
+        if registry_runs:
+            return JSONResponse(
+                {
+                    "job_id": job.get("id"),
+                    "job_name": job.get("name"),
+                    "pipeline": job.get("pipeline"),
+                    "type": "stream",
+                    "available": True,
+                    "source": "job_run_registry",
+                    "runs": registry_runs,
+                }
+            )
+
+        # fallback: current supervisor state
         stream_status = _load_stream_status(raw=False)
         unit = _find_stream_unit_for_job(job, stream_status)
+
         return JSONResponse(
             {
-                "available": True,
                 "job_id": job.get("id"),
                 "job_name": job.get("name"),
                 "pipeline": job.get("pipeline"),
                 "type": "stream",
+                "available": bool(unit),
                 "source": "stream_supervisor_current_state",
                 "runs": [
                     {
+                        "run_id": unit.get("unit_name") if unit else None,
                         "state": unit.get("computed_status") if unit else "unknown",
                         "started_at": unit.get("last_start_ts_iso") if unit else None,
                         "ended_at": None,
                         "duration_seconds": None,
-                        "unit_name": unit.get("unit_name") if unit else None,
                         "status_reason": unit.get("status_reason") if unit else "No matching stream unit found",
-                        "returncode": unit.get("returncode") if unit else None,
-                        "retries": unit.get("retries") if unit else None,
-                        "max_retries": unit.get("max_retries") if unit else None,
+                        "source": "stream_supervisor_current_state",
                     }
                 ],
-                "note": "Stream historical runs require a future Job Run Registry. Current state is returned here.",
             }
         )
-
-    return JSONResponse(
-        {
-            "available": False,
-            "job_id": job_id,
-            "error": f"Unsupported job type: {job.get('type')}",
-            "runs": [],
-        },
-        status_code=400,
-    )
 
 
 @app.get("/api/runtime/logs/{job_id}")

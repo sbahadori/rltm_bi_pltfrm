@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "connections": {
+    "ecommerce_sqlserver": {
+      "type": "sqlserver",
+      "driver": "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+      "jdbc_url_template": "jdbc:sqlserver://{host}:{port};databaseName={database};encrypt=false;trustServerCertificate=true",
+      "default_port": 1433,
+      "env": {
+        "host": "ECOM_SQLSERVER_HOST",
+        "port": "ECOM_SQLSERVER_PORT",
+        "database": "ECOM_SQLSERVER_DB",
+        "user": "ECOM_SQLSERVER_USER",
+        "password": "ECOM_SQLSERVER_PASSWORD"
+      },
+      "spark_packages": [
+        "com.microsoft.sqlserver:mssql-jdbc:13.4.0.jre11"
+      ],
+      "default_options": {
+        "fetchsize": "10000",
+        "queryTimeout": "120"
+      }
+    }
+  }
+}

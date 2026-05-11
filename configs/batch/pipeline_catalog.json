@@ -656,6 +656,51 @@
           }
         }
       ]
+    },
+    {
+      "name": "ecommerce_sqlserver_bronze_pipeline",
+      "enabled": true,
+      "description": "Ecommerce SQL Server source-manifest-driven Bronze ingestion",
+      "domain": "ecommerce",
+      "source_type": "jdbc",
+      "dag": {
+        "schedule": null,
+        "catchup": false,
+        "max_active_runs": 1,
+        "start_date": "2026-01-01T00:00:00+00:00",
+        "tags": [
+          "ecommerce",
+          "sqlserver",
+          "jdbc",
+          "batch",
+          "bronze",
+          "manifest_driven"
+        ],
+        "default_args": {
+          "owner": "admin",
+          "retries": 1,
+          "retry_delay_minutes": 2
+        }
+      },
+      "jobs": [
+        {
+          "name": "ecommerce_sqlserver_to_bronze",
+          "enabled": true,
+          "job_type": "generic_jdbc_manifest_to_bronze",
+          "source_type": "jdbc",
+          "dependencies": [],
+          "execution_timeout_minutes": 90,
+          "retries": 1,
+          "retry_delay_minutes": 2,
+          "tags": [
+            "ecommerce",
+            "sqlserver",
+            "bronze"
+          ],
+          "manifest_ref": "configs/sources/jdbc/ecommerce_sqlserver_manifest.json",
+          "execution_strategy": "one_task_per_table"
+        }
+      ]
     }
   ]
 }

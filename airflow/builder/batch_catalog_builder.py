@@ -7,7 +7,114 @@ from pathlib import Path
 from typing import Any
 
 from airflow.providers.standard.operators.bash import BashOperator
+from batch.utils.jdbc_connection_registry import get_spark_packages_for_manifest
+from batch.utils.jdbc_manifest_loader import get_enabled_tables, load_jdbc_manifest
 
+def _merge_packages(existing: list[str] | None, extra: list[str] | None) -> list[str]:
+    merged: list[str] = []
+
+    for package in list(existing or []) + list(extra or []):
+        if package not in merged:
+            merged.append(package)
+
+    return merged
+
+def build_airflow_tasks_from_job(
+    job: dict[str, Any],
+    pipeline_spec: dict[str, Any],
+    catalog_path: str,
+    dag,
+    common_env: dict[str, str] | None = None,
+) -> list[BashOperator]:
+    if job["job_type"] != "generic_jdbc_manifest_to_bronze":
+        return [
+            build_airflow_task_from_job(
+                job,
+                pipeline_spec,
+                catalog_path,
+                dag,
+                common_env=common_env,
+            )
+        ]
+
+    env = build_common_env()
+    if common_env:
+        env.update(common_env)
+
+    manifest_ref = job["manifest_ref"]
+    execution_strategy = job.get("execution_strategy", "one_task_per_manifest")
+
+    jdbc_packages = get_spark_packages_for_manifest(manifest_ref)
+
+    base_spark_cfg = dict(job.get("spark", {}))
+    base_spark_cfg["packages"] = _merge_packages(
+        base_spark_cfg.get("packages", []),
+        jdbc_packages,
+    )
+
+    tasks: list[BashOperator] = []
+
+    if execution_strategy == "one_task_per_manifest":
+        spark_job_config = {
+            "entrypoint": "batch/runners/generic_jdbc_manifest_to_bronze.py",
+            "args": {
+                "manifest_ref": manifest_ref,
+            },
+            "spark": base_spark_cfg,
+        }
+
+        cmd = build_spark_submit_command(spark_job_config)
+
+        tasks.append(
+            BashOperator(
+                task_id=job["name"],
+                bash_command=cmd,
+                env=env,
+                append_env=True,
+                execution_timeout=timedelta(minutes=job.get("execution_timeout_minutes", 30)),
+                retries=job.get("retries", 0),
+                retry_delay=timedelta(minutes=job.get("retry_delay_minutes", 1)),
+                dag=dag,
+            )
+        )
+
+        return tasks
+
+    if execution_strategy == "one_task_per_table":
+        manifest = load_jdbc_manifest(manifest_ref)
+
+        for table in get_enabled_tables(manifest):
+            table_id = table["table_id"]
+
+            spark_job_config = {
+                "entrypoint": "batch/runners/generic_jdbc_manifest_to_bronze.py",
+                "args": {
+                    "manifest_ref": manifest_ref,
+                    "table_id": table_id,
+                },
+                "spark": base_spark_cfg,
+            }
+
+            cmd = build_spark_submit_command(spark_job_config)
+
+            tasks.append(
+                BashOperator(
+                    task_id=f"{job['name']}__{table_id}",
+                    bash_command=cmd,
+                    env=env,
+                    append_env=True,
+                    execution_timeout=timedelta(minutes=job.get("execution_timeout_minutes", 30)),
+                    retries=job.get("retries", 0),
+                    retry_delay=timedelta(minutes=job.get("retry_delay_minutes", 1)),
+                    dag=dag,
+                )
+            )
+
+        return tasks
+
+    raise ValueError(
+        f"Unsupported execution_strategy for job '{job['name']}': {execution_strategy}"
+    )
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -78,6 +185,17 @@ def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], c
             },
             "spark": spec.get("spark", {}),
         }
+    
+    if job_type == "generic_jdbc_to_bronze":
+        return {
+            "entrypoint": "batch/runners/generic_jdbc_to_bronze.py",
+            "args": {
+                "catalog_path": catalog_path,
+                "pipeline_name": pipeline_spec["name"],
+                "job_name": job["name"],
+            },
+            "spark": spec.get("spark", {}),
+        }
 
     raise ValueError(f"Unsupported job_type: {job_type}")
 
@@ -126,9 +244,10 @@ def build_tasks_from_pipeline_spec(
                     f"in pipeline '{pipeline_spec['name']}'"
                 )
 
-    tasks: dict[str, BashOperator] = {}
+    tasks_by_job_name: dict[str, list[BashOperator]] = {}
+
     for job in jobs:
-        tasks[job["name"]] = build_airflow_task_from_job(
+        tasks_by_job_name[job["name"]] = build_airflow_tasks_from_job(
             job,
             pipeline_spec,
             catalog_path,
@@ -137,11 +256,22 @@ def build_tasks_from_pipeline_spec(
         )
 
     for job in jobs:
+        current_tasks = tasks_by_job_name[job["name"]]
+
         for dep in job.get("dependencies", []):
-            tasks[dep] >> tasks[job["name"]]
+            upstream_tasks = tasks_by_job_name[dep]
 
-    return tasks
+            for upstream in upstream_tasks:
+                for downstream in current_tasks:
+                    upstream >> downstream
 
+    flat_tasks: dict[str, BashOperator] = {}
+
+    for job_name, task_list in tasks_by_job_name.items():
+        for task in task_list:
+            flat_tasks[task.task_id] = task
+
+    return flat_tasks
 
 def load_enabled_pipeline_specs(catalog_path: str) -> list[dict[str, Any]]:
     return get_enabled_pipelines(catalog_path)

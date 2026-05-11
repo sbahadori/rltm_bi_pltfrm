@@ -11,6 +11,8 @@ SUPPORTED_JOB_TYPES = {
     "generic_api_to_bronze",
     "generic_bronze_to_silver",
     "generic_silver_to_gold",
+    "generic_jdbc_manifest_to_bronze",
+    
 }
 
 
@@ -91,6 +93,30 @@ def validate_pipeline_spec(pipeline: dict[str, Any]) -> None:
                     f"Job '{job['name']}' in pipeline '{pipeline['name']}' depends on unknown job '{dep}'"
                 )
 
+def validate_generic_jdbc_manifest_to_bronze_spec(
+    pipeline_name: str,
+    job: dict[str, Any],
+) -> None:
+    if "manifest_ref" not in job:
+        raise ValueError(
+            f"generic_jdbc_manifest_to_bronze job '{job['name']}' "
+            f"in pipeline '{pipeline_name}' missing manifest_ref"
+        )
+
+    strategy = job.get("execution_strategy", "one_task_per_manifest")
+    if strategy not in {"one_task_per_manifest", "one_task_per_table"}:
+        raise ValueError(
+            f"generic_jdbc_manifest_to_bronze job '{job['name']}' "
+            f"has unsupported execution_strategy: {strategy}"
+        )
+
+    manifest_path = resolve_repo_path(job["manifest_ref"])
+    if not manifest_path.exists():
+        raise ValueError(
+            f"generic_jdbc_manifest_to_bronze job '{job['name']}' "
+            f"manifest_ref does not exist: {manifest_path}"
+        )
+    
 
 def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
     required = [
@@ -99,8 +125,8 @@ def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
         "job_type",
         "dependencies",
         "execution_timeout_minutes",
-        "spec",
     ]
+
     missing = [k for k in required if k not in job]
     if missing:
         raise ValueError(
@@ -112,16 +138,26 @@ def validate_job_spec(pipeline_name: str, job: dict[str, Any]) -> None:
             f"Job '{job['name']}' in pipeline '{pipeline_name}' must have dependencies as a list"
         )
 
-    if not isinstance(job["spec"], dict):
-        raise ValueError(
-            f"Job '{job['name']}' in pipeline '{pipeline_name}' must have spec as an object"
-        )
-
     job_type = job["job_type"]
+
     if job_type not in SUPPORTED_JOB_TYPES:
         raise ValueError(
             f"Unsupported job_type '{job_type}' in pipeline '{pipeline_name}'. "
             f"Supported values: {sorted(SUPPORTED_JOB_TYPES)}"
+        )
+
+    if job_type == "generic_jdbc_manifest_to_bronze":
+        validate_generic_jdbc_manifest_to_bronze_spec(pipeline_name, job)
+        return
+
+    if "spec" not in job:
+        raise ValueError(
+            f"Job '{job['name']}' in pipeline '{pipeline_name}' must define spec"
+        )
+
+    if not isinstance(job["spec"], dict):
+        raise ValueError(
+            f"Job '{job['name']}' in pipeline '{pipeline_name}' must have spec as an object"
         )
 
     if job_type == "spark_batch":

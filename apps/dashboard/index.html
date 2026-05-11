@@ -402,7 +402,7 @@
         <div class="section-title"><h3>All jobs</h3><span id="allJobsCount" class="muted">0</span></div>
         <table>
           <thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Stream progress</th><th>Stream health</th><th>Latest run</th><th>Output</th><th>Action</th></tr></thead>
-          <tbody id="jobsBody"><tr><td colspan="9">Loading...</td></tr></tbody>
+          <tbody id="jobsBody"><tr><td colspan="10">Loading...</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -534,6 +534,75 @@ async function apiText(url){
   return text;
 }
 
+function showSectionError(elementId, error, colspan = 10){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+
+  el.innerHTML = `
+    <tr>
+      <td colspan="${colspan}">
+        <div class="alert error">
+          <b>Failed to render this section</b>
+          <div class="muted mono">${esc(error?.message || String(error))}</div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function safeRender(label, fn){
+  try{
+    fn();
+  }catch(e){
+    console.error(`[dashboard] ${label} render failed`, e);
+  }
+}
+
+async function loadDashboard(){
+  try{
+    const config = await apiJson("/api/config");
+    const runtime = await apiJson("/api/runtime/jobs");
+
+    state.config = config;
+    state.runtime = runtime;
+    state.jobs = runtime.jobs || [];
+    state.pipelines = config.pipelines || [];
+    state.lastError = null;
+    state.alerts = buildAlerts();
+
+    renderAll();
+
+  }catch(e){
+    console.error("[dashboard] refresh failed", e);
+
+    state.lastError = e;
+    state.alerts = buildAlerts();
+
+    document.getElementById("configTag").textContent = "Config: error";
+    document.getElementById("runtimeTag").textContent = "Runtime: error";
+    document.getElementById("refreshTag").textContent = `Failed: ${new Date().toLocaleTimeString()}`;
+
+    const targets = [
+      ["recentBody", 6],
+      ["jobsBody", 10],
+      ["dagsBody", 5],
+      ["lakeBody", 5],
+    ];
+
+    for(const [id, colspan] of targets){
+      const el = document.getElementById(id);
+      if(el){
+        el.innerHTML = `<tr><td colspan="${colspan}"><div class="error-box">${esc(e.message || String(e))}</div></td></tr>`;
+      }
+    }
+
+    const alertsBody = document.getElementById("alertsBody");
+    if(alertsBody){
+      alertsBody.innerHTML = `<div class="error-box">${esc(e.message || String(e))}</div>`;
+    }
+  }
+}
+
 function statusClass(s){
   s = String(s || "unknown").toLowerCase();
   if(["success","running"].includes(s)) return "success";
@@ -568,6 +637,10 @@ function fmtDuration(v){
 
 function valueOrDash(v){
   return v === null || v === undefined || v === "" ? "-" : v;
+}
+
+function safeArray(v){
+  return Array.isArray(v) ? v : [];
 }
 
 function boolBadge(v){
@@ -607,12 +680,29 @@ function streamProgressHtml(job){
   `;
 }
 
+function streamHealthHtml(job){
+  if(job.type !== "stream"){
+    return `<span class="muted">-</span>`;
+  }
 
-function layerFromPath(path){
-  path = String(path || "");
-  if(path.includes("/bronze")) return "Bronze";
-  if(path.includes("/silver")) return "Silver";
-  if(path.includes("/gold")) return "Gold";
+  return `
+    <div>
+      <div>${boolBadge(job.last_write_ok)}</div>
+      <div class="muted" style="margin-top:4px">
+        heartbeat: ${esc(fmtAge(job.heartbeat_age_seconds))}
+      </div>
+      <div class="muted">
+        last batch: ${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}
+      </div>
+    </div>
+  `;
+}
+
+function layerFromPath(pathValue){
+  const p = String(pathValue || "").toLowerCase();
+  if(p.includes("/bronze")) return "Bronze";
+  if(p.includes("/silver")) return "Silver";
+  if(p.includes("/gold")) return "Gold";
   return "-";
 }
 
@@ -672,31 +762,6 @@ function buildAlerts(){
   return alerts;
 }
 
-async function loadDashboard(){
-  state.lastError = null;
-  try{
-    const config = await apiJson("/api/config");
-    state.config = config;
-    state.pipelines = config.pipelines || [];
-
-    let runtime = null;
-    try{
-      runtime = await apiJson("/api/runtime/jobs");
-    }catch(runtimeErr){
-      console.warn(runtimeErr);
-      runtime = {jobs: config.jobs || [], meta:{runtime_error: runtimeErr.message}};
-    }
-
-    state.runtime = runtime;
-    state.jobs = (runtime.jobs && runtime.jobs.length ? runtime.jobs : (config.jobs || []));
-  }catch(err){
-    console.error(err);
-    state.lastError = err;
-  }
-
-  state.alerts = buildAlerts();
-  renderAll();
-}
 
 function renderAll(){
   const configOk = !!state.config;
@@ -745,7 +810,13 @@ function renderNav(){
 function renderCards(){
   const streamCount = state.jobs.filter(j => j.type === "stream").length;
   const batchCount = state.jobs.filter(j => j.type === "batch").length;
-  const targets = new Set(state.jobs.map(j => j.target_path).filter(Boolean));
+
+  const targets = new Set(
+    state.jobs
+      .map(j => j.stream_target_path || j.target_path)
+      .filter(Boolean)
+  );
+
   document.getElementById("metricStreams").textContent = streamCount;
   document.getElementById("metricBatch").textContent = batchCount;
   document.getElementById("metricTargets").textContent = targets.size;
@@ -777,52 +848,106 @@ function renderRecent(){
 }
 
 function renderJobs(){
-  document.getElementById("allJobsCount").textContent = `${state.jobs.length} jobs`;
-  document.getElementById("jobsBody").innerHTML = state.jobs.length ? state.jobs.map(j => `
+  const body = document.getElementById("jobsBody");
+  if(!body) return;
+
+  const jobs = safeArray(state.jobs);
+
+  const count = document.getElementById("allJobsCount");
+  if(count) count.textContent = jobs.length;
+
+  if(!jobs.length){
+    body.innerHTML = `<tr><td colspan="10">No jobs found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = jobs.map(j => `
     <tr>
-      <td class="mono">${esc(j.pipeline)}</td>
-      <td><b>${esc(j.name)}</b><div class="muted mono">${esc(j.id)}</div></td>
-      <td>${typeTag(j.type)}</td>
+      <td class="mono">${esc(j.pipeline || "-")}</td>
+      <td>
+        ${esc(j.name || "-")}
+        <div class="muted mono">${esc(j.id || "-")}</div>
+      </td>
+      <td>${esc(j.type || "-")}</td>
       <td class="mono">${esc(j.job_type || "-")}</td>
       <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
       <td>${streamProgressHtml(j)}</td>
       <td>${streamHealthHtml(j)}</td>
-      <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
-      <td>${fmtDuration(j.duration_seconds)}</td>
-      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
       <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
     </tr>
-  `).join("") : `<tr><td colspan="10">No jobs found.</td></tr>`;
+  `).join("");
 }
 
 function renderDags(){
-  const batchPipelines = (state.pipelines || []).filter(p => p.type === "batch");
-  document.getElementById("dagsBody").innerHTML = batchPipelines.length ? batchPipelines.map(p => {
-    const jobs = state.jobs.filter(j => j.pipeline === p.name && j.type === "batch");
-    const latest = jobs.find(j => j.latest_run_state && j.latest_run_state !== "no_runs");
+  const body = document.getElementById("dagsBody");
+  if(!body) return;
+
+  const pipelines = safeArray(state.pipelines);
+  const allJobs = safeArray(state.jobs);
+
+  const batchPipelines = pipelines.filter(p => p.type === "batch");
+
+  if(!batchPipelines.length){
+    body.innerHTML = `<tr><td colspan="5">No batch pipelines found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = batchPipelines.map(p => {
+    const jobs = allJobs.filter(j => j.pipeline === p.name && j.type === "batch");
+
+    const latest =
+      jobs.find(j => j.latest_dag_run_state && j.latest_dag_run_state !== "no_runs") ||
+      jobs.find(j => j.latest_run_state && j.latest_run_state !== "no_runs") ||
+      null;
+
     return `
       <tr>
-        <td class="mono">${esc(p.name)}</td>
+        <td class="mono">${esc(p.name || "-")}</td>
         <td>${esc(p.schedule || "manual/null")}</td>
         <td>${esc((p.jobs || []).join(" → "))}</td>
         <td>${statusTag(latest?.latest_dag_run_state || latest?.latest_run_state || "no_runs")}</td>
-        <td>${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
+        <td>${safeArray(p.tags).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="5">No batch pipelines found.</td></tr>`;
+  }).join("");
 }
 
 function renderLake(){
-  const rows = state.jobs.filter(j => j.target_path).map(j => `
+  const body = document.getElementById("lakeBody");
+  if(!body) return;
+
+  const jobs = safeArray(state.jobs);
+
+  const rows = jobs
+    .map(j => {
+      const path = j.stream_target_path || j.target_path || "";
+
+      return {
+        layer: layerFromPath(path),
+        path,
+        pipeline: j.pipeline || "-",
+        job: j.name || "-",
+        status: j.current_status || j.latest_run_state || "defined",
+      };
+    })
+    .filter(r => r.path);
+
+  if(!rows.length){
+    body.innerHTML = `<tr><td colspan="5">No target paths found.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map(r => `
     <tr>
-      <td>${esc(layerFromPath(j.target_path))}</td>
-      <td class="mono">${esc(j.target_path)}</td>
-      <td class="mono">${esc(j.pipeline)}</td>
-      <td>${esc(j.name)}</td>
-      <td>${statusTag(j.current_status || "defined")}</td>
+      <td>${esc(r.layer)}</td>
+      <td class="mono">${esc(r.path)}</td>
+      <td class="mono">${esc(r.pipeline)}</td>
+      <td>${esc(r.job)}</td>
+      <td>${statusTag(r.status)}</td>
     </tr>
-  `);
-  document.getElementById("lakeBody").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="5">No target paths found.</td></tr>`;
+  `).join("");
 }
 
 function renderAlerts(){
@@ -866,7 +991,7 @@ function renderPipelineDetail(name){
     <tr>
       <td>${esc(j.name)}</td><td>${typeTag(j.type)}</td><td>${statusTag(j.current_status || "defined")}</td>
       <td class="mono">${esc(j.latest_run_id || "-")}</td>
-      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td class="mono">${esc(j.stream_target_path || j.target_path || "-")}</td>
       <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
     </tr>
   `).join("");
@@ -905,7 +1030,7 @@ async function openJob(jobId){
     <div class="kv"><div class="k">Pipeline</div><div class="mono">${esc(job.pipeline)}</div></div>
     <div class="kv"><div class="k">Job ID</div><div class="mono">${esc(job.id)}</div></div>
     <div class="kv"><div class="k">Runner</div><div class="mono">${esc(job.job_type || "-")}</div></div>
-    <div class="kv"><div class="k">Target</div><div class="mono">${esc(job.target_path || "-")}</div></div>
+    <div class="kv"><div class="k">Target</div><div class="mono">${esc(job.stream_target_path || job.target_path || "-")}</div></div>
     <div class="kv"><div class="k">Reason</div><div>${esc(job.status_reason || "-")}</div></div>
     ${job.type === "stream" ? `
       <div class="kv"><div class="k">Runtime unit</div><div class="mono">${esc(job.runtime_unit_name || "-")}</div></div>

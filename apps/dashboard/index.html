@@ -6,159 +6,811 @@
   <title>rltm_bi_pltfrm Dashboard</title>
   <style>
     :root{
-      --bg:#0f1117; --panel:#161b27; --panel2:#111827; --card:#171d2b; --line:#263043;
-      --text:#e5e7eb; --muted:#94a3b8; --muted2:#64748b; --blue:#60a5fa; --green:#34d399;
-      --yellow:#fbbf24; --red:#f87171; --purple:#a78bfa; --cyan:#22d3ee; --shadow:0 20px 60px rgba(0,0,0,.35);
+      --bg:#0f1117;
+      --panel:#151a24;
+      --panel2:#1b2130;
+      --line:#2a3142;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --blue:#60a5fa;
+      --green:#34d399;
+      --yellow:#fbbf24;
+      --red:#f87171;
+      --purple:#a78bfa;
+      --cyan:#22d3ee;
+      --shadow:0 10px 30px rgba(0,0,0,.25);
+      --radius:16px;
     }
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px}
-    a{color:inherit;text-decoration:none}.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}.sidebar{background:#111724;border-right:1px solid var(--line);padding:20px 16px;position:sticky;top:0;height:100vh;overflow:auto}.brand{display:flex;gap:12px;align-items:center;margin-bottom:22px}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:grid;place-items:center;font-weight:800}.brand h1{font-size:16px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}.nav-title{font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.08em;margin:18px 8px 8px}.nav a,.nav button{width:100%;border:0;background:transparent;color:var(--muted);text-align:left;display:flex;align-items:center;gap:9px;padding:10px 10px;border-radius:12px;cursor:pointer;font:inherit}.nav a:hover,.nav button:hover,.nav .active{background:#1f2937;color:#fff}.pill{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted);margin-left:auto}.main{padding:20px 24px 40px;overflow:hidden}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.top h2{margin:0;font-size:22px}.statusline{display:flex;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:12px}.btn{border:1px solid var(--line);background:#1f2937;color:#fff;border-radius:12px;padding:9px 12px;cursor:pointer}.btn:hover{background:#273449}.grid{display:grid;gap:14px}.cards{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow)}.metric{font-size:30px;font-weight:800;margin:8px 0}.muted{color:var(--muted)}.small{font-size:12px}.two{grid-template-columns:1.25fr .75fr}.section{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:14px}.section-h{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}.section-h h3{margin:0;font-size:15px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px;font-weight:600;background:#111827}td{color:#dbe4f0}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}.tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;border:1px solid var(--line);color:var(--muted);margin:2px}.tag.batch{color:#fbbf24;border-color:#604b19;background:#2a2111}.tag.stream{color:#22d3ee;border-color:#155e75;background:#092d38}.tag.ok{color:#34d399;border-color:#14532d;background:#092516}.tag.bad{color:#f87171;border-color:#7f1d1d;background:#2a1111}.tag.warn{color:#fbbf24;border-color:#713f12;background:#2b2109}.tag.info{color:#93c5fd;border-color:#1e3a8a;background:#0f1d3a}.status{font-weight:700}.status.success,.status.running{color:var(--green)}.status.failed,.status.error{color:var(--red)}.status.restarting,.status.queued,.status.scheduled,.status.stale,.status.no_runs{color:var(--yellow)}.status.unknown,.status.defined,.status.not_running{color:var(--muted)}.clickable{cursor:pointer}.clickable:hover td{background:#1b2536}.empty{padding:20px;color:var(--muted);text-align:center}.alerts{display:grid;gap:10px;padding:14px}.alert{border:1px solid var(--line);border-radius:14px;padding:12px;background:#111827}.alert .lvl{font-size:11px;font-weight:800;margin-bottom:5px}.lvl.ERROR{color:var(--red)}.lvl.WARN{color:var(--yellow)}.lvl.INFO{color:var(--blue)}.drawer{position:fixed;inset:0;pointer-events:none;z-index:40}.drawer.open{pointer-events:auto}.overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;transition:.15s}.drawer.open .overlay{opacity:1}.panel{position:absolute;right:0;top:0;height:100%;width:min(780px,96vw);background:#0f172a;border-left:1px solid var(--line);transform:translateX(100%);transition:.2s;display:flex;flex-direction:column}.drawer.open .panel{transform:translateX(0)}.drawer-h{display:flex;justify-content:space-between;align-items:flex-start;padding:18px;border-bottom:1px solid var(--line)}.drawer-h h3{margin:0 0 6px}.x{border:0;background:transparent;color:#cbd5e1;font-size:24px;cursor:pointer}.drawer-body{padding:16px;overflow:auto}.meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}.meta{border:1px solid var(--line);border-radius:12px;padding:10px;background:#111827}.meta b{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.logs{background:#060b14;border:1px solid #1f2937;border-radius:14px;padding:12px;white-space:pre-wrap;max-height:340px;overflow:auto;color:#d1d5db}.tabs{display:flex;gap:8px;margin:12px 0}.tab{border:1px solid var(--line);background:#111827;color:var(--muted);border-radius:999px;padding:7px 12px;cursor:pointer}.tab.active{background:#1f2937;color:#fff}.hidden{display:none}.errbox{background:#2a1111;color:#fecaca;border:1px solid #7f1d1d;border-radius:14px;padding:12px;margin-bottom:14px}.okbox{background:#092516;color:#bbf7d0;border:1px solid #14532d;border-radius:14px;padding:12px;margin-bottom:14px}@media(max-width:1000px){.layout{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.cards,.two{grid-template-columns:1fr}.meta-grid{grid-template-columns:1fr}}
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size:14px;
+    }
+    a{color:inherit}
+    .app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+    .side{
+      background:#111827;
+      border-right:1px solid var(--line);
+      padding:20px 16px;
+      position:sticky;
+      top:0;
+      height:100vh;
+      overflow:auto;
+    }
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:22px}
+    .logo{
+      width:42px;height:42px;border-radius:12px;
+      background:linear-gradient(135deg,var(--blue),var(--purple));
+      display:grid;place-items:center;font-weight:800;color:white;
+      box-shadow:var(--shadow);
+    }
+    .brand h1{font-size:16px;margin:0}
+    .brand p{font-size:12px;margin:2px 0 0;color:var(--muted)}
+    .nav-title{
+      color:var(--muted);
+      text-transform:uppercase;
+      font-size:11px;
+      letter-spacing:.12em;
+      margin:18px 8px 8px;
+    }
+    .nav-btn{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:transparent;
+      color:var(--text);
+      border:0;
+      padding:10px 10px;
+      border-radius:12px;
+      cursor:pointer;
+      text-align:left;
+      margin:2px 0;
+    }
+    .nav-btn:hover,.nav-btn.active{background:#1f2937}
+    .nav-btn small{color:var(--muted)}
+    .main{padding:22px;overflow:auto}
+    .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:16px;
+      margin-bottom:18px;
+    }
+    .top h2{font-size:24px;margin:0}
+    .sub{color:var(--muted);font-size:13px;margin-top:4px}
+    .actions{display:flex;align-items:center;gap:10px}
+    .btn{
+      border:1px solid var(--line);
+      background:var(--panel2);
+      color:var(--text);
+      padding:9px 12px;
+      border-radius:12px;
+      cursor:pointer;
+    }
+    .btn:hover{border-color:#3b82f6}
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:7px;
+      border:1px solid var(--line);
+      background:var(--panel2);
+      border-radius:999px;
+      padding:7px 10px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .dot{width:8px;height:8px;border-radius:999px;background:var(--muted);display:inline-block}
+    .dot.green{background:var(--green)}
+    .dot.yellow{background:var(--yellow)}
+    .dot.red{background:var(--red)}
+    .grid{display:grid;gap:16px}
+    .cards{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+    .card .label{color:var(--muted);font-size:12px}
+    .card .value{font-size:28px;font-weight:800;margin-top:6px}
+    .card .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .two{grid-template-columns:1.15fr .85fr}
+    .section{display:none}
+    .section.active{display:block}
+    .section-title{
+      display:flex;align-items:center;justify-content:space-between;
+      margin:18px 0 12px;
+    }
+    .section-title h3{margin:0;font-size:18px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{font-size:12px;color:var(--muted);font-weight:600;text-align:left}
+    tr:hover td{background:rgba(255,255,255,.025)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px}
+    .muted{color:var(--muted)}
+    .tag{
+      display:inline-flex;align-items:center;border-radius:999px;
+      padding:3px 8px;font-size:12px;border:1px solid var(--line);
+      background:var(--panel2);color:var(--muted);margin:1px 2px 1px 0;
+    }
+    .tag.batch{color:#fbbf24;border-color:rgba(251,191,36,.3)}
+    .tag.stream{color:#22d3ee;border-color:rgba(34,211,238,.3)}
+    .tag.success,.tag.running{color:var(--green);border-color:rgba(52,211,153,.35)}
+    .tag.failed,.tag.error{color:var(--red);border-color:rgba(248,113,113,.35)}
+    .tag.warning,.tag.restarting,.tag.queued,.tag.scheduled{color:var(--yellow);border-color:rgba(251,191,36,.35)}
+    .tag.unknown,.tag.defined,.tag.no_runs{color:var(--muted)}
+    .clickable{cursor:pointer}
+    .alert{
+      border:1px solid var(--line);
+      background:var(--panel2);
+      border-radius:14px;
+      padding:12px;
+      margin-bottom:10px;
+    }
+    .alert h4{margin:0 0 4px;font-size:14px}
+    .alert p{margin:0;color:var(--muted);font-size:12px}
+    .drawer{
+      position:fixed;right:0;top:0;height:100vh;width:min(860px,92vw);
+      background:#0b1020;
+      border-left:1px solid var(--line);
+      transform:translateX(102%);
+      transition:.22s ease;
+      z-index:20;
+      box-shadow:-18px 0 50px rgba(0,0,0,.45);
+      display:flex;flex-direction:column;
+    }
+    .drawer.open{transform:translateX(0)}
+    .drawer-head{
+      padding:18px;border-bottom:1px solid var(--line);
+      display:flex;justify-content:space-between;gap:10px;align-items:flex-start;
+    }
+    .drawer-head h3{margin:0;font-size:18px}
+    .drawer-body{padding:18px;overflow:auto}
+    .drawer-close{background:transparent;color:var(--text);border:0;font-size:22px;cursor:pointer}
+    .tabs{display:flex;gap:8px;margin:14px 0}
+    .tab{padding:8px 11px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:10px;cursor:pointer}
+    .tab.active{border-color:var(--blue);color:var(--blue)}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+    pre{
+      background:#050816;border:1px solid var(--line);border-radius:12px;
+      padding:12px;overflow:auto;white-space:pre-wrap;color:#d1d5db;
+      max-height:52vh;
+    }
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:8px;font-size:13px;margin:7px 0}
+    .kv .k{color:var(--muted)}
+    .error-box{
+      background:rgba(248,113,113,.08);
+      border:1px solid rgba(248,113,113,.25);
+      color:#fecaca;
+      border-radius:12px;
+      padding:12px;
+      margin:10px 0;
+      white-space:pre-wrap;
+    }
+    @media(max-width:1100px){
+      .app{grid-template-columns:1fr}
+      .side{position:relative;height:auto}
+      .cards,.two{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="brand"><div class="logo">BI</div><div><h1>rltm_bi_pltfrm</h1><p>Real-Time BI Platform</p></div></div>
-      <nav class="nav">
-        <div class="nav-title">Overview</div>
-        <button class="active" data-view="dashboard">Dashboard</button>
-        <div class="nav-title">Batch Pipelines</div>
-        <div id="batchNav"><div class="muted small" style="padding:8px 10px">Loading...</div></div>
-        <div class="nav-title">Streaming</div>
-        <div id="streamNav"><div class="muted small" style="padding:8px 10px">Loading...</div></div>
-        <div class="nav-title">Jobs</div>
-        <button data-view="jobs">Job Monitor</button>
-        <button data-view="dags">Airflow DAGs</button>
-        <button data-view="lakehouse">Delta Lakehouse</button>
-        <button data-view="alerts">Alerts <span id="alertCountNav" class="pill">0</span></button>
-      </nav>
-    </aside>
-
-    <main class="main">
-      <div class="top">
-        <div><h2 id="pageTitle">Dashboard</h2><div class="statusline"><span id="runtimeTag">Runtime: loading</span><span id="configTag">Config: loading</span><span id="refreshTag">Never refreshed</span></div></div>
-        <button id="refreshBtn" class="btn">Refresh</button>
-      </div>
-      <div id="errorBox"></div>
-
-      <section id="view-dashboard">
-        <div class="grid cards">
-          <div class="card"><div class="muted small">Streaming jobs</div><div id="metricStreams" class="metric">-</div><div class="muted small">from stream registry</div></div>
-          <div class="card"><div class="muted small">Batch jobs</div><div id="metricBatch" class="metric">-</div><div class="muted small">from pipeline catalog</div></div>
-          <div class="card"><div class="muted small">Lakehouse targets</div><div id="metricDelta" class="metric">-</div><div class="muted small">distinct output paths</div></div>
-          <div class="card"><div class="muted small">Open issues</div><div id="metricIssues" class="metric">-</div><div class="muted small">derived alerts</div></div>
-        </div>
-        <div class="grid two">
-          <div class="section"><div class="section-h"><h3>Recent activity</h3><span id="recentCount" class="muted small">0 jobs</span></div><div class="table-wrap"><table><thead><tr><th>Job / Stream</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Output path</th></tr></thead><tbody id="recentBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
-          <div class="section"><div class="section-h"><h3>Active alerts</h3><span id="alertCount" class="muted small">0 active</span></div><div id="alertsBox" class="alerts"><div class="empty">Loading...</div></div></div>
-        </div>
-      </section>
-
-      <section id="view-jobs" class="hidden section"><div class="section-h"><h3>All jobs</h3><span class="muted small">runtime-aware if APIs are available</span></div><div class="table-wrap"><table><thead><tr><th>Container</th><th>App name</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Trigger</th><th>Output</th><th>Action</th></tr></thead><tbody id="jobsBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody></table></div></section>
-      <section id="view-dags" class="hidden section"><div class="section-h"><h3>Catalog-driven DAGs</h3><span class="muted small">configs/batch/pipeline_catalog.json</span></div><div class="table-wrap"><table><thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Tags</th><th>Status</th></tr></thead><tbody id="dagsBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></section>
-      <section id="view-lakehouse" class="hidden section"><div class="section-h"><h3>Delta Lakehouse targets</h3><span class="muted small">derived from job target paths</span></div><div class="table-wrap"><table><thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Type</th></tr></thead><tbody id="lakeBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div></section>
-      <section id="view-alerts" class="hidden section"><div class="section-h"><h3>Alerts</h3><span class="muted small">derived from config + runtime</span></div><div id="alertsFull" class="alerts"><div class="empty">Loading...</div></div></section>
-      <section id="view-detail" class="hidden section"><div class="section-h"><h3 id="detailTitle">Pipeline</h3><span id="detailMeta" class="muted small"></span></div><div id="detailBody" style="padding:16px"></div></section>
-    </main>
-  </div>
-
-  <div id="drawer" class="drawer">
-    <div class="overlay" onclick="closeDrawer()"></div>
-    <div class="panel">
-      <div class="drawer-h"><div><h3 id="drawerTitle">Job</h3><div id="drawerTags"></div></div><button class="x" onclick="closeDrawer()">×</button></div>
-      <div class="drawer-body">
-        <div id="drawerMeta" class="meta-grid"></div>
-        <div class="tabs"><button class="tab active" data-tab="runs">Runs</button><button class="tab" data-tab="logs">Logs</button></div>
-        <div id="tab-runs"><div class="table-wrap"><table><thead><tr><th>Run ID</th><th>State</th><th>Started</th><th>Ended</th><th>Duration</th><th>Source</th></tr></thead><tbody id="runsBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table></div></div>
-        <div id="tab-logs" class="hidden"><pre id="logText" class="logs">Loading...</pre></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">BI</div>
+      <div>
+        <h1>rltm_bi_pltfrm</h1>
+        <p>Runtime-aware BI Platform</p>
       </div>
     </div>
+
+    <button class="nav-btn active" data-section="dashboard">Dashboard <small>Overview</small></button>
+
+    <div class="nav-title">Batch Pipelines</div>
+    <div id="batchNav"><div class="muted" style="padding:8px">Loading...</div></div>
+
+    <div class="nav-title">Streaming</div>
+    <div id="streamNav"><div class="muted" style="padding:8px">Loading...</div></div>
+
+    <div class="nav-title">Jobs</div>
+    <button class="nav-btn" data-section="jobs">Job Monitor <small id="jobNavCount">0</small></button>
+    <button class="nav-btn" data-section="dags">Airflow DAGs <small>runs</small></button>
+
+    <div class="nav-title">Storage</div>
+    <button class="nav-btn" data-section="lake">Delta Lakehouse <small>paths</small></button>
+
+    <div class="nav-title">System</div>
+    <button class="nav-btn" data-section="infra">Infrastructure <small>dev</small></button>
+    <button class="nav-btn" data-section="alerts">Alerts <small id="alertNavCount">0</small></button>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <h2 id="pageTitle">Dashboard</h2>
+        <div class="sub">
+          <span id="runtimeTag">Runtime: loading</span>
+          ·
+          <span id="configTag">Config: loading</span>
+          ·
+          <span id="refreshTag">Never refreshed</span>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="pill"><span id="healthDot" class="dot"></span><span id="healthText">Loading</span></span>
+        <button id="refreshBtn" class="btn">Refresh</button>
+      </div>
+    </div>
+
+    <section id="dashboard" class="section active">
+      <div class="grid cards">
+        <div class="card"><div class="label">Streaming jobs</div><div id="metricStreams" class="value">-</div><div class="hint">from stream registry</div></div>
+        <div class="card"><div class="label">Batch jobs</div><div id="metricBatch" class="value">-</div><div class="hint">from pipeline catalog + Airflow</div></div>
+        <div class="card"><div class="label">Lakehouse targets</div><div id="metricTargets" class="value">-</div><div class="hint">distinct output paths</div></div>
+        <div class="card"><div class="label">Open issues</div><div id="metricIssues" class="value">-</div><div class="hint">derived runtime alerts</div></div>
+      </div>
+
+      <div class="grid two">
+        <div class="card">
+          <div class="section-title"><h3>Recent activity</h3><span id="recentCount" class="muted">0 jobs</span></div>
+          <table>
+            <thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Latest run</th><th>Duration</th><th>Output</th></tr></thead>
+            <tbody id="recentBody"><tr><td colspan="6">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="section-title"><h3>Active alerts</h3><span id="alertCount" class="muted">0 active</span></div>
+          <div id="alertsBody">Loading alerts...</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pipelineDetail" class="section">
+      <div class="card">
+        <div class="section-title"><h3 id="pipelineTitle">Pipeline</h3><span id="pipelineSchedule" class="tag">schedule</span></div>
+        <div id="pipelineMeta" class="muted"></div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Latest run</th><th>Target</th><th>Action</th></tr></thead>
+          <tbody id="pipelineJobsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="streamDetail" class="section">
+      <div class="card">
+        <div class="section-title"><h3 id="streamTitle">Stream</h3><span id="streamRuntimeBadge" class="tag">runtime</span></div>
+        <div id="streamMeta" class="muted"></div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Job</th><th>Runner</th><th>Status</th><th>Reason</th><th>Output</th><th>Action</th></tr></thead>
+          <tbody id="streamJobsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="jobs" class="section">
+      <div class="card">
+        <div class="section-title"><h3>All jobs</h3><span id="allJobsCount" class="muted">0</span></div>
+        <table>
+          <thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Latest run</th><th>Duration</th><th>Output</th><th>Action</th></tr></thead>
+          <tbody id="jobsBody"><tr><td colspan="9">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="dags" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Airflow DAGs</h3><span class="muted">batch pipelines</span></div>
+        <table>
+          <thead><tr><th>DAG ID</th><th>Schedule</th><th>Tasks</th><th>Latest state</th><th>Tags</th></tr></thead>
+          <tbody id="dagsBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="lake" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Delta Lakehouse targets</h3><span class="muted">derived from job target paths</span></div>
+        <table>
+          <thead><tr><th>Layer</th><th>Path</th><th>Pipeline</th><th>Job</th><th>Status</th></tr></thead>
+          <tbody id="lakeBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="infra" class="section">
+      <div class="grid cards">
+        <div class="card"><div class="label">Dashboard API</div><div class="value">FastAPI</div><div class="hint">/api/config + /api/runtime/*</div></div>
+        <div class="card"><div class="label">Airflow</div><div class="value">8090</div><div class="hint">DAG runs + task logs</div></div>
+        <div class="card"><div class="label">MinIO</div><div class="value">9001</div><div class="hint">S3-compatible lakehouse</div></div>
+        <div class="card"><div class="label">Stream Supervisor</div><div class="value">Spark</div><div class="hint">spark_health + logs</div></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="section-title"><h3>Runtime mounts</h3><button class="btn" onclick="loadMounts()">Check mounts</button></div>
+        <pre id="mountsBody">Click "Check mounts"</pre>
+      </div>
+    </section>
+
+    <section id="alerts" class="section">
+      <div class="card">
+        <div class="section-title"><h3>Alerts</h3><span id="alertsPageCount" class="muted">0</span></div>
+        <div id="alertsPageBody">Loading...</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="drawer" class="drawer">
+  <div class="drawer-head">
+    <div>
+      <h3 id="drawerTitle">Job</h3>
+      <div id="drawerTags" style="margin-top:8px"></div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
   </div>
+  <div class="drawer-body">
+    <div id="drawerMeta"></div>
+    <div class="tabs">
+      <button class="tab active" data-tab="runsTab">Runs</button>
+      <button class="tab" data-tab="logsTab">Logs</button>
+      <button class="tab" data-tab="rawTab">Raw</button>
+    </div>
+    <div id="runsTab" class="tab-panel active">
+      <table>
+        <thead><tr><th>Run ID</th><th>State</th><th>Start</th><th>End</th><th>Duration</th><th>Try</th></tr></thead>
+        <tbody id="runsBody"><tr><td colspan="6">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="logsTab" class="tab-panel">
+      <pre id="logsBody">Loading...</pre>
+    </div>
+    <div id="rawTab" class="tab-panel">
+      <pre id="rawBody">{}</pre>
+    </div>
+  </div>
+</div>
 
 <script>
 const REFRESH_MS = 5000;
-let STATE = { config:null, runtime:null, jobs:[], pipelines:[], alerts:[], selectedView:'dashboard' };
 
-const $ = (id) => document.getElementById(id);
-const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
-const fmt = (v) => v ? esc(v) : '-';
-const clsStatus = (s) => `status ${String(s||'unknown').toLowerCase()}`;
+const state = {
+  config: null,
+  runtime: null,
+  jobs: [],
+  pipelines: [],
+  alerts: [],
+  selectedPipeline: null,
+  selectedStream: null,
+  lastError: null
+};
 
-async function apiJson(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${url} failed: ${r.status}`); return await r.json(); }
-async function apiText(url){ const r = await fetch(url, {cache:'no-store'}); const t = await r.text(); if(!r.ok) throw new Error(t || `${url} failed: ${r.status}`); return t; }
-
-function showError(msg){ $('errorBox').innerHTML = msg ? `<div class="errbox">${esc(msg)}</div>` : ''; }
-function tag(text, kind='info'){ return `<span class="tag ${kind}">${esc(text)}</span>`; }
-
-async function loadDashboard(){
-  try{
-    showError('');
-    const config = await apiJson('/api/config');
-    let runtime = null;
-    try{ runtime = await apiJson('/api/runtime/jobs'); }catch(e){ runtime = null; }
-    STATE.config = config;
-    STATE.runtime = runtime;
-    STATE.pipelines = config.pipelines || [];
-    STATE.jobs = runtime?.jobs || config.jobs || [];
-    STATE.alerts = buildAlerts(runtime, config);
-    renderAll();
-    $('configTag').textContent = `Config: ${STATE.pipelines.length} pipelines / ${STATE.jobs.length} jobs`;
-    $('runtimeTag').textContent = runtime ? 'Runtime: available' : 'Runtime: partial/unavailable';
-    $('refreshTag').textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
-  }catch(e){
-    showError(`Cannot load dashboard data: ${e.message}`);
-    $('configTag').textContent = 'Config: failed';
-    $('runtimeTag').textContent = 'Runtime: failed';
-  }
+function esc(v){
+  return String(v ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
-function buildAlerts(runtime, config){
-  const alerts=[];
-  if(!runtime) alerts.push({level:'WARN',title:'Runtime jobs API unavailable',msg:'/api/runtime/jobs did not respond. Catalog data may still be shown.'});
-  const jobs = runtime?.jobs || config?.jobs || [];
-  for(const j of jobs){
-    const s = String(j.current_status || j.defined_status || '').toLowerCase();
-    if(['failed','error'].includes(s)) alerts.push({level:'ERROR',title:`${j.name} is ${s}`,msg:j.status_reason || `Pipeline: ${j.pipeline}`});
-    else if(['stale','restarting'].includes(s)) alerts.push({level:'WARN',title:`${j.name} is ${s}`,msg:j.status_reason || `Pipeline: ${j.pipeline}`});
+async function apiJson(url){
+  const res = await fetch(url, {cache:"no-store"});
+  const text = await res.text();
+  if(!res.ok){
+    throw new Error(`${url} failed: ${res.status} ${text.slice(0,180)}`);
+  }
+  return text ? JSON.parse(text) : {};
+}
+
+async function apiText(url){
+  const res = await fetch(url, {cache:"no-store"});
+  const text = await res.text();
+  if(!res.ok){
+    throw new Error(`${url} failed: ${res.status}\n${text}`);
+  }
+  return text;
+}
+
+function statusClass(s){
+  s = String(s || "unknown").toLowerCase();
+  if(["success","running"].includes(s)) return "success";
+  if(["failed","error","airflow_unavailable","airflow_task_unavailable"].includes(s)) return "failed";
+  if(["queued","scheduled","restarting","up_for_retry"].includes(s)) return "warning";
+  return s;
+}
+
+function statusTag(s){
+  const val = s || "unknown";
+  return `<span class="tag ${statusClass(val)}">${esc(val)}</span>`;
+}
+
+function typeTag(type){
+  return `<span class="tag ${type === "stream" ? "stream" : "batch"}">${esc(type)}</span>`;
+}
+
+function shortDate(v){
+  if(!v) return "-";
+  try{
+    return new Date(v).toLocaleString();
+  }catch(e){ return v; }
+}
+
+function fmtDuration(v){
+  if(v === null || v === undefined || v === "") return "-";
+  const n = Number(v);
+  if(Number.isNaN(n)) return "-";
+  if(n < 60) return `${n.toFixed(1)}s`;
+  return `${(n/60).toFixed(1)}m`;
+}
+
+function layerFromPath(path){
+  path = String(path || "");
+  if(path.includes("/bronze")) return "Bronze";
+  if(path.includes("/silver")) return "Silver";
+  if(path.includes("/gold")) return "Gold";
+  return "-";
+}
+
+function showSection(id){
+  document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+  const el = document.getElementById(id);
+  if(el) el.classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(`.nav-btn[data-section="${id}"]`).forEach(b => b.classList.add("active"));
+
+  const titleMap = {
+    dashboard:"Dashboard",
+    jobs:"Job Monitor",
+    dags:"Airflow DAGs",
+    lake:"Delta Lakehouse",
+    infra:"Infrastructure",
+    alerts:"Alerts",
+    pipelineDetail:"Pipeline",
+    streamDetail:"Stream"
+  };
+  document.getElementById("pageTitle").textContent = titleMap[id] || "Dashboard";
+}
+
+function buildAlerts(){
+  const alerts = [];
+  const runtimeMeta = state.runtime?.meta || {};
+  if(state.lastError){
+    alerts.push({
+      level:"ERROR",
+      title:"Dashboard API load error",
+      message:state.lastError.message || String(state.lastError)
+    });
+  }
+  if(state.runtime && runtimeMeta.stream_status_available === false){
+    alerts.push({
+      level:"WARN",
+      title:"Stream runtime status unavailable",
+      message:"/api/runtime/streams/status is unavailable. Catalog data is shown, but live stream status may be unknown."
+    });
+  }
+  for(const job of state.jobs){
+    const s = String(job.current_status || "").toLowerCase();
+    if(["failed","error","airflow_unavailable","airflow_task_unavailable"].includes(s)){
+      alerts.push({
+        level:"ERROR",
+        title:`${job.name} is ${job.current_status}`,
+        message:job.status_reason || `${job.pipeline} / ${job.type}`
+      });
+    }else if(["restarting","stale","unknown"].includes(s)){
+      alerts.push({
+        level:"WARN",
+        title:`${job.name} is ${job.current_status}`,
+        message:job.status_reason || `${job.pipeline} / ${job.type}`
+      });
+    }
   }
   return alerts;
 }
 
-function renderAll(){ renderSidebar(); renderMetrics(); renderRecent(); renderJobs(); renderDags(); renderLake(); renderAlerts(); }
+async function loadDashboard(){
+  state.lastError = null;
+  try{
+    const config = await apiJson("/api/config");
+    state.config = config;
+    state.pipelines = config.pipelines || [];
 
-function renderSidebar(){
-  const batch = STATE.pipelines.filter(p=>p.type==='batch');
-  const streams = STATE.pipelines.filter(p=>p.type==='stream');
-  $('batchNav').innerHTML = batch.length ? batch.map(p=>`<button data-detail="${esc(p.name)}">${esc(p.name)} <span class="pill">${(p.jobs||[]).length}</span></button>`).join('') : '<div class="muted small" style="padding:8px 10px">No batch pipelines</div>';
-  $('streamNav').innerHTML = streams.length ? streams.map(p=>`<button data-detail="${esc(p.name)}">${esc(p.name)} <span class="pill">${(p.jobs||[]).length}</span></button>`).join('') : '<div class="muted small" style="padding:8px 10px">No streams</div>';
-  document.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>openPipelineDetail(b.dataset.detail));
-  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
+    let runtime = null;
+    try{
+      runtime = await apiJson("/api/runtime/jobs");
+    }catch(runtimeErr){
+      console.warn(runtimeErr);
+      runtime = {jobs: config.jobs || [], meta:{runtime_error: runtimeErr.message}};
+    }
+
+    state.runtime = runtime;
+    state.jobs = (runtime.jobs && runtime.jobs.length ? runtime.jobs : (config.jobs || []));
+  }catch(err){
+    console.error(err);
+    state.lastError = err;
+  }
+
+  state.alerts = buildAlerts();
+  renderAll();
 }
-function showView(v){ STATE.selectedView=v; document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden')); $(`view-${v}`).classList.remove('hidden'); $('pageTitle').textContent = v==='dashboard'?'Dashboard':v.charAt(0).toUpperCase()+v.slice(1); }
-function openPipelineDetail(name){ const p=STATE.pipelines.find(x=>x.name===name); if(!p) return; showView('detail'); $('pageTitle').textContent = p.name; $('detailTitle').textContent = p.name; $('detailMeta').innerHTML = `${tag(p.type,p.type)} ${tag(p.schedule||'manual','info')}`; const jobs=STATE.jobs.filter(j=>j.pipeline===p.name); $('detailBody').innerHTML = `<p class="muted">${esc(p.description||'')}</p><div class="table-wrap"><table><thead><tr><th>Job</th><th>Type</th><th>Runner</th><th>Status</th><th>Target</th><th>Action</th></tr></thead><tbody>${jobs.map(jobRowSimple).join('') || '<tr><td colspan="6" class="empty">No jobs</td></tr>'}</tbody></table></div>`; }
-function jobRowSimple(j){ return `<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.name)}</td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type)}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td class="mono">${esc(j.target_path||'')}</td><td>Open</td></tr>`; }
 
-function renderMetrics(){ const streams=STATE.jobs.filter(j=>j.type==='stream').length; const batch=STATE.jobs.filter(j=>j.type==='batch').length; const targets=new Set(STATE.jobs.map(j=>j.target_path).filter(Boolean)); $('metricStreams').textContent=streams; $('metricBatch').textContent=batch; $('metricDelta').textContent=targets.size; $('metricIssues').textContent=STATE.alerts.length; }
-function renderRecent(){ $('recentCount').textContent=`${STATE.jobs.length} jobs`; $('recentBody').innerHTML = STATE.jobs.length ? STATE.jobs.slice(0,10).map(j=>`<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.name)}<div class="muted small">${esc(j.pipeline)}</div></td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type||'')}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td>${esc(j.latest_run_state||'-')}<div class="muted small">${esc(j.latest_run_id||'')}</div></td><td class="mono">${esc(j.target_path||'')}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No jobs found</td></tr>'; }
-function renderJobs(){ $('jobsBody').innerHTML = STATE.jobs.length ? STATE.jobs.map(j=>`<tr class="clickable" onclick="openJob('${esc(j.id)}')"><td>${esc(j.type==='stream'?'spark-stream-supervisor':'airflow')}</td><td>${esc(j.name)}<div class="muted small">${esc(j.id)}</div></td><td>${tag(j.type,j.type)}</td><td class="mono">${esc(j.job_type||'')}</td><td class="${clsStatus(j.current_status||j.defined_status)}">${esc(j.current_status||j.defined_status||'defined')}</td><td>${esc(j.latest_run_state||'-')}<div class="muted small">${esc(j.latest_run_started_at||'')}</div></td><td>${esc(j.trigger||j.schedule||'manual')}</td><td class="mono">${esc(j.target_path||'')}</td><td>Runs / Logs</td></tr>`).join('') : '<tr><td colspan="9" class="empty">No jobs</td></tr>'; }
-function renderDags(){ const batch=STATE.pipelines.filter(p=>p.type==='batch'); $('dagsBody').innerHTML = batch.length ? batch.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.schedule||'manual')}</td><td>${(p.jobs||[]).map(x=>tag(x,'info')).join('')}</td><td>${(p.tags||[]).map(x=>tag(x,'info')).join('')}</td><td>${tag('catalog-defined','info')}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No DAGs</td></tr>'; }
-function renderLake(){ const rows=[]; for(const j of STATE.jobs){ if(!j.target_path) continue; let layer='unknown'; if(j.target_path.includes('/bronze')) layer='bronze'; if(j.target_path.includes('/silver')) layer='silver'; if(j.target_path.includes('/gold')) layer='gold'; rows.push(`<tr><td>${tag(layer,'info')}</td><td class="mono">${esc(j.target_path)}</td><td>${esc(j.pipeline)}</td><td>${esc(j.name)}</td><td>${tag(j.type,j.type)}</td></tr>`); } $('lakeBody').innerHTML = rows.join('') || '<tr><td colspan="5" class="empty">No target paths</td></tr>'; }
-function renderAlerts(){ $('alertCount').textContent=`${STATE.alerts.length} active`; $('alertCountNav').textContent=STATE.alerts.length; const html = STATE.alerts.length ? STATE.alerts.map(a=>`<div class="alert"><div class="lvl ${a.level}">${esc(a.level)}</div><b>${esc(a.title)}</b><div class="muted small" style="margin-top:5px">${esc(a.msg)}</div></div>`).join('') : '<div class="okbox">No active runtime alerts.</div>'; $('alertsBox').innerHTML=html; $('alertsFull').innerHTML=html; }
+function renderAll(){
+  const configOk = !!state.config;
+  const runtimeOk = !!state.runtime && !state.runtime?.meta?.runtime_error;
+  document.getElementById("configTag").textContent = `Config: ${configOk ? "loaded" : "error"}`;
+  document.getElementById("runtimeTag").textContent = `Runtime: ${runtimeOk ? "loaded" : "partial"}`;
+  document.getElementById("refreshTag").textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
+
+  const bad = state.alerts.some(a => a.level === "ERROR");
+  const warn = state.alerts.some(a => a.level === "WARN");
+  const dot = document.getElementById("healthDot");
+  dot.className = `dot ${bad ? "red" : warn ? "yellow" : "green"}`;
+  document.getElementById("healthText").textContent = bad ? "Issues" : warn ? "Warnings" : "Healthy";
+
+  renderNav();
+  renderCards();
+  renderRecent();
+  renderJobs();
+  renderDags();
+  renderLake();
+  renderAlerts();
+  if(state.selectedPipeline) renderPipelineDetail(state.selectedPipeline);
+  if(state.selectedStream) renderStreamDetail(state.selectedStream);
+}
+
+function renderNav(){
+  const batch = (state.pipelines || []).filter(p => p.type === "batch");
+  const streams = (state.pipelines || []).filter(p => p.type === "stream");
+
+  document.getElementById("batchNav").innerHTML = batch.length ? batch.map(p => `
+    <button class="nav-btn" onclick="openPipeline('${esc(p.name)}')">
+      <span>${esc(p.name)}</span><small>${esc(p.jobs?.length || 0)}</small>
+    </button>
+  `).join("") : `<div class="muted" style="padding:8px">No batch pipelines</div>`;
+
+  document.getElementById("streamNav").innerHTML = streams.length ? streams.map(p => `
+    <button class="nav-btn" onclick="openStream('${esc(p.name)}')">
+      <span>${esc(p.name)}</span><small>${esc(p.jobs?.length || 0)}</small>
+    </button>
+  `).join("") : `<div class="muted" style="padding:8px">No streams</div>`;
+
+  document.getElementById("jobNavCount").textContent = state.jobs.length;
+  document.getElementById("alertNavCount").textContent = state.alerts.length;
+}
+
+function renderCards(){
+  const streamCount = state.jobs.filter(j => j.type === "stream").length;
+  const batchCount = state.jobs.filter(j => j.type === "batch").length;
+  const targets = new Set(state.jobs.map(j => j.target_path).filter(Boolean));
+  document.getElementById("metricStreams").textContent = streamCount;
+  document.getElementById("metricBatch").textContent = batchCount;
+  document.getElementById("metricTargets").textContent = targets.size;
+  document.getElementById("metricIssues").textContent = state.alerts.length;
+}
+
+function renderRecent(){
+  const jobs = [...state.jobs].sort((a,b) => {
+    const ax = Date.parse(a.started_at || a.ended_at || 0) || 0;
+    const bx = Date.parse(b.started_at || b.ended_at || 0) || 0;
+    return bx - ax;
+  }).slice(0,8);
+
+  document.getElementById("recentCount").textContent = `${state.jobs.length} jobs`;
+
+  document.getElementById("recentBody").innerHTML = jobs.length ? jobs.map(j => `
+    <tr class="clickable" onclick="openJob('${esc(j.id)}')">
+      <td><b>${esc(j.name)}</b><div class="muted mono">${esc(j.pipeline)}</div></td>
+      <td>${typeTag(j.type)}</td>
+      <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
+      <td>${fmtDuration(j.duration_seconds)}</td>
+      <td class="mono">${esc(j.target_path || "-")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6">No jobs found.</td></tr>`;
+}
+
+function renderJobs(){
+  document.getElementById("allJobsCount").textContent = `${state.jobs.length} jobs`;
+  document.getElementById("jobsBody").innerHTML = state.jobs.length ? state.jobs.map(j => `
+    <tr>
+      <td class="mono">${esc(j.pipeline)}</td>
+      <td><b>${esc(j.name)}</b><div class="muted mono">${esc(j.id)}</div></td>
+      <td>${typeTag(j.type)}</td>
+      <td class="mono">${esc(j.job_type || "-")}</td>
+      <td>${statusTag(j.current_status || j.latest_run_state || "defined")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}<div class="muted">${shortDate(j.started_at)}</div></td>
+      <td>${fmtDuration(j.duration_seconds)}</td>
+      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("") : `<tr><td colspan="9">No jobs found.</td></tr>`;
+}
+
+function renderDags(){
+  const batchPipelines = (state.pipelines || []).filter(p => p.type === "batch");
+  document.getElementById("dagsBody").innerHTML = batchPipelines.length ? batchPipelines.map(p => {
+    const jobs = state.jobs.filter(j => j.pipeline === p.name && j.type === "batch");
+    const latest = jobs.find(j => j.latest_run_state && j.latest_run_state !== "no_runs");
+    return `
+      <tr>
+        <td class="mono">${esc(p.name)}</td>
+        <td>${esc(p.schedule || "manual/null")}</td>
+        <td>${esc((p.jobs || []).join(" → "))}</td>
+        <td>${statusTag(latest?.latest_dag_run_state || latest?.latest_run_state || "no_runs")}</td>
+        <td>${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
+      </tr>
+    `;
+  }).join("") : `<tr><td colspan="5">No batch pipelines found.</td></tr>`;
+}
+
+function renderLake(){
+  const rows = state.jobs.filter(j => j.target_path).map(j => `
+    <tr>
+      <td>${esc(layerFromPath(j.target_path))}</td>
+      <td class="mono">${esc(j.target_path)}</td>
+      <td class="mono">${esc(j.pipeline)}</td>
+      <td>${esc(j.name)}</td>
+      <td>${statusTag(j.current_status || "defined")}</td>
+    </tr>
+  `);
+  document.getElementById("lakeBody").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="5">No target paths found.</td></tr>`;
+}
+
+function renderAlerts(){
+  const html = state.alerts.length ? state.alerts.map(a => `
+    <div class="alert">
+      <span class="tag ${a.level === "ERROR" ? "failed" : "warning"}">${esc(a.level)}</span>
+      <h4>${esc(a.title)}</h4>
+      <p>${esc(a.message)}</p>
+    </div>
+  `).join("") : `<div class="muted">No active alerts.</div>`;
+  document.getElementById("alertsBody").innerHTML = html;
+  document.getElementById("alertsPageBody").innerHTML = html;
+  document.getElementById("alertCount").textContent = `${state.alerts.length} active`;
+  document.getElementById("alertsPageCount").textContent = `${state.alerts.length} active`;
+}
+
+function openPipeline(name){
+  state.selectedPipeline = name;
+  state.selectedStream = null;
+  renderPipelineDetail(name);
+  showSection("pipelineDetail");
+}
+
+function openStream(name){
+  state.selectedStream = name;
+  state.selectedPipeline = null;
+  renderStreamDetail(name);
+  showSection("streamDetail");
+}
+
+function renderPipelineDetail(name){
+  const p = state.pipelines.find(x => x.name === name);
+  const jobs = state.jobs.filter(j => j.pipeline === name);
+  document.getElementById("pipelineTitle").textContent = name;
+  document.getElementById("pipelineSchedule").textContent = p?.schedule || "manual/null";
+  document.getElementById("pipelineMeta").innerHTML = `
+    ${esc(p?.description || "")}
+    <div style="margin-top:8px">${(p?.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+  `;
+  document.getElementById("pipelineJobsBody").innerHTML = jobs.map(j => `
+    <tr>
+      <td>${esc(j.name)}</td><td>${typeTag(j.type)}</td><td>${statusTag(j.current_status || "defined")}</td>
+      <td class="mono">${esc(j.latest_run_id || "-")}</td>
+      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderStreamDetail(name){
+  const p = state.pipelines.find(x => x.name === name);
+  const jobs = state.jobs.filter(j => j.pipeline === name);
+  const failed = jobs.some(j => ["failed","error"].includes(String(j.current_status).toLowerCase()));
+  document.getElementById("streamTitle").textContent = name;
+  document.getElementById("streamRuntimeBadge").outerHTML = `<span id="streamRuntimeBadge" class="tag ${failed ? "failed" : "running"}">${failed ? "degraded" : "runtime"}</span>`;
+  document.getElementById("streamMeta").innerHTML = `${esc(p?.description || "")}`;
+  document.getElementById("streamJobsBody").innerHTML = jobs.map(j => `
+    <tr>
+      <td>${esc(j.name)}<div class="muted mono">${esc(j.runtime_unit_name || "-")}</div></td>
+      <td class="mono">${esc(j.job_type || "-")}</td>
+      <td>${statusTag(j.current_status || "unknown")}</td>
+      <td>${esc(j.status_reason || "-")}</td>
+      <td class="mono">${esc(j.target_path || "-")}</td>
+      <td><button class="btn" onclick="openJob('${esc(j.id)}')">Open</button></td>
+    </tr>
+  `).join("");
+}
 
 async function openJob(jobId){
-  const job = STATE.jobs.find(j=>j.id===jobId || j.name===jobId); if(!job) return;
-  $('drawer').classList.add('open'); $('drawerTitle').textContent = job.name; $('drawerTags').innerHTML = `${tag(job.type,job.type)} ${tag(job.current_status||job.defined_status||'defined', statusKind(job.current_status||job.defined_status))}`;
-  $('drawerMeta').innerHTML = metaHtml([['Pipeline',job.pipeline],['Job ID',job.id],['Runner',job.job_type],['Status',job.current_status||job.defined_status],['Latest run',job.latest_run_id||'-'],['Reason',job.status_reason||'-'],['Target',job.target_path||'-'],['Runtime source',job.runtime_source||'-']]);
-  showTab('runs'); $('runsBody').innerHTML='<tr><td colspan="6" class="empty">Loading runs...</td></tr>'; $('logText').textContent='Loading logs...';
-  try{ const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`); renderRuns(runs.runs||[]); }catch(e){ $('runsBody').innerHTML=`<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`; }
-  try{ const kind=job.type==='stream'?'stream':'batch'; const qs = kind==='batch' ? `?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}&task=${encodeURIComponent(job.name)}&lines=800` : `?kind=stream&lines=800`; $('logText').textContent = await apiText(`/api/runtime/logs/${encodeURIComponent(job.type==='stream'?(job.runtime_unit_name||job.name):job.id)}${qs}`); }catch(e){ $('logText').textContent = `ERROR: ${e.message}`; }
+  const job = state.jobs.find(j => j.id === jobId || j.name === jobId);
+  if(!job) return;
+
+  document.getElementById("drawerTitle").textContent = job.name;
+  document.getElementById("drawerTags").innerHTML = `${typeTag(job.type)} ${statusTag(job.current_status || "defined")} <span class="tag">${esc(job.runtime_source || job.source || "catalog")}</span>`;
+  document.getElementById("drawerMeta").innerHTML = `
+    <div class="kv"><div class="k">Pipeline</div><div class="mono">${esc(job.pipeline)}</div></div>
+    <div class="kv"><div class="k">Job ID</div><div class="mono">${esc(job.id)}</div></div>
+    <div class="kv"><div class="k">Runner</div><div class="mono">${esc(job.job_type || "-")}</div></div>
+    <div class="kv"><div class="k">Target</div><div class="mono">${esc(job.target_path || "-")}</div></div>
+    <div class="kv"><div class="k">Reason</div><div>${esc(job.status_reason || "-")}</div></div>
+  `;
+  document.getElementById("rawBody").textContent = JSON.stringify(job, null, 2);
+  document.getElementById("runsBody").innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
+  document.getElementById("logsBody").textContent = "Loading...";
+  document.getElementById("drawer").classList.add("open");
+  activateTab("runsTab");
+
+  try{
+    const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`);
+    const rows = (runs.runs || []).map(r => `
+      <tr>
+        <td class="mono">${esc(r.dag_run_id || r.unit_name || "-")}</td>
+        <td>${statusTag(r.state || r.task_state || r.dag_run_state || "unknown")}</td>
+        <td>${shortDate(r.started_at)}</td>
+        <td>${shortDate(r.ended_at)}</td>
+        <td>${fmtDuration(r.duration_seconds)}</td>
+        <td>${esc(r.try_number ?? "-")}</td>
+      </tr>
+    `);
+    document.getElementById("runsBody").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6">No runs found.</td></tr>`;
+  }catch(e){
+    document.getElementById("runsBody").innerHTML = `<tr><td colspan="6"><div class="error-box">${esc(e.message)}</div></td></tr>`;
+  }
+
+  try{
+    let url;
+    if(job.type === "batch"){
+      url = `/api/runtime/logs/${encodeURIComponent(job.id)}?kind=batch&pipeline=${encodeURIComponent(job.pipeline)}&task=${encodeURIComponent(job.name)}&lines=800`;
+    }else{
+      const unit = job.runtime_unit_name || job.name;
+      url = `/api/runtime/logs/${encodeURIComponent(unit)}?kind=stream&lines=800`;
+    }
+    const text = await apiText(url);
+    document.getElementById("logsBody").textContent = text || "No log content.";
+  }catch(e){
+    document.getElementById("logsBody").textContent = e.message;
+  }
 }
-function statusKind(s){ s=String(s||'').toLowerCase(); if(['success','running'].includes(s)) return 'ok'; if(['failed','error'].includes(s)) return 'bad'; if(['restarting','stale','queued','no_runs'].includes(s)) return 'warn'; return 'info'; }
-function metaHtml(items){ return items.map(([k,v])=>`<div class="meta"><b>${esc(k)}</b><span class="mono">${esc(v)}</span></div>`).join(''); }
-function renderRuns(runs){ $('runsBody').innerHTML = runs.length ? runs.map(r=>`<tr><td class="mono">${esc(r.run_id||r.dag_run_id)}</td><td class="${clsStatus(r.effective_state||r.task_state||r.state)}">${esc(r.effective_state||r.task_state||r.state||'unknown')}</td><td>${esc(r.started_at||'-')}</td><td>${esc(r.ended_at||'-')}</td><td>${r.duration_seconds ?? '-'}</td><td>${esc(r.source||'')}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No runs found</td></tr>'; }
-function closeDrawer(){ $('drawer').classList.remove('open'); }
-function showTab(tab){ document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab)); $('tab-runs').classList.toggle('hidden',tab!=='runs'); $('tab-logs').classList.toggle('hidden',tab!=='logs'); }
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
-$('refreshBtn').onclick = loadDashboard;
+
+function closeDrawer(){
+  document.getElementById("drawer").classList.remove("open");
+}
+
+function activateTab(id){
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  document.querySelector(`.tab[data-tab="${id}"]`)?.classList.add("active");
+  document.getElementById(id)?.classList.add("active");
+}
+
+async function loadMounts(){
+  const el = document.getElementById("mountsBody");
+  el.textContent = "Loading...";
+  try{
+    const data = await apiJson("/api/runtime/mounts");
+    el.textContent = JSON.stringify(data, null, 2);
+  }catch(e){
+    el.textContent = e.message;
+  }
+}
+
+document.querySelectorAll(".nav-btn[data-section]").forEach(btn => {
+  btn.addEventListener("click", () => showSection(btn.dataset.section));
+});
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+});
+
+document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
+
 loadDashboard();
 setInterval(loadDashboard, REFRESH_MS);
 </script>

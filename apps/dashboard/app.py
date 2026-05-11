@@ -13,6 +13,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+
 app = FastAPI(title="BI Dashboard Runtime API")
 
 app.add_middleware(
@@ -22,25 +23,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
-BATCH_CATALOG_PATH = PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"
-STREAM_REGISTRY_PATH = PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
 
-STREAM_STATUS_FILE = Path(os.getenv("STREAM_STATUS_FILE", "/runtime/spark_health/stream_supervisor_status.json"))
-STREAM_LOG_DIR = Path(os.getenv("STREAM_LOG_DIR", "/runtime/spark_health/logs"))
-AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR", "/runtime/airflow_logs"))
+# -----------------------------------------------------------------------------
+# Paths / configuration
+# -----------------------------------------------------------------------------
+
+PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
+
+BATCH_CATALOG_PATH = (
+    PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"
+)
+
+STREAM_REGISTRY_PATH = (
+    PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"
+)
+
+STREAM_STATUS_FILE = Path(
+    os.getenv(
+        "STREAM_STATUS_FILE",
+        "/runtime/spark_health/stream_supervisor_status.json",
+    )
+)
+
+STREAM_LOG_DIR = Path(
+    os.getenv(
+        "STREAM_LOG_DIR",
+        "/runtime/spark_health/logs",
+    )
+)
+
+AIRFLOW_LOG_DIR = Path(
+    os.getenv(
+        "AIRFLOW_LOG_DIR",
+        "/runtime/airflow_logs",
+    )
+)
+
+AIRFLOW_API_BASE = os.getenv(
+    "AIRFLOW_API_BASE",
+    "http://airflow-api-server:8080",
+).rstrip("/")
+
+AIRFLOW_USER = os.getenv("AIRFLOW_USER", "admin")
+AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
 
 STREAM_STATUS_STALE_SECONDS = int(os.getenv("STREAM_STATUS_STALE_SECONDS", "120"))
 STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS", "120"))
 
-AIRFLOW_API_BASE = os.getenv("AIRFLOW_API_BASE", "http://airflow-api-server:8080").rstrip("/")
-AIRFLOW_USER = os.getenv("AIRFLOW_USER", "admin")
-AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
-AIRFLOW_TIMEOUT_SECONDS = int(os.getenv("AIRFLOW_TIMEOUT_SECONDS", "8"))
 
+# -----------------------------------------------------------------------------
+# Generic helpers
+# -----------------------------------------------------------------------------
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _safe_int(value: Any) -> int | None:
@@ -52,46 +104,56 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
-def _parse_dt(value: Any) -> datetime | None:
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _parse_datetime(value: Any) -> datetime | None:
     if not value:
         return None
+
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        text = str(value)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text)
     except Exception:
         return None
 
 
 def _duration_seconds(start: Any, end: Any) -> float | None:
-    start_dt = _parse_dt(start)
-    end_dt = _parse_dt(end)
+    start_dt = _parse_datetime(start)
+    end_dt = _parse_datetime(end)
+
     if not start_dt or not end_dt:
         return None
-    return round((end_dt - start_dt).total_seconds(), 3)
 
-
-def _load_json(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _read_json_file(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return max(0.0, (end_dt - start_dt).total_seconds())
 
 
 def _path_state(path: Path) -> dict[str, Any]:
     exists = path.exists()
+
     return {
         "path": str(path),
         "exists": exists,
-        "is_file": path.is_file(),
-        "is_dir": path.is_dir(),
+        "is_file": path.is_file() if exists else False,
+        "is_dir": path.is_dir() if exists else False,
         "readable": os.access(path, os.R_OK) if exists else False,
     }
+
+
+def _tail_file(path: Path, lines: int = 300) -> str:
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return "\n".join(text.splitlines()[-lines:])
 
 
 def _target_path_from_spec(spec: dict[str, Any]) -> str:
@@ -104,103 +166,129 @@ def _target_path_from_spec(spec: dict[str, Any]) -> str:
     )
 
 
+def _normalize_state(value: Any) -> str:
+    if value is None:
+        return "unknown"
+
+    return str(value).strip().lower() or "unknown"
+
+
+# -----------------------------------------------------------------------------
+# Catalog builders
+# -----------------------------------------------------------------------------
+
 def _build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
+
     for pipeline in catalog.get("pipelines", []):
         if not pipeline.get("enabled", True):
             continue
+
         pipeline_name = pipeline.get("name", "")
-        dag_cfg = pipeline.get("dag", {}) or {}
-        schedule = dag_cfg.get("schedule")
+        dag = pipeline.get("dag", {}) or {}
+        schedule = dag.get("schedule")
+        pipeline_tags = dag.get("tags", [])
+
         for job in pipeline.get("jobs", []):
             if not job.get("enabled", True):
                 continue
+
             spec = job.get("spec", {}) or {}
             source = spec.get("source", {}) or {}
+
             job_name = job.get("name", "")
             jobs.append(
                 {
                     "id": f"{pipeline_name}__{job_name}",
                     "name": job_name,
                     "pipeline": pipeline_name,
-                    "dag_id": pipeline_name,
-                    "task_id": job_name,
                     "type": "batch",
                     "job_type": job.get("job_type", ""),
                     "source_url": source.get("base_url", ""),
                     "dependencies": job.get("dependencies", []),
                     "timeout_minutes": job.get("execution_timeout_minutes", 30),
-                    "tags": job.get("tags", []),
+                    "tags": job.get("tags", []) or pipeline_tags,
                     "target_path": _target_path_from_spec(spec),
                     "schedule": schedule,
-                    "defined_status": "defined",
+                    "defined": True,
+                    "source": "catalog",
                 }
             )
+
     return jobs
 
 
 def _build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
+
     for stream in registry.get("streams", []):
         if not stream.get("enabled", True):
             continue
-        stream_name = stream.get("name", "")
+
+        name = stream.get("name", "")
         source = stream.get("source", {}) or {}
         bronze = stream.get("bronze", {}) or {}
         silver = stream.get("silver", {}) or {}
 
         if bronze:
-            bronze_app_name = bronze.get("app_name", f"bronze_{stream_name}")
+            bronze_app_name = bronze.get("app_name", f"bronze_{name}")
             jobs.append(
                 {
-                    "id": f"{stream_name}__bronze",
+                    "id": f"{name}__bronze",
                     "name": bronze_app_name,
-                    "pipeline": stream_name,
+                    "pipeline": name,
                     "type": "stream",
-                    "layer": "bronze",
-                    "runtime_unit_name": f"{stream_name}_bronze",
-                    "runtime_aliases": [f"{stream_name}_bronze", bronze_app_name],
                     "job_type": bronze.get("engine", "generic_kafka_to_bronze"),
-                    "source_url": f"{source.get('bootstrap_servers', '')} / {source.get('topic', '')}",
+                    "source_url": (
+                        f"{source.get('bootstrap_servers', '')} / "
+                        f"{source.get('topic', '')}"
+                    ),
                     "dependencies": [],
                     "trigger": bronze.get("trigger_interval", "15 seconds"),
                     "target_path": bronze.get("path", ""),
+                    "checkpoint_path": bronze.get("checkpoint_path", ""),
                     "heartbeat_file": bronze.get("heartbeat_file", ""),
-                    "defined_status": "defined",
+                    "defined": True,
+                    "source": "stream_registry",
                 }
             )
+
         if silver:
-            silver_app_name = silver.get("app_name", f"silver_{stream_name}")
-            bronze_app_name = bronze.get("app_name", f"bronze_{stream_name}") if bronze else f"bronze_{stream_name}"
+            silver_app_name = silver.get("app_name", f"silver_{name}")
+            bronze_app_name = bronze.get("app_name", f"bronze_{name}") if bronze else f"bronze_{name}"
             jobs.append(
                 {
-                    "id": f"{stream_name}__silver",
+                    "id": f"{name}__silver",
                     "name": silver_app_name,
-                    "pipeline": stream_name,
+                    "pipeline": name,
                     "type": "stream",
-                    "layer": "silver",
-                    "runtime_unit_name": f"{stream_name}_silver",
-                    "runtime_aliases": [f"{stream_name}_silver", silver_app_name],
                     "job_type": silver.get("engine", "generic_bronze_to_silver"),
                     "source_url": silver.get("bronze_path", ""),
                     "dependencies": [bronze_app_name] if bronze else [],
                     "trigger": silver.get("trigger_interval", "30 seconds"),
                     "target_path": silver.get("path", ""),
                     "quarantine_path": silver.get("quarantine_path", ""),
+                    "checkpoint_path": silver.get("checkpoint_path", ""),
                     "heartbeat_file": silver.get("heartbeat_file", ""),
-                    "defined_status": "defined",
+                    "defined": True,
+                    "source": "stream_registry",
                 }
             )
+
     return jobs
 
 
-def _build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_pipelines(
+    catalog: dict[str, Any],
+    registry: dict[str, Any],
+) -> list[dict[str, Any]]:
     pipelines: list[dict[str, Any]] = []
+
     for pipeline in catalog.get("pipelines", []):
         if not pipeline.get("enabled", True):
             continue
+
         dag = pipeline.get("dag", {}) or {}
-        jobs = [j.get("name", "") for j in pipeline.get("jobs", []) if j.get("enabled", True)]
         pipelines.append(
             {
                 "name": pipeline.get("name", ""),
@@ -208,22 +296,31 @@ def _build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[
                 "description": pipeline.get("description", ""),
                 "schedule": dag.get("schedule"),
                 "tags": dag.get("tags", []),
-                "jobs": jobs,
+                "jobs": [
+                    j.get("name", "")
+                    for j in pipeline.get("jobs", [])
+                    if j.get("enabled", True)
+                ],
             }
         )
+
     for stream in registry.get("streams", []):
         if not stream.get("enabled", True):
             continue
+
         jobs: list[str] = []
-        stream_name = stream.get("name", "")
+        name = stream.get("name", "")
         source = stream.get("source", {}) or {}
+
         if stream.get("bronze"):
-            jobs.append(stream["bronze"].get("app_name", f"bronze_{stream_name}"))
+            jobs.append(stream["bronze"].get("app_name", f"bronze_{name}"))
+
         if stream.get("silver"):
-            jobs.append(stream["silver"].get("app_name", f"silver_{stream_name}"))
+            jobs.append(stream["silver"].get("app_name", f"silver_{name}"))
+
         pipelines.append(
             {
-                "name": stream_name,
+                "name": name,
                 "type": "stream",
                 "description": f"Streaming pipeline: {source.get('topic', '')}",
                 "schedule": "always-on",
@@ -231,166 +328,101 @@ def _build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[
                 "jobs": jobs,
             }
         )
+
     return pipelines
 
 
-def _load_config_bundle() -> dict[str, Any]:
+def _load_config_payload() -> dict[str, Any]:
     catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = _load_json(STREAM_REGISTRY_PATH) or {"streams": []}
+
     return {
-        "catalog": catalog,
-        "registry": registry,
         "pipelines": _build_pipelines(catalog, registry),
         "jobs": _build_batch_jobs(catalog) + _build_stream_jobs(registry),
+        "meta": {
+            "batch_catalog_path": str(BATCH_CATALOG_PATH),
+            "stream_registry_path": str(STREAM_REGISTRY_PATH),
+            "loaded_at": now_iso(),
+        },
     }
 
 
-def _basic_auth_header() -> str:
-    raw = f"{AIRFLOW_USER}:{AIRFLOW_PASSWORD}".encode("utf-8")
-    return "Basic " + base64.b64encode(raw).decode("ascii")
-
-
-def _http_get_json(url: str, timeout: int = AIRFLOW_TIMEOUT_SECONDS) -> dict[str, Any]:
-    req = urllib.request.Request(url)
-    req.add_header("Accept", "application/json")
-    req.add_header("Authorization", _basic_auth_header())
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
-        return json.loads(body) if body else {}
-
-
-def _airflow_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    params = params or {}
-    query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-    url = f"{AIRFLOW_API_BASE}{path}"
-    if query:
-        url = f"{url}?{query}"
-    return _http_get_json(url)
-
-
-def _airflow_get_with_fallback(paths: list[tuple[str, dict[str, Any] | None]]) -> tuple[dict[str, Any] | None, str | None]:
-    errors: list[str] = []
-    for path, params in paths:
-        try:
-            return _airflow_get(path, params), None
-        except urllib.error.HTTPError as exc:
-            errors.append(f"{path}: HTTP {exc.code}")
-        except urllib.error.URLError as exc:
-            errors.append(f"{path}: {exc.reason}")
-        except Exception as exc:
-            errors.append(f"{path}: {exc}")
-    return None, "; ".join(errors)
-
-
-def _extract_dag_runs(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
-    if not payload:
-        return []
-    for key in ("dag_runs", "dagRuns", "dagruns", "items"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            return value
-    return payload if isinstance(payload, list) else []
-
-
-def _extract_task_instances(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
-    if not payload:
-        return []
-    for key in ("task_instances", "taskInstances", "taskinstances", "items"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            return value
-    return payload if isinstance(payload, list) else []
-
-
-def _normalize_dag_run(run: dict[str, Any]) -> dict[str, Any]:
-    run_id = run.get("dag_run_id") or run.get("dagRunId") or run.get("run_id") or run.get("id") or ""
-    start = run.get("start_date") or run.get("startDate") or run.get("logical_date") or run.get("logicalDate") or run.get("execution_date")
-    end = run.get("end_date") or run.get("endDate")
-    return {
-        "dag_run_id": run_id,
-        "run_id": run_id,
-        "state": run.get("state") or "unknown",
-        "run_type": run.get("run_type") or run.get("runType"),
-        "logical_date": run.get("logical_date") or run.get("logicalDate") or run.get("execution_date"),
-        "started_at": start,
-        "ended_at": end,
-        "duration_seconds": _duration_seconds(start, end),
-    }
-
-
-def _normalize_task_instance(ti: dict[str, Any]) -> dict[str, Any]:
-    task_id = ti.get("task_id") or ti.get("taskId") or ""
-    start = ti.get("start_date") or ti.get("startDate")
-    end = ti.get("end_date") or ti.get("endDate")
-    return {
-        "task_id": task_id,
-        "state": ti.get("state") or "unknown",
-        "started_at": start,
-        "ended_at": end,
-        "duration_seconds": _duration_seconds(start, end),
-        "try_number": ti.get("try_number") or ti.get("tryNumber"),
-        "operator": ti.get("operator"),
-    }
-
-
-def _airflow_latest_for_dag(dag_id: str, limit: int = 5) -> dict[str, Any]:
-    quoted = urllib.parse.quote(dag_id, safe="")
-    paths = [
-        (f"/api/v2/dags/{quoted}/dagRuns", {"limit": limit, "order_by": "-logical_date"}),
-        (f"/api/v1/dags/{quoted}/dagRuns", {"limit": limit, "order_by": "-execution_date"}),
-    ]
-    payload, error = _airflow_get_with_fallback(paths)
-    runs = [_normalize_dag_run(r) for r in _extract_dag_runs(payload)]
-    return {"available": error is None, "error": error, "runs": runs, "latest": runs[0] if runs else None}
-
-
-def _airflow_task_instances(dag_id: str, dag_run_id: str) -> dict[str, Any]:
-    quoted_dag = urllib.parse.quote(dag_id, safe="")
-    quoted_run = urllib.parse.quote(dag_run_id, safe="")
-    paths = [
-        (f"/api/v2/dags/{quoted_dag}/dagRuns/{quoted_run}/taskInstances", {"limit": 200}),
-        (f"/api/v1/dags/{quoted_dag}/dagRuns/{quoted_run}/taskInstances", {"limit": 200}),
-    ]
-    payload, error = _airflow_get_with_fallback(paths)
-    return {"available": error is None, "error": error, "task_instances": [_normalize_task_instance(ti) for ti in _extract_task_instances(payload)]}
-
+# -----------------------------------------------------------------------------
+# Stream status
+# -----------------------------------------------------------------------------
 
 def _unit_aliases(unit_name: str) -> list[str]:
     aliases = [unit_name]
+
     if unit_name.endswith("_bronze"):
         base = unit_name[: -len("_bronze")]
         aliases.append(f"bronze_{base}")
+
     if unit_name.endswith("_silver"):
         base = unit_name[: -len("_silver")]
         aliases.append(f"silver_{base}")
+
     return list(dict.fromkeys(aliases))
 
 
-def _compute_stream_unit_status(unit: dict[str, Any], now_epoch: int) -> dict[str, Any]:
+def _supervisor_unit_name_for_job(job: dict[str, Any]) -> str:
+    pipeline = job.get("pipeline", "")
+    job_id = job.get("id", "")
+
+    if job_id.endswith("__bronze"):
+        return f"{pipeline}_bronze"
+
+    if job_id.endswith("__silver"):
+        return f"{pipeline}_silver"
+
+    return job.get("name", "")
+
+
+def _compute_stream_unit_status(
+    unit: dict[str, Any],
+    now_epoch: int,
+) -> dict[str, Any]:
     pid = unit.get("pid")
     returncode = unit.get("returncode")
     retries = _safe_int(unit.get("retries")) or 0
     max_retries = _safe_int(unit.get("max_retries")) or 0
     heartbeat = unit.get("heartbeat") or {}
-    heartbeat_ts = _safe_int(heartbeat.get("ts_epoch")) or _safe_int(heartbeat.get("timestamp_epoch")) or _safe_int(heartbeat.get("last_update_ts_epoch"))
-    heartbeat_age_seconds = max(0, now_epoch - heartbeat_ts) if heartbeat_ts is not None else None
+
+    heartbeat_ts = (
+        _safe_int(heartbeat.get("ts_epoch"))
+        or _safe_int(heartbeat.get("timestamp_epoch"))
+        or _safe_int(heartbeat.get("last_update_ts_epoch"))
+    )
+
+    heartbeat_age_seconds = None
+    if heartbeat_ts is not None:
+        heartbeat_age_seconds = max(0, now_epoch - heartbeat_ts)
+
     heartbeat_status = str(heartbeat.get("status", "")).lower()
 
     if returncode is not None:
         if retries >= max_retries and max_retries > 0:
             computed_status = "failed"
-            status_reason = f"process exited with returncode={returncode} and reached max retries"
+            status_reason = (
+                f"process exited with returncode={returncode} "
+                f"and reached max retries"
+            )
         elif int(returncode) == 0:
             computed_status = "stopped"
             status_reason = "process exited successfully"
         else:
             computed_status = "restarting"
-            status_reason = f"process exited with returncode={returncode}; retry may be scheduled"
+            status_reason = (
+                f"process exited with returncode={returncode}; retry may be scheduled"
+            )
     elif pid is not None:
         if heartbeat_status == "error":
             computed_status = "error"
             status_reason = "heartbeat reports error"
-        elif heartbeat_age_seconds is not None and heartbeat_age_seconds > STREAM_HEARTBEAT_STALE_SECONDS:
+        elif (
+            heartbeat_age_seconds is not None
+            and heartbeat_age_seconds > STREAM_HEARTBEAT_STALE_SECONDS
+        ):
             computed_status = "stale"
             status_reason = f"heartbeat is stale: {heartbeat_age_seconds}s"
         else:
@@ -409,8 +441,9 @@ def _compute_stream_unit_status(unit: dict[str, Any], now_epoch: int) -> dict[st
     }
 
 
-def _stream_status_payload(raw: bool = False) -> dict[str, Any]:
+def _load_stream_status(raw: bool = False) -> dict[str, Any]:
     now_epoch = int(time.time())
+
     if not STREAM_STATUS_FILE.exists():
         return {
             "available": False,
@@ -421,6 +454,7 @@ def _stream_status_payload(raw: bool = False) -> dict[str, Any]:
             "observed_at": now_iso(),
             "units": {},
         }
+
     try:
         data = _read_json_file(STREAM_STATUS_FILE)
     except Exception as exc:
@@ -435,16 +469,39 @@ def _stream_status_payload(raw: bool = False) -> dict[str, Any]:
         }
 
     supervisor_ts = _safe_int(data.get("ts_epoch"))
-    supervisor_age_seconds = max(0, now_epoch - supervisor_ts) if supervisor_ts is not None else None
-    supervisor_stale = supervisor_age_seconds is not None and supervisor_age_seconds > STREAM_STATUS_STALE_SECONDS
-    enriched_units: dict[str, Any] = {}
-    for unit_name, unit in (data.get("units", {}) or {}).items():
-        if isinstance(unit, dict):
-            computed = _compute_stream_unit_status(unit, now_epoch)
-            enriched_units[unit_name] = {**unit, **computed, "unit_name": unit_name, "aliases": _unit_aliases(unit_name)}
+    supervisor_age_seconds = None
+    if supervisor_ts is not None:
+        supervisor_age_seconds = max(0, now_epoch - supervisor_ts)
 
-    any_failed = any(u.get("computed_status") in {"failed", "error"} for u in enriched_units.values())
-    any_running = any(u.get("computed_status") == "running" for u in enriched_units.values())
+    supervisor_stale = (
+        supervisor_age_seconds is not None
+        and supervisor_age_seconds > STREAM_STATUS_STALE_SECONDS
+    )
+
+    enriched_units: dict[str, Any] = {}
+    units = data.get("units", {}) or {}
+
+    for unit_name, unit in units.items():
+        if not isinstance(unit, dict):
+            continue
+
+        computed = _compute_stream_unit_status(unit, now_epoch)
+        enriched_units[unit_name] = {
+            **unit,
+            **computed,
+            "unit_name": unit_name,
+            "aliases": _unit_aliases(unit_name),
+        }
+
+    any_failed = any(
+        u.get("computed_status") in {"failed", "error"}
+        for u in enriched_units.values()
+    )
+    any_running = any(
+        u.get("computed_status") == "running"
+        for u in enriched_units.values()
+    )
+
     if supervisor_stale:
         overall_status = "stale"
     elif any_failed:
@@ -468,129 +525,491 @@ def _stream_status_payload(raw: bool = False) -> dict[str, Any]:
         "supervisor_stale": supervisor_stale,
         "units": enriched_units,
     }
+
     if raw:
         payload["raw"] = data
+
     return payload
 
 
-def _find_stream_unit(job: dict[str, Any], stream_status: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
-    expected_names = {job.get("name", ""), job.get("runtime_unit_name", "")}
-    expected_names.update(job.get("runtime_aliases") or [])
-    for unit_name, unit in (stream_status.get("units", {}) if stream_status else {}).items():
-        aliases = set(unit.get("aliases") or [])
-        aliases.update({unit_name, unit.get("unit_name", ""), unit.get("app_name", ""), unit.get("name", "")})
-        if expected_names.intersection(aliases):
-            return unit_name, unit
-    return None, None
+def _find_stream_unit_for_job(
+    job: dict[str, Any],
+    stream_status: dict[str, Any],
+) -> dict[str, Any] | None:
+    units = stream_status.get("units", {}) or {}
+    expected_unit = _supervisor_unit_name_for_job(job)
+    job_name = job.get("name", "")
+
+    for unit_name, unit in units.items():
+        aliases = unit.get("aliases", []) if isinstance(unit, dict) else []
+
+        if (
+            unit_name == expected_unit
+            or unit_name == job_name
+            or job_name in aliases
+            or expected_unit in aliases
+        ):
+            return {
+                **unit,
+                "unit_name": unit_name,
+            }
+
+    return None
 
 
-def _latest_batch_status_by_dag(batch_jobs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {dag_id: _airflow_latest_for_dag(dag_id, limit=5) for dag_id in sorted({job["pipeline"] for job in batch_jobs})}
+# -----------------------------------------------------------------------------
+# Airflow API helpers
+# -----------------------------------------------------------------------------
+
+_AIRFLOW_TOKEN_CACHE: dict[str, Any] = {
+    "access_token": None,
+    "expires_at_epoch": 0,
+}
 
 
-def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
-    stream_status = _stream_status_payload(raw=False)
-    batch_runtime_by_dag = _latest_batch_status_by_dag([j for j in config_jobs if j.get("type") == "batch"])
-    enriched: list[dict[str, Any]] = []
-    for job in config_jobs:
-        base = {
+def _airflow_auth_token(timeout: int = 10) -> str:
+    now_epoch = int(time.time())
+    cached_token = _AIRFLOW_TOKEN_CACHE.get("access_token")
+    expires_at_epoch = int(_AIRFLOW_TOKEN_CACHE.get("expires_at_epoch") or 0)
+
+    if cached_token and now_epoch < expires_at_epoch:
+        return str(cached_token)
+
+    token_url = f"{AIRFLOW_API_BASE}/auth/token"
+
+    payload = json.dumps(
+        {
+            "username": AIRFLOW_USER,
+            "password": AIRFLOW_PASSWORD,
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        token_url,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        body = response.read().decode("utf-8")
+        data = json.loads(body) if body else {}
+
+    token = data.get("access_token") or data.get("token")
+
+    if not token:
+        raise RuntimeError(f"Airflow token response did not include access_token: {data}")
+
+    # Conservative cache. Airflow token expiry depends on auth manager config;
+    # use a short cache to avoid stale-token errors in local dev.
+    _AIRFLOW_TOKEN_CACHE["access_token"] = token
+    _AIRFLOW_TOKEN_CACHE["expires_at_epoch"] = now_epoch + 240
+
+    return str(token)
+
+
+def _http_get_json(path: str, timeout: int = 10) -> dict[str, Any]:
+    url = f"{AIRFLOW_API_BASE}{path}"
+
+    token = _airflow_auth_token(timeout=timeout)
+
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/json")
+    req.add_header("Authorization", f"Bearer {token}")
+
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        data = response.read().decode("utf-8")
+        return json.loads(data) if data else {}
+
+def _airflow_get_with_fallback(paths: list[str]) -> tuple[dict[str, Any] | None, str | None]:
+    errors: list[str] = []
+
+    for path in paths:
+        try:
+            return _http_get_json(path), None
+        except Exception as exc:
+            errors.append(f"{path}: {exc}")
+
+    return None, " | ".join(errors)
+
+
+def _extract_list(payload: dict[str, Any], keys: list[str]) -> list[dict[str, Any]]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+
+    return []
+
+
+def _dag_runs_for_pipeline(
+    dag_id: str,
+    limit: int = 10,
+) -> tuple[list[dict[str, Any]], str | None]:
+    quoted = urllib.parse.quote(dag_id, safe="")
+    paths = [
+        f"/api/v2/dags/{quoted}/dagRuns?order_by=-logical_date&limit={limit}",
+        f"/api/v2/dags/{quoted}/dagRuns?order_by=-start_date&limit={limit}",
+    ]
+
+    payload, error = _airflow_get_with_fallback(paths)
+
+    if payload is None:
+        return [], error
+
+    return _extract_list(payload, ["dag_runs", "dagRuns", "dagruns"]), None
+
+
+def _task_instances_for_run(
+    dag_id: str,
+    dag_run_id: str,
+) -> tuple[list[dict[str, Any]], str | None]:
+    quoted_dag = urllib.parse.quote(dag_id, safe="")
+    quoted_run = urllib.parse.quote(dag_run_id, safe="")
+    paths = [
+        f"/api/v2/dags/{quoted_dag}/dagRuns/{quoted_run}/taskInstances",
+    ]
+
+    payload, error = _airflow_get_with_fallback(paths)
+
+    if payload is None:
+        return [], error
+
+    return _extract_list(payload, ["task_instances", "taskInstances", "taskinstances"]), None
+
+
+def _dag_run_id(run: dict[str, Any]) -> str:
+    return (
+        str(run.get("dag_run_id") or run.get("dagRunId") or run.get("run_id") or "")
+    )
+
+
+def _dag_run_start(run: dict[str, Any]) -> str | None:
+    return (
+        run.get("start_date")
+        or run.get("startDate")
+        or run.get("logical_date")
+        or run.get("execution_date")
+        or run.get("executionDate")
+    )
+
+
+def _dag_run_end(run: dict[str, Any]) -> str | None:
+    return run.get("end_date") or run.get("endDate")
+
+
+def _task_id(task: dict[str, Any]) -> str:
+    return str(task.get("task_id") or task.get("taskId") or "")
+
+
+def _task_start(task: dict[str, Any]) -> str | None:
+    return task.get("start_date") or task.get("startDate")
+
+
+def _task_end(task: dict[str, Any]) -> str | None:
+    return task.get("end_date") or task.get("endDate")
+
+
+def _task_try_number(task: dict[str, Any]) -> int | None:
+    return _safe_int(task.get("try_number") or task.get("tryNumber"))
+
+
+def _latest_task_run_for_job(
+    dag_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    runs, error = _dag_runs_for_pipeline(dag_id, limit=10)
+
+    if error:
+        return {
+            "airflow_available": False,
+            "current_status": "airflow_unavailable",
+            "latest_run_state": "airflow_unavailable",
+            "status_reason": error,
+            "latest_run": None,
+        }
+
+    if not runs:
+        return {
+            "airflow_available": True,
+            "current_status": "no_runs",
+            "latest_run_state": "no_runs",
+            "status_reason": "No Airflow DAG runs found",
+            "latest_run": None,
+        }
+
+    for run in runs:
+        run_id = _dag_run_id(run)
+        if not run_id:
+            continue
+
+        tasks, task_error = _task_instances_for_run(dag_id, run_id)
+        task = next((t for t in tasks if _task_id(t) == task_id), None)
+
+        if task:
+            task_state = _normalize_state(task.get("state"))
+            start = _task_start(task) or _dag_run_start(run)
+            end = _task_end(task) or _dag_run_end(run)
+
+            return {
+                "airflow_available": True,
+                "current_status": task_state,
+                "latest_run_state": task_state,
+                "latest_run_id": run_id,
+                "latest_dag_run_state": _normalize_state(run.get("state")),
+                "started_at": start,
+                "ended_at": end,
+                "duration_seconds": _duration_seconds(start, end),
+                "try_number": _task_try_number(task),
+                "status_reason": None,
+                "latest_run": {
+                    "dag_id": dag_id,
+                    "dag_run_id": run_id,
+                    "dag_run_state": _normalize_state(run.get("state")),
+                    "task_id": task_id,
+                    "task_state": task_state,
+                    "started_at": start,
+                    "ended_at": end,
+                    "duration_seconds": _duration_seconds(start, end),
+                    "try_number": _task_try_number(task),
+                },
+            }
+
+        if task_error:
+            return {
+                "airflow_available": False,
+                "current_status": "airflow_task_unavailable",
+                "latest_run_state": "airflow_task_unavailable",
+                "latest_run_id": run_id,
+                "status_reason": task_error,
+                "latest_run": None,
+            }
+
+    latest = runs[0]
+    return {
+        "airflow_available": True,
+        "current_status": _normalize_state(latest.get("state")),
+        "latest_run_state": _normalize_state(latest.get("state")),
+        "latest_run_id": _dag_run_id(latest),
+        "latest_dag_run_state": _normalize_state(latest.get("state")),
+        "started_at": _dag_run_start(latest),
+        "ended_at": _dag_run_end(latest),
+        "duration_seconds": _duration_seconds(_dag_run_start(latest), _dag_run_end(latest)),
+        "status_reason": f"Task '{task_id}' was not found in latest DAG runs",
+        "latest_run": None,
+    }
+
+
+def _batch_runs_for_job(
+    dag_id: str,
+    task_id: str,
+    limit: int,
+) -> dict[str, Any]:
+    runs, error = _dag_runs_for_pipeline(dag_id, limit=limit)
+
+    if error:
+        return {
+            "available": False,
+            "source": "airflow",
+            "error": error,
+            "runs": [],
+        }
+
+    result: list[dict[str, Any]] = []
+
+    for run in runs:
+        run_id = _dag_run_id(run)
+        tasks: list[dict[str, Any]] = []
+        task_error = None
+
+        if run_id:
+            tasks, task_error = _task_instances_for_run(dag_id, run_id)
+
+        task = next((t for t in tasks if _task_id(t) == task_id), None)
+
+        start = _dag_run_start(run)
+        end = _dag_run_end(run)
+        task_state = None
+        try_number = None
+
+        if task:
+            task_state = _normalize_state(task.get("state"))
+            start = _task_start(task) or start
+            end = _task_end(task) or end
+            try_number = _task_try_number(task)
+
+        result.append(
+            {
+                "dag_id": dag_id,
+                "dag_run_id": run_id,
+                "dag_run_state": _normalize_state(run.get("state")),
+                "task_id": task_id,
+                "task_state": task_state or "task_not_found",
+                "state": task_state or _normalize_state(run.get("state")),
+                "started_at": start,
+                "ended_at": end,
+                "duration_seconds": _duration_seconds(start, end),
+                "try_number": try_number,
+                "task_error": task_error,
+            }
+        )
+
+    return {
+        "available": True,
+        "source": "airflow",
+        "runs": result,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Runtime merge
+# -----------------------------------------------------------------------------
+
+def _runtime_jobs_payload() -> dict[str, Any]:
+    config = _load_config_payload()
+    stream_status = _load_stream_status(raw=False)
+
+    jobs: list[dict[str, Any]] = []
+
+    for job in config.get("jobs", []):
+        runtime_job = {
             **job,
-            "current_status": job.get("defined_status", "defined"),
-            "runtime_source": "config",
-            "runtime_available": False,
+            "current_status": "defined",
             "latest_run_state": None,
             "latest_run_id": None,
-            "latest_run_started_at": None,
-            "latest_run_ended_at": None,
+            "started_at": None,
+            "ended_at": None,
             "duration_seconds": None,
             "status_reason": None,
+            "runtime_source": "catalog",
         }
+
         if job.get("type") == "stream":
-            unit_name, unit = _find_stream_unit(job, stream_status)
+            unit = _find_stream_unit_for_job(job, stream_status)
+
             if unit:
-                base.update(
+                runtime_job.update(
                     {
                         "current_status": unit.get("computed_status", "unknown"),
-                        "runtime_source": "stream_supervisor",
-                        "runtime_available": True,
-                        "runtime_unit_name": unit_name,
-                        "status_reason": unit.get("status_reason"),
-                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),
                         "latest_run_state": unit.get("computed_status", "unknown"),
+                        "status_reason": unit.get("status_reason"),
+                        "is_healthy": unit.get("is_healthy", False),
+                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),
+                        "runtime_unit_name": unit.get("unit_name"),
+                        "runtime_source": "stream_supervisor",
+                        "returncode": unit.get("returncode"),
+                        "retries": unit.get("retries"),
+                        "max_retries": unit.get("max_retries"),
                     }
                 )
             else:
-                base.update(
+                runtime_job.update(
                     {
                         "current_status": "unknown",
+                        "latest_run_state": "unknown",
+                        "status_reason": "No matching stream supervisor unit was found",
                         "runtime_source": "stream_supervisor",
-                        "runtime_available": bool(stream_status.get("available")),
-                        "status_reason": "no matching runtime unit found" if stream_status.get("available") else stream_status.get("reason", "stream status unavailable"),
                     }
                 )
+
         elif job.get("type") == "batch":
-            batch_runtime = batch_runtime_by_dag.get(job.get("pipeline", ""), {})
-            latest = batch_runtime.get("latest")
-            if latest:
-                base.update(
-                    {
-                        "current_status": latest.get("state", "unknown"),
-                        "runtime_source": "airflow",
-                        "runtime_available": bool(batch_runtime.get("available")),
-                        "latest_run_state": latest.get("state"),
-                        "latest_run_id": latest.get("dag_run_id"),
-                        "latest_run_started_at": latest.get("started_at"),
-                        "latest_run_ended_at": latest.get("ended_at"),
-                        "duration_seconds": latest.get("duration_seconds"),
-                        "status_reason": None if batch_runtime.get("available") else batch_runtime.get("error"),
-                    }
-                )
-            else:
-                base.update(
-                    {
-                        "current_status": "no_runs" if batch_runtime.get("available") else "defined",
-                        "runtime_source": "airflow",
-                        "runtime_available": bool(batch_runtime.get("available")),
-                        "status_reason": batch_runtime.get("error"),
-                    }
-                )
-        enriched.append(base)
-    return {"jobs": enriched, "stream_status": stream_status, "loaded_at": now_iso()}
+            latest = _latest_task_run_for_job(
+                dag_id=job.get("pipeline", ""),
+                task_id=job.get("name", ""),
+            )
+
+            runtime_job.update(
+                {
+                    "current_status": latest.get("current_status", "unknown"),
+                    "latest_run_state": latest.get("latest_run_state"),
+                    "latest_run_id": latest.get("latest_run_id"),
+                    "latest_dag_run_state": latest.get("latest_dag_run_state"),
+                    "started_at": latest.get("started_at"),
+                    "ended_at": latest.get("ended_at"),
+                    "duration_seconds": latest.get("duration_seconds"),
+                    "try_number": latest.get("try_number"),
+                    "status_reason": latest.get("status_reason"),
+                    "runtime_source": "airflow",
+                    "airflow_available": latest.get("airflow_available", False),
+                }
+            )
+
+        jobs.append(runtime_job)
+
+    return {
+        "jobs": jobs,
+        "meta": {
+            "loaded_at": now_iso(),
+            "config_job_count": len(config.get("jobs", [])),
+            "stream_status_available": stream_status.get("available", False),
+            "airflow_api_base": AIRFLOW_API_BASE,
+        },
+    }
 
 
-def _tail_text(path: Path, lines: int = 300) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"Log file not found: {path}")
-    return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+def _job_from_config(job_id: str) -> dict[str, Any] | None:
+    config = _load_config_payload()
+    for job in config.get("jobs", []):
+        if job.get("id") == job_id or job.get("name") == job_id:
+            return job
+    return None
 
 
-def _candidate_stream_log_paths(job_id: str) -> list[Path]:
-    candidates = [STREAM_LOG_DIR / f"{job_id}.log"]
-    if job_id.startswith("bronze_"):
-        candidates.append(STREAM_LOG_DIR / f"{job_id[len('bronze_'):]}_bronze.log")
-    if job_id.startswith("silver_"):
-        candidates.append(STREAM_LOG_DIR / f"{job_id[len('silver_'):]}_silver.log")
-    if job_id.endswith("__bronze"):
-        candidates.append(STREAM_LOG_DIR / f"{job_id[:-len('__bronze')]}_bronze.log")
-    if job_id.endswith("__silver"):
-        candidates.append(STREAM_LOG_DIR / f"{job_id[:-len('__silver')]}_silver.log")
-    return list(dict.fromkeys(candidates))
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+
+def _resolve_stream_log_name(name: str) -> str:
+    if name.endswith(".log"):
+        name = name[:-4]
+
+    # Already supervisor style.
+    if name.endswith("_bronze") or name.endswith("_silver"):
+        return name
+
+    # Config style: bronze_clickstream_user_events -> clickstream_user_events_bronze
+    if name.startswith("bronze_"):
+        return f"{name[len('bronze_'):]}_bronze"
+
+    if name.startswith("silver_"):
+        return f"{name[len('silver_'):]}_silver"
+
+    return name
 
 
-def _find_latest_airflow_log(dag_id: str, task_id: str) -> Path:
-    candidates: list[Path] = []
+def _find_latest_airflow_log(
+    dag_id: str,
+    task_id: str,
+    dag_run_id: str | None = None,
+) -> Path | None:
     dag_dir = AIRFLOW_LOG_DIR / f"dag_id={dag_id}"
-    if dag_dir.exists():
-        for pattern in [f"**/task_id={task_id}/**/*.log", f"**/{task_id}/**/*.log", f"**/*{task_id}*.log"]:
-            candidates.extend(dag_dir.glob(pattern))
-    if not candidates and AIRFLOW_LOG_DIR.exists():
-        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/dag_id={dag_id}/**/task_id={task_id}/**/*.log"))
-        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/*{dag_id}*{task_id}*.log"))
-    candidates = [p for p in candidates if p.is_file()]
+
+    candidates: list[Path] = []
+
+    if dag_run_id:
+        run_dir = dag_dir / f"run_id={dag_run_id}"
+        candidates.extend(run_dir.glob(f"task_id={task_id}/**/*.log"))
+
     if not candidates:
-        raise FileNotFoundError(f"No Airflow log found for dag_id={dag_id}, task_id={task_id}")
+        candidates.extend(dag_dir.glob(f"**/task_id={task_id}/**/*.log"))
+
+    if not candidates:
+        # Airflow log layout fallback.
+        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/{dag_id}/**/{task_id}/**/*.log"))
+        candidates.extend(AIRFLOW_LOG_DIR.glob(f"**/{task_id}/**/*.log"))
+
+    if not candidates:
+        return None
+
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
+
+# -----------------------------------------------------------------------------
+# Routes
+# -----------------------------------------------------------------------------
 
 @app.get("/health")
 async def health() -> dict[str, str]:
@@ -599,18 +1018,7 @@ async def health() -> dict[str, str]:
 
 @app.get("/api/config")
 async def get_config() -> JSONResponse:
-    bundle = _load_config_bundle()
-    return JSONResponse(
-        {
-            "pipelines": bundle["pipelines"],
-            "jobs": bundle["jobs"],
-            "meta": {
-                "batch_catalog_path": str(BATCH_CATALOG_PATH),
-                "stream_registry_path": str(STREAM_REGISTRY_PATH),
-                "loaded_at": now_iso(),
-            },
-        }
-    )
+    return JSONResponse(_load_config_payload())
 
 
 @app.get("/api/runtime/mounts")
@@ -624,7 +1032,7 @@ async def get_runtime_mounts() -> JSONResponse:
                 "STREAM_STATUS_FILE": os.getenv("STREAM_STATUS_FILE", ""),
                 "STREAM_LOG_DIR": os.getenv("STREAM_LOG_DIR", ""),
                 "AIRFLOW_LOG_DIR": os.getenv("AIRFLOW_LOG_DIR", ""),
-                "AIRFLOW_API_BASE": AIRFLOW_API_BASE,
+                "AIRFLOW_API_BASE": os.getenv("AIRFLOW_API_BASE", ""),
             },
             "checked_at": now_iso(),
         }
@@ -633,103 +1041,139 @@ async def get_runtime_mounts() -> JSONResponse:
 
 @app.get("/api/runtime/streams/status")
 async def get_stream_runtime_status(raw: bool = Query(default=False)) -> JSONResponse:
-    return JSONResponse(_stream_status_payload(raw=raw))
+    return JSONResponse(_load_stream_status(raw=raw))
 
 
 @app.get("/api/runtime/jobs")
 async def get_runtime_jobs() -> JSONResponse:
-    bundle = _load_config_bundle()
-    runtime = _enrich_runtime_jobs(bundle["jobs"])
-    return JSONResponse(
-        {
-            "jobs": runtime["jobs"],
-            "stream_status": runtime["stream_status"],
-            "meta": {
-                "loaded_at": runtime["loaded_at"],
-                "airflow_api_base": AIRFLOW_API_BASE,
-                "batch_catalog_path": str(BATCH_CATALOG_PATH),
-                "stream_registry_path": str(STREAM_REGISTRY_PATH),
-            },
-        }
-    )
+    return JSONResponse(_runtime_jobs_payload())
 
 
 @app.get("/api/runtime/runs/{job_id}")
-async def get_runtime_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> JSONResponse:
-    bundle = _load_config_bundle()
-    job = next((j for j in bundle["jobs"] if j.get("id") == job_id or j.get("name") == job_id), None)
-    if not job:
-        return JSONResponse({"job_id": job_id, "available": False, "reason": "job not found", "runs": []}, status_code=404)
+async def get_runtime_runs(
+    job_id: str,
+    limit: int = Query(default=10, ge=1, le=50),
+) -> JSONResponse:
+    job = _job_from_config(job_id)
 
-    if job.get("type") == "stream":
-        stream_status = _stream_status_payload(raw=False)
-        unit_name, unit = _find_stream_unit(job, stream_status)
+    if not job:
         return JSONResponse(
+            {
+                "available": False,
+                "job_id": job_id,
+                "error": "Job not found in /api/config",
+                "runs": [],
+            },
+            status_code=404,
+        )
+
+    if job.get("type") == "batch":
+        payload = _batch_runs_for_job(
+            dag_id=job.get("pipeline", ""),
+            task_id=job.get("name", ""),
+            limit=limit,
+        )
+        payload.update(
             {
                 "job_id": job.get("id"),
                 "job_name": job.get("name"),
+                "pipeline": job.get("pipeline"),
+                "type": "batch",
+            }
+        )
+        return JSONResponse(payload)
+
+    if job.get("type") == "stream":
+        stream_status = _load_stream_status(raw=False)
+        unit = _find_stream_unit_for_job(job, stream_status)
+        return JSONResponse(
+            {
+                "available": True,
+                "job_id": job.get("id"),
+                "job_name": job.get("name"),
+                "pipeline": job.get("pipeline"),
                 "type": "stream",
-                "available": bool(unit),
-                "reason": None if unit else "stream history registry is not implemented; current status only",
+                "source": "stream_supervisor_current_state",
                 "runs": [
                     {
-                        "run_id": unit_name,
-                        "state": unit.get("computed_status"),
-                        "started_at": unit.get("last_start_ts_iso") or unit.get("started_at"),
+                        "state": unit.get("computed_status") if unit else "unknown",
+                        "started_at": unit.get("last_start_ts_iso") if unit else None,
                         "ended_at": None,
                         "duration_seconds": None,
-                        "status_reason": unit.get("status_reason"),
-                        "source": "stream_supervisor_current_state",
+                        "unit_name": unit.get("unit_name") if unit else None,
+                        "status_reason": unit.get("status_reason") if unit else "No matching stream unit found",
+                        "returncode": unit.get("returncode") if unit else None,
+                        "retries": unit.get("retries") if unit else None,
+                        "max_retries": unit.get("max_retries") if unit else None,
                     }
-                ]
-                if unit
-                else [],
+                ],
+                "note": "Stream historical runs require a future Job Run Registry. Current state is returned here.",
             }
         )
 
-    dag_id = job.get("pipeline", "")
-    task_id = job.get("name", "")
-    dag_runtime = _airflow_latest_for_dag(dag_id, limit=limit)
-    runs: list[dict[str, Any]] = []
-    for run in dag_runtime.get("runs", []):
-        dag_run_id = run.get("dag_run_id")
-        task_state = None
-        task_detail = None
-        if dag_run_id:
-            ti_payload = _airflow_task_instances(dag_id, dag_run_id)
-            for ti in ti_payload.get("task_instances", []):
-                if ti.get("task_id") == task_id:
-                    task_state = ti.get("state")
-                    task_detail = ti
-                    break
-        runs.append({**run, "job_id": job.get("id"), "job_name": task_id, "task_state": task_state, "task": task_detail, "effective_state": task_state or run.get("state"), "source": "airflow"})
-    return JSONResponse({"job_id": job.get("id"), "job_name": task_id, "dag_id": dag_id, "type": "batch", "available": bool(dag_runtime.get("available")), "error": dag_runtime.get("error"), "runs": runs})
+    return JSONResponse(
+        {
+            "available": False,
+            "job_id": job_id,
+            "error": f"Unsupported job type: {job.get('type')}",
+            "runs": [],
+        },
+        status_code=400,
+    )
 
 
 @app.get("/api/runtime/logs/{job_id}")
 async def get_runtime_logs(
     job_id: str,
-    kind: str = Query(default="batch", pattern="^(batch|stream)$"),
-    pipeline: str | None = None,
-    task: str | None = None,
-    lines: int = Query(default=500, ge=10, le=5000),
+    kind: str | None = Query(default=None),
+    pipeline: str | None = Query(default=None),
+    task: str | None = Query(default=None),
+    dag_run_id: str | None = Query(default=None),
+    lines: int = Query(default=300, ge=10, le=5000),
 ) -> PlainTextResponse:
-    try:
-        if kind == "stream":
-            for path in _candidate_stream_log_paths(job_id):
-                if path.exists():
-                    return PlainTextResponse(_tail_text(path, lines))
-            raise FileNotFoundError("No stream log found. Tried: " + ", ".join(str(p) for p in _candidate_stream_log_paths(job_id)))
+    job = _job_from_config(job_id)
+    effective_kind = kind or (job.get("type") if job else None)
 
-        if not pipeline or not task:
-            bundle = _load_config_bundle()
-            job = next((j for j in bundle["jobs"] if j.get("id") == job_id or j.get("name") == job_id), None)
-            if job:
-                pipeline = pipeline or job.get("pipeline")
-                task = task or job.get("name")
-        if not pipeline or not task:
-            return PlainTextResponse("ERROR: pipeline and task are required for batch logs.", status_code=400)
-        path = _find_latest_airflow_log(pipeline, task)
-        return PlainTextResponse(_tail_text(path, lines))
-    except Exception as exc:
-        return PlainTextResponse(f"ERROR: {exc}", status_code=404)
+    if effective_kind == "stream":
+        stream_name = _resolve_stream_log_name(
+            (job.get("runtime_unit_name") if job else None)
+            or (job.get("name") if job else None)
+            or job_id
+        )
+        log_path = STREAM_LOG_DIR / f"{stream_name}.log"
+
+        if not log_path.exists():
+            return PlainTextResponse(
+                f"Stream log not found: {log_path}\n"
+                f"Available log files:\n"
+                + "\n".join(sorted(p.name for p in STREAM_LOG_DIR.glob('*.log'))),
+                status_code=404,
+            )
+
+        return PlainTextResponse(_tail_file(log_path, lines=lines))
+
+    if effective_kind == "batch":
+        dag_id = pipeline or (job.get("pipeline") if job else None)
+        task_id = task or (job.get("name") if job else None)
+
+        if not dag_id or not task_id:
+            return PlainTextResponse(
+                "Missing batch log parameters. Required: pipeline and task.",
+                status_code=400,
+            )
+
+        log_path = _find_latest_airflow_log(dag_id, task_id, dag_run_id=dag_run_id)
+
+        if not log_path:
+            return PlainTextResponse(
+                f"No Airflow log file found for dag_id={dag_id}, task_id={task_id}.\n"
+                f"Airflow log dir: {AIRFLOW_LOG_DIR}",
+                status_code=404,
+            )
+
+        return PlainTextResponse(_tail_file(log_path, lines=lines))
+
+    return PlainTextResponse(
+        f"Unsupported or unknown log kind for job_id={job_id}: {effective_kind}",
+        status_code=400,
+    )

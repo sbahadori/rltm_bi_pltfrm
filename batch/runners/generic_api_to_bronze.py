@@ -11,6 +11,7 @@ import time
 
 import sys
 from pathlib import Path
+from shared.core.spark import create_spark
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,30 +53,7 @@ def parse_args():
 
 
 def build_spark() -> SparkSession:
-    endpoint = os.getenv("S3_ENDPOINT", "http://minio:9000")
-    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minio")
-    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minio123")
-    region = os.getenv("AWS_REGION", "us-east-1")
-
-    spark = (
-        SparkSession.builder
-        .appName("generic_api_to_bronze")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.hadoop.fs.s3a.endpoint", endpoint)
-        .config("spark.hadoop.fs.s3a.access.key", access_key)
-        .config("spark.hadoop.fs.s3a.secret.key", secret_key)
-        .config("spark.hadoop.fs.s3a.path.style.access", "true")
-        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", str(endpoint.startswith("https://")).lower())
-        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
-        .config("spark.hadoop.fs.s3a.endpoint.region", region)
-        .getOrCreate()
-    )
-
-    spark.sparkContext.setLogLevel("ERROR")
-    return spark
+    return create_spark("generic_api_to_bronze")
 
 
 def verify_bronze_written(spark: SparkSession, target_path: str) -> None:

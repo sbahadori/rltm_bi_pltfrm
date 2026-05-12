@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+ARG PYTHON_BASE_IMAGE=rltm-python-base:local
+FROM ${PYTHON_BASE_IMAGE}
 
 WORKDIR /app
 

@@ -21,6 +21,7 @@ __pycache__/
 
 # data
 data/
+data/**
 **/data/
 
 # spark
@@ -38,10 +39,9 @@ spark_ivy/
 Thumbs.db
 .DS_Store
 
-# downloads
-downloads/
-downloads/**
+# jars
+shared/spark-jars/
+shared/spark-jars/**
 
-
-
+# job runs for dashboard
 runtime/job_runs/*.jsonl

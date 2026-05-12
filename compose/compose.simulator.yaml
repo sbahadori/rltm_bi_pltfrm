@@ -26,9 +26,9 @@ services:
       STREAM_STATUS_FILE: /runtime/spark_health/stream_supervisor_status.json
       STREAM_LOG_DIR: /runtime/spark_health/logs
       AIRFLOW_LOG_DIR: /runtime/airflow_logs
-      AIRFLOW_API_BASE: http://airflow-api-server:8080
-      AIRFLOW_USER: admin
-      AIRFLOW_PASSWORD: admin
+      AIRFLOW_API_BASE: ${AIRFLOW_API_BASE}
+      AIRFLOW_USER: ${AIRFLOW_ADMIN_USER}
+      AIRFLOW_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm:ro
       - ${PROJECT_ROOT}/spark_health:/runtime/spark_health:ro

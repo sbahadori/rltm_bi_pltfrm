@@ -130,12 +130,27 @@ from shared.spark.spark_submit_utils import build_spark_submit_command, get_repo
 
 
 def build_common_env() -> dict[str, str]:
+    required = [
+        "S3_ENDPOINT",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    ]
+
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+
+    repo_root = get_repo_root()
+
     return {
-        "PIPELINE_REPO_ROOT": str(get_repo_root()),
-        "S3_ENDPOINT": os.getenv("S3_ENDPOINT", "http://minio:9000"),
-        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", "minio"),
-        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", "minio123"),
+        "PIPELINE_REPO_ROOT": str(repo_root),
+        "PYTHONPATH": str(repo_root),
+
+        "S3_ENDPOINT": os.environ["S3_ENDPOINT"],
+        "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
+        "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
         "AWS_REGION": os.getenv("AWS_REGION", "us-east-1"),
+
         "SPARK_SUBMIT": os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit"),
         "SPARK_MASTER_URL": os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077"),
         "PATH": f"/home/airflow/.local/bin:{os.getenv('PATH', '')}",

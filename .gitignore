@@ -41,7 +41,8 @@ Thumbs.db
 # downloads
 downloads/
 downloads/**
-
+shared/spark-jars/
+shared/spark-jars/**
 
 
 runtime/job_runs/*.jsonl

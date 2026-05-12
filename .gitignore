@@ -44,5 +44,5 @@ downloads/**
 shared/spark-jars/
 shared/spark-jars/**
 
-
+# job runs for dashboard
 runtime/job_runs/*.jsonl

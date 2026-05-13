@@ -8,6 +8,18 @@ from pyspark.sql import functions as F
 from batch.specs.batch_catalog_utils import resolve_repo_path
 
 
+NUMERIC_TYPES = {
+    "long",
+    "int",
+    "integer",
+    "bigint",
+    "float",
+    "double",
+    "decimal",
+    "number",
+}
+
+
 def quote_identifier(identifier: str, db_type: str) -> str:
     if not identifier:
         raise ValueError("Identifier cannot be empty")
@@ -38,19 +50,9 @@ def format_sql_literal(value: Any, value_type: str) -> str:
         return "NULL"
 
     normalized_type = str(value_type).lower()
+    raw = str(value).strip()
 
-    if normalized_type in {
-        "long",
-        "int",
-        "integer",
-        "bigint",
-        "float",
-        "double",
-        "decimal",
-        "number",
-    }:
-        raw = str(value).strip()
-
+    if normalized_type in NUMERIC_TYPES:
         try:
             if normalized_type in {"float", "double", "decimal", "number"}:
                 float(raw)
@@ -64,7 +66,7 @@ def format_sql_literal(value: Any, value_type: str) -> str:
 
         return raw
 
-    escaped = str(value).replace("'", "''")
+    escaped = raw.replace("'", "''")
     return f"'{escaped}'"
 
 
@@ -102,6 +104,37 @@ def get_sql_template(table_cfg: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def get_extract_sql_template(table_cfg: dict[str, Any]) -> str | None:
+    sql_cfg = table_cfg.get("sql") or {}
+
+    # New generic contract.
+    if sql_cfg.get("extract_ref") or sql_cfg.get("extract"):
+        return get_sql_template(table_cfg, "extract")
+
+    # Backward compatibility with current files.
+    load_type = table_cfg.get("load_type", "full")
+    legacy_key = load_type
+
+    if sql_cfg.get(f"{legacy_key}_ref") or sql_cfg.get(legacy_key):
+        return get_sql_template(table_cfg, legacy_key)
+
+    return None
+
+
+def get_max_bound_sql_template(table_cfg: dict[str, Any]) -> str | None:
+    sql_cfg = table_cfg.get("sql") or {}
+
+    # New generic contract.
+    if sql_cfg.get("max_bound_ref") or sql_cfg.get("max_bound"):
+        return get_sql_template(table_cfg, "max_bound")
+
+    # Backward compatibility with old transactional contract.
+    if sql_cfg.get("max_transactional_ref") or sql_cfg.get("max_transactional"):
+        return get_sql_template(table_cfg, "max_transactional")
+
+    return None
+
+
 def build_columns_sql(table_cfg: dict[str, Any], db_type: str) -> str:
     columns = table_cfg.get("columns") or []
 
@@ -109,6 +142,18 @@ def build_columns_sql(table_cfg: dict[str, Any], db_type: str) -> str:
         return "*"
 
     return ", ".join(quote_identifier(column, db_type) for column in columns)
+
+
+def get_watermark_config(table_cfg: dict[str, Any]) -> dict[str, Any]:
+    watermark = table_cfg.get("watermark") or {}
+
+    if not watermark:
+        raise ValueError(
+            f"Table '{table_cfg['table_id']}' load_type='incremental' "
+            "requires watermark configuration"
+        )
+
+    return watermark
 
 
 def build_sql_context(
@@ -121,19 +166,12 @@ def build_sql_context(
     db_type = runtime_connection["type"]
 
     watermark = table_cfg.get("watermark") or {}
-    transactional = table_cfg.get("transactional") or {}
-
     watermark_column = watermark.get("column")
     watermark_type = watermark.get("type", "timestamp")
 
-    transaction_column = transactional.get("column")
-    transaction_type = transactional.get("type", "long")
-
-    load_type = table_cfg.get("load_type", "full")
-
-    bound_type = watermark_type if load_type == "incremental" else transaction_type
-
     return {
+        "load_type": table_cfg.get("load_type", "full"),
+        "strategy": table_cfg.get("strategy", "overwrite"),
         "source_table": quote_table_name(table_cfg["source_table"], db_type),
         "raw_source_table": table_cfg["source_table"],
         "columns": build_columns_sql(table_cfg, db_type),
@@ -141,12 +179,12 @@ def build_sql_context(
         if watermark_column
         else "",
         "raw_watermark_column": watermark_column or "",
-        "transaction_column": quote_identifier(transaction_column, db_type)
-        if transaction_column
+        "incremental_column": quote_identifier(watermark_column, db_type)
+        if watermark_column
         else "",
-        "raw_transaction_column": transaction_column or "",
-        "lower_bound": format_sql_literal(lower_bound, bound_type),
-        "upper_bound": format_sql_literal(upper_bound, transaction_type),
+        "raw_incremental_column": watermark_column or "",
+        "lower_bound": format_sql_literal(lower_bound, watermark_type),
+        "upper_bound": format_sql_literal(upper_bound, watermark_type),
     }
 
 
@@ -161,6 +199,10 @@ def wrap_as_jdbc_subquery(sql: str) -> str:
     return f"({sql.rstrip(';').strip()}) AS src"
 
 
+def strategy_uses_upper_bound(strategy: str) -> bool:
+    return strategy in {"sequence", "rowversion"}
+
+
 def build_default_select_sql(
     *,
     runtime_connection: dict[str, Any],
@@ -169,6 +211,7 @@ def build_default_select_sql(
     upper_bound: Any | None = None,
 ) -> str:
     load_type = table_cfg.get("load_type", "full")
+    strategy = table_cfg.get("strategy", "overwrite")
     db_type = runtime_connection["type"]
 
     context = build_sql_context(
@@ -184,27 +227,28 @@ def build_default_select_sql(
         return base_sql
 
     if load_type == "incremental":
-        watermark = table_cfg.get("watermark") or {}
+        watermark = get_watermark_config(table_cfg)
         watermark_column = watermark["column"]
         watermark_type = watermark.get("type", "timestamp")
 
+        quoted_col = quote_identifier(watermark_column, db_type)
+
+        if strategy_uses_upper_bound(strategy):
+            return (
+                f"{base_sql} "
+                f"WHERE {quoted_col} > {format_sql_literal(lower_bound, watermark_type)} "
+                f"AND {quoted_col} <= {format_sql_literal(upper_bound, watermark_type)}"
+            )
+
         return (
             f"{base_sql} "
-            f"WHERE {quote_identifier(watermark_column, db_type)} > "
-            f"{format_sql_literal(lower_bound, watermark_type)}"
+            f"WHERE {quoted_col} > {format_sql_literal(lower_bound, watermark_type)}"
         )
 
-    if load_type == "transactional":
-        transactional = table_cfg.get("transactional") or {}
-        tx_column = transactional["column"]
-        tx_type = transactional.get("type", "long")
-
-        quoted_tx = quote_identifier(tx_column, db_type)
-
-        return (
-            f"{base_sql} "
-            f"WHERE {quoted_tx} > {format_sql_literal(lower_bound, tx_type)} "
-            f"AND {quoted_tx} <= {format_sql_literal(upper_bound, tx_type)}"
+    if load_type == "cdc":
+        raise NotImplementedError(
+            f"CDC load_type is not implemented for JDBC query extraction. "
+            f"table_id={table_cfg['table_id']} strategy={strategy}"
         )
 
     raise ValueError(f"Unsupported load_type: {load_type}")
@@ -217,9 +261,7 @@ def build_source_sql(
     lower_bound: Any | None = None,
     upper_bound: Any | None = None,
 ) -> str:
-    load_type = table_cfg.get("load_type", "full")
-
-    template = get_sql_template(table_cfg, load_type)
+    template = get_extract_sql_template(table_cfg)
 
     if template:
         context = build_sql_context(
@@ -238,13 +280,13 @@ def build_source_sql(
     )
 
 
-def build_max_value_sql(
+def build_max_bound_sql(
     *,
     runtime_connection: dict[str, Any],
     table_cfg: dict[str, Any],
     column: str,
 ) -> str:
-    template = get_sql_template(table_cfg, "max_transactional")
+    template = get_max_bound_sql_template(table_cfg)
 
     if template:
         context = build_sql_context(
@@ -260,14 +302,14 @@ def build_max_value_sql(
     return f"SELECT MAX({quoted_col}) AS max_value FROM {source_table}"
 
 
-def read_max_value(
+def read_max_bound_value(
     spark: SparkSession,
     *,
     runtime_connection: dict[str, Any],
     table_cfg: dict[str, Any],
     column: str,
 ) -> Any:
-    sql = build_max_value_sql(
+    sql = build_max_bound_sql(
         runtime_connection=runtime_connection,
         table_cfg=table_cfg,
         column=column,
@@ -290,6 +332,22 @@ def read_max_value(
     return rows[0]["max_value"]
 
 
+# Backward-compatible alias if anything still imports read_max_value.
+def read_max_value(
+    spark: SparkSession,
+    *,
+    runtime_connection: dict[str, Any],
+    table_cfg: dict[str, Any],
+    column: str,
+) -> Any:
+    return read_max_bound_value(
+        spark,
+        runtime_connection=runtime_connection,
+        table_cfg=table_cfg,
+        column=column,
+    )
+
+
 def build_jdbc_reader(
     spark: SparkSession,
     runtime_connection: dict[str, Any],
@@ -306,7 +364,9 @@ def build_jdbc_reader(
     )
 
     print(
-        f"[JDBC_SOURCE_SQL] table_id={table_cfg['table_id']} sql={source_sql}",
+        f"[JDBC_SOURCE_SQL] table_id={table_cfg['table_id']} "
+        f"load_type={table_cfg.get('load_type')} "
+        f"strategy={table_cfg.get('strategy')} sql={source_sql}",
         flush=True,
     )
 
@@ -338,6 +398,7 @@ def add_bronze_metadata(
     source_table: str,
     batch_run_id: str,
     load_type: str,
+    strategy: str,
     add_row_hash: bool = True,
 ) -> DataFrame:
     enriched = (
@@ -346,6 +407,7 @@ def add_bronze_metadata(
         .withColumn("_source_table", F.lit(source_table))
         .withColumn("_batch_run_id", F.lit(batch_run_id))
         .withColumn("_load_type", F.lit(load_type))
+        .withColumn("_strategy", F.lit(strategy))
         .withColumn("_ingestion_ts", F.current_timestamp())
         .withColumn("ingest_year", F.year("_ingestion_ts"))
         .withColumn("ingest_month", F.month("_ingestion_ts"))
@@ -353,15 +415,15 @@ def add_bronze_metadata(
     )
 
     if add_row_hash:
-        business_cols = [c for c in df.columns]
+        business_cols = [column for column in df.columns]
         enriched = enriched.withColumn(
             "_row_hash",
             F.sha2(
                 F.concat_ws(
                     "||",
                     *[
-                        F.coalesce(F.col(c).cast("string"), F.lit(""))
-                        for c in business_cols
+                        F.coalesce(F.col(column).cast("string"), F.lit(""))
+                        for column in business_cols
                     ],
                 ),
                 256,

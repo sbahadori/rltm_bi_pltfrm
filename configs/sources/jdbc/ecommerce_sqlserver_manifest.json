@@ -6,6 +6,7 @@
   "enabled": true,
   "defaults": {
     "load_type": "full",
+    "strategy": "overwrite",
     "count_rows": false,
     "num_partitions": 1,
     "fetch_size": 10000,
@@ -14,7 +15,7 @@
     "target_path_template": "s3a://lakehouse/bronze/{source_id}/{table_id}",
     "state_path_template": "s3a://lakehouse/_state/jdbc/{source_id}/{table_id}",
     "watermark": null,
-    "transactional": null,
+    "cdc": null,
     "sql": {},
     "partition_by": [
       "ingest_year",
@@ -29,13 +30,14 @@
       "table_id": "brands",
       "enabled": true,
       "load_type": "full",
+      "strategy": "overwrite",
       "bronze_mode": "overwrite",
       "source_table": "dbo.brands",
       "primary_key": [
         "post_id"
       ],
       "sql": {
-        "full_ref": "configs/sql/jdbc/ecommerce_sqlserver/brands_full.sql"
+        "extract_ref": "configs/sql/jdbc/ecommerce_sqlserver/brands_full.sql"
       },
       "columns": [
         "post_id",
@@ -64,6 +66,7 @@
       "table_id": "products",
       "enabled": true,
       "load_type": "incremental",
+      "strategy": "numeric_watermark",
       "bronze_mode": "append",
       "source_table": "dbo.products",
       "primary_key": [
@@ -72,10 +75,11 @@
       "watermark": {
         "column": "updated_at",
         "type": "long",
-        "initial_value": "0"
+        "initial_value": 0,
+        "upper_bound_mode": "none"
       },
       "sql": {
-        "incremental_ref": "configs/sql/jdbc/ecommerce_sqlserver/products_incremental.sql"
+        "extract_ref": "configs/sql/jdbc/ecommerce_sqlserver/products_incremental_numeric.sql"
       },
       "columns": [
         "id",

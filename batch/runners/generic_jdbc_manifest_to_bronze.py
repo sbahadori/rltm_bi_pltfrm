@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from pyspark.sql import SparkSession
+
 from shared.core.spark import create_spark
 
 REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -18,7 +19,7 @@ from batch.utils.jdbc_connection_registry import build_runtime_connection  # noq
 from batch.utils.jdbc_ingestion_engine import (  # noqa: E402
     add_bronze_metadata,
     build_jdbc_reader,
-    read_max_value,
+    read_max_bound_value,
     write_bronze_table,
 )
 from batch.utils.jdbc_load_state import (  # noqa: E402
@@ -26,7 +27,6 @@ from batch.utils.jdbc_load_state import (  # noqa: E402
     read_state,
     write_state,
 )
-
 from batch.utils.jdbc_manifest_loader import (  # noqa: E402
     build_effective_table_config,
     get_enabled_tables,
@@ -51,6 +51,14 @@ def build_spark() -> SparkSession:
     return create_spark("generic_jdbc_manifest_to_bronze")
 
 
+def strategy_uses_upper_bound(strategy: str) -> bool:
+    return strategy in {"sequence", "rowversion"}
+
+
+def build_state_key(*, load_type: str, strategy: str, column: str) -> str:
+    return f"{load_type}::{strategy}::{column}"
+
+
 def ingest_one_table(
     *,
     spark: SparkSession,
@@ -60,21 +68,33 @@ def ingest_one_table(
     batch_run_id: str,
 ) -> int:
     table_cfg = build_effective_table_config(manifest, table)
+
     load_type = table_cfg.get("load_type", "full")
+    strategy = table_cfg.get("strategy", "overwrite")
 
     print(
         f"[JDBC_READ_START] source_id={manifest['source_id']} "
-        f"table_id={table_cfg['table_id']} source_table={table_cfg['source_table']} "
-        f"load_type={load_type}",
+        f"table_id={table_cfg['table_id']} "
+        f"source_table={table_cfg['source_table']} "
+        f"load_type={load_type} strategy={strategy}",
         flush=True,
     )
 
     lower_bound = None
     upper_bound = None
     state_path = get_state_path(table_cfg, manifest["source_id"])
+    state_key = None
 
     if load_type == "full":
-        table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "overwrite")
+        if strategy == "overwrite":
+            table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "overwrite")
+        elif strategy == "append_snapshot":
+            table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "append")
+        else:
+            raise ValueError(
+                f"Unsupported full strategy='{strategy}' "
+                f"for table_id='{table_cfg['table_id']}'"
+            )
 
     elif load_type == "incremental":
         watermark = table_cfg.get("watermark") or {}
@@ -86,7 +106,11 @@ def ingest_one_table(
                 f"requires watermark.column"
             )
 
-        state_key = f"watermark::{watermark_column}"
+        state_key = build_state_key(
+            load_type=load_type,
+            strategy=strategy,
+            column=watermark_column,
+        )
 
         lower_bound = read_state(
             spark,
@@ -94,60 +118,47 @@ def ingest_one_table(
             source_id=manifest["source_id"],
             table_id=table_cfg["table_id"],
             state_key=state_key,
-            default_value=watermark.get("initial_value", "1970-01-01T00:00:00"),
+            default_value=watermark.get("initial_value", 0),
         )
+
+        if strategy_uses_upper_bound(strategy):
+            upper_bound = read_max_bound_value(
+                spark,
+                runtime_connection=runtime_connection,
+                table_cfg=table_cfg,
+                column=watermark_column,
+            )
+
+            if upper_bound is None or str(upper_bound) == str(lower_bound):
+                print(
+                    f"[JDBC_SKIP_NO_NEW_BOUND] table_id={table_cfg['table_id']} "
+                    f"strategy={strategy} last_value={lower_bound}",
+                    flush=True,
+                )
+                return 0
 
         print(
             f"[JDBC_INCREMENTAL_STATE] table_id={table_cfg['table_id']} "
+            f"strategy={strategy} "
             f"watermark_column={watermark_column} "
-            f"watermark_type={watermark.get('type', 'timestamp')} "
-            f"lower_bound={lower_bound}",
+            f"watermark_type={watermark.get('type')} "
+            f"lower_bound={lower_bound} "
+            f"upper_bound={upper_bound}",
             flush=True,
         )
 
         table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "append")
 
-    elif load_type == "transactional":
-        transactional = table_cfg.get("transactional") or {}
-        tx_column = transactional.get("column")
-
-        if not tx_column:
-            raise ValueError(
-                f"Table '{table_cfg['table_id']}' load_type='transactional' "
-                f"requires transactional.column"
-            )
-
-        state_key = f"transactional::{tx_column}"
-
-        lower_bound = read_state(
-            spark,
-            state_path=state_path,
-            source_id=manifest["source_id"],
-            table_id=table_cfg["table_id"],
-            state_key=state_key,
-            default_value=transactional.get("initial_value", 0),
+    elif load_type == "cdc":
+        raise NotImplementedError(
+            f"CDC is not implemented yet for JDBC runner. "
+            f"table_id={table_cfg['table_id']} strategy={strategy}"
         )
-
-        upper_bound = read_max_value(
-            spark,
-            runtime_connection=runtime_connection,
-            table_cfg=table_cfg,
-            column=tx_column,
-        )
-
-        if upper_bound is None or str(upper_bound) == str(lower_bound):
-            print(
-                f"[JDBC_SKIP_NO_NEW_TX] table_id={table_cfg['table_id']} "
-                f"last_value={lower_bound}",
-                flush=True,
-            )
-            return 0
-
-        table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "append")
 
     else:
         raise ValueError(
-            f"Unsupported load_type='{load_type}' for table_id='{table_cfg['table_id']}'"
+            f"Unsupported load_type='{load_type}' "
+            f"for table_id='{table_cfg['table_id']}'"
         )
 
     df = build_jdbc_reader(
@@ -165,7 +176,8 @@ def ingest_one_table(
 
         if rows_read == 0:
             print(
-                f"[JDBC_SKIP_EMPTY] table_id={table_cfg['table_id']} load_type={load_type}",
+                f"[JDBC_SKIP_EMPTY] table_id={table_cfg['table_id']} "
+                f"load_type={load_type} strategy={strategy}",
                 flush=True,
             )
             return 0
@@ -179,6 +191,7 @@ def ingest_one_table(
         source_table=table_cfg["source_table"],
         batch_run_id=batch_run_id,
         load_type=load_type,
+        strategy=strategy,
         add_row_hash=table_cfg.get("add_row_hash", True),
     )
 
@@ -187,45 +200,34 @@ def ingest_one_table(
     if load_type == "incremental":
         watermark = table_cfg["watermark"]
         watermark_column = watermark["column"]
-        state_key = f"watermark::{watermark_column}"
 
-        max_value = df.agg({watermark_column: "max"}).collect()[0][0]
+        if strategy_uses_upper_bound(strategy):
+            next_state_value = upper_bound
+        else:
+            next_state_value = df.agg({watermark_column: "max"}).collect()[0][0]
 
-        if max_value is not None:
+        if next_state_value is not None:
             write_state(
                 spark,
                 state_path=state_path,
                 source_id=manifest["source_id"],
                 table_id=table_cfg["table_id"],
                 state_key=state_key,
-                state_value=max_value,
+                state_value=next_state_value,
                 batch_run_id=batch_run_id,
             )
-
-    if load_type == "transactional":
-        transactional = table_cfg["transactional"]
-        tx_column = transactional["column"]
-        state_key = f"transactional::{tx_column}"
-
-        write_state(
-            spark,
-            state_path=state_path,
-            source_id=manifest["source_id"],
-            table_id=table_cfg["table_id"],
-            state_key=state_key,
-            state_value=upper_bound,
-            batch_run_id=batch_run_id,
-        )
 
     records_text = rows_read if rows_read >= 0 else "not_counted"
 
     print(
         f"[JDBC_BRONZE_WRITE_OK] table_id={table_cfg['table_id']} "
-        f"load_type={load_type} rows={records_text} target={table_cfg['target_path']}",
+        f"load_type={load_type} strategy={strategy} "
+        f"rows={records_text} target={table_cfg['target_path']}",
         flush=True,
     )
 
     return rows_read
+
 
 def main():
     args = parse_args()
@@ -253,6 +255,7 @@ def main():
 
     spark = None
     total_rows = 0
+    counted_any_table = False
 
     try:
         spark = build_spark()
@@ -268,6 +271,7 @@ def main():
 
             if rows >= 0:
                 total_rows += rows
+                counted_any_table = True
 
         ended = time.time()
 
@@ -282,11 +286,14 @@ def main():
             started_at_epoch=int(started),
             ended_at_epoch=int(ended),
             duration_seconds=round(ended - started, 3),
-            records_written=total_rows,
+            records_written=total_rows if counted_any_table else None,
         )
 
+        records_text = total_rows if counted_any_table else "not_counted"
+
         print(
-            f"[SUCCESS] source_id={manifest['source_id']} tables={len(tables)} rows={total_rows}",
+            f"[SUCCESS] source_id={manifest['source_id']} "
+            f"tables={len(tables)} rows={records_text}",
             flush=True,
         )
 

@@ -65,7 +65,6 @@ services:
       - "7077:7077"
       - "8080:8080"
     volumes:
-      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
@@ -86,7 +85,6 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
@@ -107,7 +105,6 @@ services:
     ports:
       - "8082:8081"
     volumes:
-      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
@@ -134,7 +131,6 @@ services:
       - "8888:8888"
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
-      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
     networks:
       - rltm_shared_net
 

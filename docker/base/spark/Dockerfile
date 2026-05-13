@@ -20,6 +20,8 @@ COPY shared/spark-jars/aws-java-sdk-bundle-1.12.262.jar /opt/spark/jars/
 COPY shared/spark-jars/mssql-jdbc-13.4.0.jre11.jar /opt/spark/jars/
 COPY shared/spark-jars/delta-spark_2.12-3.2.0.jar /opt/spark/jars/
 COPY shared/spark-jars/delta-storage-3.2.0.jar /opt/spark/jars/
+COPY shared/spark-jars/postgresql-42.7.4.jar /opt/spark/jars/
+COPY shared/spark-jars/mysql-connector-j-9.0.0.jar /opt/spark/jars/
 
 RUN pip install --no-cache-dir  pyyaml==6.0.2   requests==2.32.3  boto3==1.34.162  delta-spark==3.2.0  pyarrow  pandas   numpy  --quiet
 

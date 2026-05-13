@@ -15,6 +15,8 @@ COPY --chown=airflow:0 shared/spark-jars/aws-java-sdk-bundle-1.12.262.jar /tmp/l
 COPY --chown=airflow:0 shared/spark-jars/mssql-jdbc-13.4.0.jre11.jar /tmp/local-spark-jars/
 COPY --chown=airflow:0 shared/spark-jars/delta-spark_2.12-3.2.0.jar /tmp/local-spark-jars/
 COPY --chown=airflow:0 shared/spark-jars/delta-storage-3.2.0.jar /tmp/local-spark-jars/
+COPY --chown=airflow:0 shared/spark-jars/postgresql-42.7.4.jar /tmp/local-spark-jars/
+COPY --chown=airflow:0 shared/spark-jars/mysql-connector-j-9.0.0.jar /tmp/local-spark-jars/
 
 RUN python - <<'PY'
 from pathlib import Path

@@ -11,7 +11,7 @@ USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends  openjdk-17-jre-headless  && apt-get clean  && rm -rf /var/lib/apt/lists/*
 
-COPY downloads/spark-3.5.1-bin-hadoop3.tgz /tmp/spark.tgz
+COPY shared/spark-dist/spark-3.5.1-bin-hadoop3.tgz /tmp/spark.tgz
 
 RUN tar -xzf /tmp/spark.tgz -C /opt  && mv /opt/${SPARK_PACKAGE} ${SPARK_HOME}  && rm -f /tmp/spark.tgz
 

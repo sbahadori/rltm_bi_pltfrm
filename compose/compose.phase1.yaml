@@ -38,8 +38,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "5050:80"
     depends_on:
@@ -48,9 +48,12 @@ services:
       - rltm_shared_net
 
   spark-master:
+    image: ${RLTM_SPARK_IMAGE}
     build:
       context: ${PROJECT_ROOT}
       dockerfile: docker/spark/Dockerfile
+      args:
+        SPARK_BASE_IMAGE: ${RLTM_SPARK_BASE_IMAGE}
     container_name: spark-master
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
@@ -62,15 +65,13 @@ services:
       - "7077:7077"
       - "8080:8080"
     volumes:
-      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
 
   spark-worker:
-    build:
-      context: ${PROJECT_ROOT}
-      dockerfile: docker/spark/Dockerfile
+    image: ${RLTM_SPARK_IMAGE}
     container_name: spark-worker
     depends_on:
       - spark-master
@@ -85,15 +86,13 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
 
   spark-worker-2:
-    build:
-      context: ${PROJECT_ROOT}
-      dockerfile: docker/spark/Dockerfile
+    image: ${RLTM_SPARK_IMAGE}
     container_name: spark-worker-2
     depends_on:
       - spark-master
@@ -108,15 +107,18 @@ services:
     ports:
       - "8082:8081"
     volumes:
-      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
       - ${PROJECT_ROOT}/spark_apps:/opt/spark/apps
     networks:
       - rltm_shared_net
 
   jupyter:
+    image: ${RLTM_JUPYTER_IMAGE}
     build:
       context: ${PROJECT_ROOT}
       dockerfile: docker/jupyter/Dockerfile
+      args:
+        SPARK_BASE_IMAGE: ${RLTM_SPARK_BASE_IMAGE}
     container_name: jupyter
     depends_on:
       - spark-master
@@ -124,14 +126,15 @@ services:
       - postgres-warehouse
     environment:
       SPARK_MASTER: spark://spark-master:7077
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-      AWS_REGION: us-east-1
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
     ports:
       - "8888:8888"
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
-      - ${PROJECT_ROOT}/jars:/opt/spark/jars-extra
+      - ${PROJECT_ROOT}/shared/spark-jars:/opt/spark/jars-extra:ro
     networks:
       - rltm_shared_net
 

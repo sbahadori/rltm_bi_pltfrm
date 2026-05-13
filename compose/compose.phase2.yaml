@@ -1,32 +1,37 @@
 x-airflow-common: &airflow-common
+  image: ${RLTM_AIRFLOW_IMAGE}
   build:
     context: ${PROJECT_ROOT}
     dockerfile: docker/airflow/Dockerfile
+    args:
+      AIRFLOW_BASE_IMAGE: ${RLTM_AIRFLOW_BASE_IMAGE}
   env_file:
     - ${PROJECT_ROOT}/.env
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres/${AIRFLOW_DB_NAME}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__PARALLELISM: "4"
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "4"
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
     AIRFLOW__API__EXPOSE_CONFIG: "non-sensitive-only"
-    SPARK_SUBMIT: /home/airflow/.local/bin/spark-submit
-    SPARK_MASTER_URL: spark://spark-master:7077
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-api-server:8080/execution/"
-    AIRFLOW__API_AUTH__JWT_SECRET: "put-a-long-random-jwt-secret-here"
-    AIRFLOW__API__SECRET_KEY: "put-a-long-random-api-secret-here"
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_JWT_SECRET}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY}
 
-    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "${AIRFLOW_ADMIN_USER}:${AIRFLOW_ADMIN_PASSWORD}"
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: "/opt/airflow/simple_auth_manager_passwords.json"
 
+    SPARK_SUBMIT: /home/airflow/.local/bin/spark-submit
+    SPARK_MASTER_URL: ${SPARK_MASTER_URL}
     PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
-    S3_ENDPOINT: http://minio:9000
-    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-    AWS_REGION: us-east-1
+    PYTHONPATH: /workspace/rltm_bi_pltfrm
+
+    S3_ENDPOINT: ${S3_ENDPOINT}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    AWS_REGION: ${AWS_REGION}
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
     - ${PROJECT_ROOT}/airflow/dags:/opt/airflow/dags
@@ -42,19 +47,18 @@ x-airflow-common: &airflow-common
     - rltm_shared_net
 
 x-spark-stream-base: &spark-stream-base
-  build:
-    context: ${PROJECT_ROOT}
-    dockerfile: docker/spark/Dockerfile
+  image: ${RLTM_SPARK_IMAGE}
   env_file:
     - ${PROJECT_ROOT}/.env
   environment:
     PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+    PYTHONPATH: /workspace/rltm_bi_pltfrm
     SPARK_SUBMIT: /opt/spark/bin/spark-submit
-    SPARK_MASTER_URL: spark://spark-master:7077
-    S3_ENDPOINT: http://minio:9000
-    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-    AWS_REGION: us-east-1
+    SPARK_MASTER_URL: ${SPARK_MASTER_URL}
+    S3_ENDPOINT: ${S3_ENDPOINT}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    AWS_REGION: ${AWS_REGION}
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
     - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
@@ -70,20 +74,19 @@ x-spark-stream-base: &spark-stream-base
   networks:
     - rltm_shared_net
 
-
 services:
   airflow-postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
     volumes:
       - airflow_postgres_data:/var/lib/postgresql/data
     networks:
       - rltm_shared_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER} -d ${AIRFLOW_DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -95,12 +98,12 @@ services:
       -lc "
       airflow db migrate &&
       airflow users create
-      --username admin
-      --password admin
-      --firstname Admin
-      --lastname User
+      --username ${AIRFLOW_ADMIN_USER}
+      --password ${AIRFLOW_ADMIN_PASSWORD}
+      --firstname ${AIRFLOW_ADMIN_FIRSTNAME}
+      --lastname ${AIRFLOW_ADMIN_LASTNAME}
       --role Admin
-      --email admin@example.com || true
+      --email ${AIRFLOW_ADMIN_EMAIL} || true
       "
 
   airflow-api-server:
@@ -150,19 +153,22 @@ services:
       - rltm_shared_net
 
   collector:
+    image: ${RLTM_COLLECTOR_IMAGE}
     build:
       context: ${PROJECT_ROOT}/apps/collector
       dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${RLTM_PYTHON_BASE_IMAGE}
     container_name: collector
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-      KAFKA_TOPIC: user_events
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      KAFKA_TOPIC: ${KAFKA_TOPIC}
       STORAGE_FILE: /data/events.jsonl
       ENABLE_FILE_FALLBACK: "true"
-      ALLOWED_ORIGINS: "http://localhost:8091,http://127.0.0.1:8091"
+      ALLOWED_ORIGINS: ${COLLECTOR_ALLOWED_ORIGINS}
     volumes:
       - ${PROJECT_ROOT}/data/collector:/data
     depends_on:
@@ -178,8 +184,8 @@ services:
     entrypoint: ["/bin/bash", "-lc"]
     command: >
       "
-      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic user_events --partitions 3 --replication-factor 1 &&
-      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic user_events
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server ${KAFKA_BOOTSTRAP_SERVERS} --create --if-not-exists --topic ${KAFKA_TOPIC} --partitions ${KAFKA_TOPIC_PARTITIONS} --replication-factor ${KAFKA_TOPIC_REPLICATION_FACTOR} &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server ${KAFKA_BOOTSTRAP_SERVERS} --describe --topic ${KAFKA_TOPIC}
       "
     networks:
       - rltm_shared_net
@@ -198,6 +204,13 @@ services:
       STREAM_LOG_DIR: /tmp/health/logs
       PYTHONPATH: /workspace/rltm_bi_pltfrm
       JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
+      PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+      SPARK_SUBMIT: /opt/spark/bin/spark-submit
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&

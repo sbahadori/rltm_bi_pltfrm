@@ -129,6 +129,13 @@ from batch.specs.batch_catalog_utils import get_enabled_pipelines  # noqa: E402
 from shared.spark.spark_submit_utils import build_spark_submit_command, get_repo_root  # noqa: E402
 
 
+def forward_prefixed_env(prefixes: list[str]) -> dict[str, str]:
+    forwarded = {}
+    for key, value in os.environ.items():
+        if any(key.startswith(prefix) for prefix in prefixes):
+            forwarded[key] = value
+    return forwarded
+
 def build_common_env() -> dict[str, str]:
     required = [
         "S3_ENDPOINT",
@@ -142,19 +149,27 @@ def build_common_env() -> dict[str, str]:
 
     repo_root = get_repo_root()
 
-    return {
+    env = {
         "PIPELINE_REPO_ROOT": str(repo_root),
         "PYTHONPATH": str(repo_root),
-
         "S3_ENDPOINT": os.environ["S3_ENDPOINT"],
         "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
         "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
         "AWS_REGION": os.getenv("AWS_REGION", "us-east-1"),
-
         "SPARK_SUBMIT": os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit"),
         "SPARK_MASTER_URL": os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077"),
         "PATH": f"/home/airflow/.local/bin:{os.getenv('PATH', '')}",
     }
+
+    env.update(
+        forward_prefixed_env([
+            "ECOM_",
+            "METALPRICE_",
+            "OPENWEATHER_",
+        ])
+    )
+
+    return env
 
 
 def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], catalog_path: str) -> dict[str, Any]:

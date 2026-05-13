@@ -39,7 +39,9 @@ spark_ivy/
 Thumbs.db
 .DS_Store
 
-# jars
+# jars and dist
+shared/spark-dist/
+shared/spark-dist/**
 shared/spark-jars/
 shared/spark-jars/**
 

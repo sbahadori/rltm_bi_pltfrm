@@ -1,6 +1,8 @@
 # env
 .env
-.env*
+.env.local
+.env.*.local
+!.env.example
 
 # local runtime data
 minio_data/
@@ -40,9 +42,7 @@ Thumbs.db
 .DS_Store
 
 # jars and dist
-shared/spark-dist/
 shared/spark-dist/**
-shared/spark-jars/
 shared/spark-jars/**
 
 # job runs for dashboard

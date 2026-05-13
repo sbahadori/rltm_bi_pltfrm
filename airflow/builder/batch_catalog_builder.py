@@ -7,17 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from airflow.providers.standard.operators.bash import BashOperator
-from batch.utils.jdbc_connection_registry import get_spark_packages_for_manifest
 from batch.utils.jdbc_manifest_loader import get_enabled_tables, load_jdbc_manifest
 
-def _merge_packages(existing: list[str] | None, extra: list[str] | None) -> list[str]:
-    merged: list[str] = []
-
-    for package in list(existing or []) + list(extra or []):
-        if package not in merged:
-            merged.append(package)
-
-    return merged
 
 def build_airflow_tasks_from_job(
     job: dict[str, Any],
@@ -44,13 +35,8 @@ def build_airflow_tasks_from_job(
     manifest_ref = job["manifest_ref"]
     execution_strategy = job.get("execution_strategy", "one_task_per_manifest")
 
-    jdbc_packages = get_spark_packages_for_manifest(manifest_ref)
-
     base_spark_cfg = dict(job.get("spark", {}))
-    base_spark_cfg["packages"] = _merge_packages(
-        base_spark_cfg.get("packages", []),
-        jdbc_packages,
-    )
+    base_spark_cfg["packages"] = []
 
     tasks: list[BashOperator] = []
 

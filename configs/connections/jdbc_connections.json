@@ -13,9 +13,7 @@
         "user": "ECOM_SQLSERVER_USER",
         "password": "ECOM_SQLSERVER_PASSWORD"
       },
-      "spark_packages": [
-        "com.microsoft.sqlserver:mssql-jdbc:13.4.0.jre11"
-      ],
+      "spark_packages": [],
       "default_options": {
         "fetchsize": "10000",
         "queryTimeout": "120"

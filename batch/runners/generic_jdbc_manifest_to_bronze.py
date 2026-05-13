@@ -18,8 +18,15 @@ from batch.utils.jdbc_connection_registry import build_runtime_connection  # noq
 from batch.utils.jdbc_ingestion_engine import (  # noqa: E402
     add_bronze_metadata,
     build_jdbc_reader,
+    read_max_value,
     write_bronze_table,
 )
+from batch.utils.jdbc_load_state import (  # noqa: E402
+    get_state_path,
+    read_state,
+    write_state,
+)
+
 from batch.utils.jdbc_manifest_loader import (  # noqa: E402
     build_effective_table_config,
     get_enabled_tables,
@@ -53,20 +60,117 @@ def ingest_one_table(
     batch_run_id: str,
 ) -> int:
     table_cfg = build_effective_table_config(manifest, table)
+    load_type = table_cfg.get("load_type", "full")
 
     print(
         f"[JDBC_READ_START] source_id={manifest['source_id']} "
-        f"table_id={table_cfg['table_id']} source_table={table_cfg['source_table']}",
+        f"table_id={table_cfg['table_id']} source_table={table_cfg['source_table']} "
+        f"load_type={load_type}",
         flush=True,
     )
+
+    lower_bound = None
+    upper_bound = None
+    state_path = get_state_path(table_cfg, manifest["source_id"])
+
+    if load_type == "full":
+        table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "overwrite")
+
+    elif load_type == "incremental":
+        watermark = table_cfg.get("watermark") or {}
+        watermark_column = watermark.get("column")
+
+        if not watermark_column:
+            raise ValueError(
+                f"Table '{table_cfg['table_id']}' load_type='incremental' "
+                f"requires watermark.column"
+            )
+
+        state_key = f"watermark::{watermark_column}"
+
+        lower_bound = read_state(
+            spark,
+            state_path=state_path,
+            source_id=manifest["source_id"],
+            table_id=table_cfg["table_id"],
+            state_key=state_key,
+            default_value=watermark.get("initial_value", "1970-01-01T00:00:00"),
+        )
+
+        print(
+            f"[JDBC_INCREMENTAL_STATE] table_id={table_cfg['table_id']} "
+            f"watermark_column={watermark_column} "
+            f"watermark_type={watermark.get('type', 'timestamp')} "
+            f"lower_bound={lower_bound}",
+            flush=True,
+        )
+
+        table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "append")
+
+    elif load_type == "transactional":
+        transactional = table_cfg.get("transactional") or {}
+        tx_column = transactional.get("column")
+
+        if not tx_column:
+            raise ValueError(
+                f"Table '{table_cfg['table_id']}' load_type='transactional' "
+                f"requires transactional.column"
+            )
+
+        state_key = f"transactional::{tx_column}"
+
+        lower_bound = read_state(
+            spark,
+            state_path=state_path,
+            source_id=manifest["source_id"],
+            table_id=table_cfg["table_id"],
+            state_key=state_key,
+            default_value=transactional.get("initial_value", 0),
+        )
+
+        upper_bound = read_max_value(
+            spark,
+            runtime_connection=runtime_connection,
+            table_cfg=table_cfg,
+            column=tx_column,
+        )
+
+        if upper_bound is None or str(upper_bound) == str(lower_bound):
+            print(
+                f"[JDBC_SKIP_NO_NEW_TX] table_id={table_cfg['table_id']} "
+                f"last_value={lower_bound}",
+                flush=True,
+            )
+            return 0
+
+        table_cfg["bronze_mode"] = table_cfg.get("bronze_mode", "append")
+
+    else:
+        raise ValueError(
+            f"Unsupported load_type='{load_type}' for table_id='{table_cfg['table_id']}'"
+        )
 
     df = build_jdbc_reader(
         spark=spark,
         runtime_connection=runtime_connection,
         table_cfg=table_cfg,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
     )
 
-    rows_read = df.count()
+    count_rows = bool(table_cfg.get("count_rows", False))
+
+    if count_rows:
+        rows_read = df.count()
+
+        if rows_read == 0:
+            print(
+                f"[JDBC_SKIP_EMPTY] table_id={table_cfg['table_id']} load_type={load_type}",
+                flush=True,
+            )
+            return 0
+    else:
+        rows_read = -1
 
     bronze_df = add_bronze_metadata(
         df,
@@ -74,19 +178,54 @@ def ingest_one_table(
         table_id=table_cfg["table_id"],
         source_table=table_cfg["source_table"],
         batch_run_id=batch_run_id,
+        load_type=load_type,
         add_row_hash=table_cfg.get("add_row_hash", True),
     )
 
     write_bronze_table(bronze_df, table_cfg)
 
+    if load_type == "incremental":
+        watermark = table_cfg["watermark"]
+        watermark_column = watermark["column"]
+        state_key = f"watermark::{watermark_column}"
+
+        max_value = df.agg({watermark_column: "max"}).collect()[0][0]
+
+        if max_value is not None:
+            write_state(
+                spark,
+                state_path=state_path,
+                source_id=manifest["source_id"],
+                table_id=table_cfg["table_id"],
+                state_key=state_key,
+                state_value=max_value,
+                batch_run_id=batch_run_id,
+            )
+
+    if load_type == "transactional":
+        transactional = table_cfg["transactional"]
+        tx_column = transactional["column"]
+        state_key = f"transactional::{tx_column}"
+
+        write_state(
+            spark,
+            state_path=state_path,
+            source_id=manifest["source_id"],
+            table_id=table_cfg["table_id"],
+            state_key=state_key,
+            state_value=upper_bound,
+            batch_run_id=batch_run_id,
+        )
+
+    records_text = rows_read if rows_read >= 0 else "not_counted"
+
     print(
         f"[JDBC_BRONZE_WRITE_OK] table_id={table_cfg['table_id']} "
-        f"rows={rows_read} target={table_cfg['target_path']}",
+        f"load_type={load_type} rows={records_text} target={table_cfg['target_path']}",
         flush=True,
     )
 
     return rows_read
-
 
 def main():
     args = parse_args()
@@ -119,13 +258,16 @@ def main():
         spark = build_spark()
 
         for table in tables:
-            total_rows += ingest_one_table(
+            rows = ingest_one_table(
                 spark=spark,
                 manifest=manifest,
                 runtime_connection=runtime_connection,
                 table=table,
                 batch_run_id=batch_run_id,
             )
+
+            if rows >= 0:
+                total_rows += rows
 
         ended = time.time()
 

@@ -4,32 +4,39 @@
   "source_type": "jdbc",
   "connection_ref": "ecommerce_sqlserver",
   "enabled": true,
-
   "defaults": {
-    "read_mode": "full",
+    "load_type": "full",
+    "count_rows": false,
     "num_partitions": 1,
     "fetch_size": 10000,
-
     "bronze_format": "delta",
     "bronze_mode": "overwrite",
     "target_path_template": "s3a://lakehouse/bronze/{source_id}/{table_id}",
-
+    "state_path_template": "s3a://lakehouse/_state/jdbc/{source_id}/{table_id}",
+    "watermark": null,
+    "transactional": null,
+    "sql": {},
     "partition_by": [
       "ingest_year",
       "ingest_month",
       "ingest_day"
     ],
-
     "add_ingestion_metadata": true,
     "add_row_hash": false
   },
-
   "tables": [
     {
       "table_id": "brands",
       "enabled": true,
+      "load_type": "full",
+      "bronze_mode": "overwrite",
       "source_table": "dbo.brands",
-      "primary_key": ["post_id"],
+      "primary_key": [
+        "post_id"
+      ],
+      "sql": {
+        "full_ref": "configs/sql/jdbc/ecommerce_sqlserver/brands_full.sql"
+      },
       "columns": [
         "post_id",
         "post_title",
@@ -53,12 +60,23 @@
         "Hour"
       ]
     },
-
     {
       "table_id": "products",
       "enabled": true,
+      "load_type": "incremental",
+      "bronze_mode": "append",
       "source_table": "dbo.products",
-      "primary_key": ["id"],
+      "primary_key": [
+        "id"
+      ],
+      "watermark": {
+        "column": "updated_at",
+        "type": "long",
+        "initial_value": "0"
+      },
+      "sql": {
+        "incremental_ref": "configs/sql/jdbc/ecommerce_sqlserver/products_incremental.sql"
+      },
       "columns": [
         "id",
         "title",

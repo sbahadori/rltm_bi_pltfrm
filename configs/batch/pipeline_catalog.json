@@ -40,6 +40,8 @@
             "bronze"
           ],
           "spec": {
+            "load_type": "event",
+            "strategy": "append_event",
             "source": {
               "base_url": "https://api.open-meteo.com/v1/forecast",
               "method": "GET",
@@ -387,6 +389,8 @@
             "bronze"
           ],
           "spec": {
+            "load_type": "event",
+            "strategy": "append_event",
             "source": {
               "base_url": "https://api.metalpriceapi.com/v1/latest",
               "method": "GET",

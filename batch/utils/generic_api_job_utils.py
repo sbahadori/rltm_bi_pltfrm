@@ -23,7 +23,7 @@ from pyspark.sql.types import (
     StructType,
     TimestampType,
 )
-
+from copy import deepcopy
 
 SUPPORTED_TYPES = {
     "string",
@@ -145,15 +145,29 @@ def to_spark_schema(schema: Any) -> StructType:
         ]
     )
 
-
-def build_runtime_context(job: dict[str, Any]) -> dict[str, Any]:
+def build_runtime_context(
+    job: dict[str, Any],
+    *,
+    pipeline_name: str | None = None,
+) -> dict[str, Any]:
     spec = job["spec"]
 
+    load_type = spec.get("load_type", "event")
+    strategy = spec.get("strategy", "append_event")
+
     return {
+        "pipeline_name": pipeline_name or spec.get("pipeline_name", "unknown_pipeline"),
         "job_name": job["name"],
+        "load_type": load_type,
+        "strategy": strategy,
+        "state": spec.get("state", {}),
+        "state_path_template": spec.get(
+            "state_path_template",
+            "s3a://lakehouse/_state/api/{pipeline_name}/{job_name}",
+        ),
         "source": spec["source"],
         "auth": spec.get("auth", {"type": "none"}),
-        "request": spec.get("request", {}),
+        "request": deepcopy(spec.get("request", {})),
         "response": spec.get(
             "response",
             {
@@ -169,7 +183,82 @@ def build_runtime_context(job: dict[str, Any]) -> dict[str, Any]:
         "runtime_policy": spec.get("runtime_policy", {}),
     }
 
+def replace_template_values(value: Any, template_values: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        result = value
+        for key, replacement in template_values.items():
+            result = result.replace("{" + key + "}", str(replacement))
+        return result
 
+    if isinstance(value, dict):
+        return {
+            k: replace_template_values(v, template_values)
+            for k, v in value.items()
+        }
+
+    if isinstance(value, list):
+        return [replace_template_values(v, template_values) for v in value]
+
+    return value
+
+
+def apply_api_state_to_request(
+    runtime_ctx: dict[str, Any],
+    *,
+    lower_bound: Any | None = None,
+    upper_bound: Any | None = None,
+) -> dict[str, Any]:
+    request_spec = deepcopy(runtime_ctx.get("request", {}))
+
+    template_values = {
+        "lower_bound": lower_bound or "",
+        "upper_bound": upper_bound or "",
+    }
+
+    request_spec = replace_template_values(request_spec, template_values)
+
+    state_cfg = runtime_ctx.get("state") or {}
+    request_injection = state_cfg.get("request_injection") or {}
+
+    if lower_bound is not None and request_injection:
+        location = request_injection.get("location", "query_params")
+        name = request_injection.get("name")
+
+        if not name:
+            raise ValueError("state.request_injection.name is required")
+
+        if location == "query_params":
+            request_spec.setdefault("query_params", {})
+            request_spec["query_params"][name] = str(lower_bound)
+
+        elif location == "headers":
+            request_spec.setdefault("headers", {})
+            request_spec["headers"][name] = str(lower_bound)
+
+        else:
+            raise ValueError(f"Unsupported state.request_injection.location: {location}")
+
+    new_ctx = dict(runtime_ctx)
+    new_ctx["request"] = request_spec
+
+    return new_ctx
+
+
+def extract_state_value_from_payload(
+    payload: dict[str, Any],
+    runtime_ctx: dict[str, Any],
+) -> Any:
+    state_cfg = runtime_ctx.get("state") or {}
+
+    response_path = state_cfg.get("response_path")
+    if response_path:
+        return get_json_path(payload, response_path)
+
+    if state_cfg.get("update_value") == "current_utc":
+        return utc_now_naive().isoformat()
+
+    return None
+    
 def resolve_secret(auth_spec: dict[str, Any]) -> str | None:
     auth_type = auth_spec.get("type", "none")
 
@@ -188,6 +277,81 @@ def resolve_secret(auth_spec: dict[str, Any]) -> str | None:
 
     return value
 
+def replace_template_values(value: Any, template_values: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        result = value
+        for key, replacement in template_values.items():
+            result = result.replace("{" + key + "}", str(replacement))
+        return result
+
+    if isinstance(value, dict):
+        return {
+            k: replace_template_values(v, template_values)
+            for k, v in value.items()
+        }
+
+    if isinstance(value, list):
+        return [replace_template_values(v, template_values) for v in value]
+
+    return value
+
+
+def apply_api_state_to_request(
+    runtime_ctx: dict[str, Any],
+    *,
+    lower_bound: Any | None = None,
+    upper_bound: Any | None = None,
+) -> dict[str, Any]:
+    request_spec = deepcopy(runtime_ctx.get("request", {}))
+
+    template_values = {
+        "lower_bound": lower_bound or "",
+        "upper_bound": upper_bound or "",
+    }
+
+    request_spec = replace_template_values(request_spec, template_values)
+
+    state_cfg = runtime_ctx.get("state") or {}
+    request_injection = state_cfg.get("request_injection") or {}
+
+    if lower_bound is not None and request_injection:
+        location = request_injection.get("location", "query_params")
+        name = request_injection.get("name")
+
+        if not name:
+            raise ValueError("state.request_injection.name is required")
+
+        if location == "query_params":
+            request_spec.setdefault("query_params", {})
+            request_spec["query_params"][name] = str(lower_bound)
+
+        elif location == "headers":
+            request_spec.setdefault("headers", {})
+            request_spec["headers"][name] = str(lower_bound)
+
+        else:
+            raise ValueError(f"Unsupported state.request_injection.location: {location}")
+
+    new_ctx = dict(runtime_ctx)
+    new_ctx["request"] = request_spec
+
+    return new_ctx
+
+
+def extract_state_value_from_payload(
+    payload: dict[str, Any],
+    runtime_ctx: dict[str, Any],
+) -> Any:
+    state_cfg = runtime_ctx.get("state") or {}
+
+    response_path = state_cfg.get("response_path")
+    if response_path:
+        return get_json_path(payload, response_path)
+
+    if state_cfg.get("update_value") == "current_utc":
+        return utc_now_naive().isoformat()
+
+    return None
 
 def build_request_parts(
     runtime_ctx: dict[str, Any],
@@ -545,6 +709,11 @@ def write_bronze_dataframe(df: DataFrame, bronze_write_spec: dict[str, Any]) -> 
     df = add_ingest_partitions(df, partition_by)
 
     writer = df.write.format("delta").mode(mode)
+
+    if mode == "overwrite":
+        writer = writer.option("overwriteSchema", "true")
+    else:
+        writer = writer.option("mergeSchema", "true")
 
     if partition_by:
         writer = writer.partitionBy(*partition_by)

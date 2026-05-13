@@ -202,17 +202,6 @@ def _build_runner_job_spec(job: dict[str, Any], pipeline_spec: dict[str, Any], c
             "spark": spec.get("spark", {}),
         }
     
-    if job_type == "generic_jdbc_to_bronze":
-        return {
-            "entrypoint": "batch/runners/generic_jdbc_to_bronze.py",
-            "args": {
-                "catalog_path": catalog_path,
-                "pipeline_name": pipeline_spec["name"],
-                "job_name": job["name"],
-            },
-            "spark": spec.get("spark", {}),
-        }
-
     raise ValueError(f"Unsupported job_type: {job_type}")
 
 

@@ -50,10 +50,3 @@ Download-IfMissing `
   -Uri "https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar" `
   -OutFile "shared\spark-jars\delta-storage-3.2.0.jar"
 
-Download-IfMissing `
-  -Uri "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar" `
-  -OutFile "shared\spark-jars\postgresql-42.7.4.jar"
-
-Download-IfMissing `
-  -Uri "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/9.0.0/mysql-connector-j-9.0.0.jar" `
-  -OutFile "shared\spark-jars\mysql-connector-j-9.0.0.jar"

@@ -6,11 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_SPARK_PACKAGES = [
-    "io.delta:delta-spark_2.12:3.2.0",
-    # "org.apache.hadoop:hadoop-aws:3.3.4",
-    # "com.amazonaws:aws-java-sdk-bundle:1.12.262",
-]
+DEFAULT_SPARK_PACKAGES: list[str] = []
 
 DEFAULT_SPARK_CONF = {
     "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
@@ -54,11 +50,24 @@ def build_cli_args(args: dict[str, Any]) -> list[str]:
     return cli_args
 
 
+def ivy_packages_enabled() -> bool:
+    return os.getenv("SPARK_ENABLE_IVY_PACKAGES", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
+
+
 def merge_spark_packages(config_packages: list[str] | None) -> list[str]:
+    if not ivy_packages_enabled():
+        return []
+
     merged: list[str] = []
     for package in DEFAULT_SPARK_PACKAGES + list(config_packages or []):
         if package not in merged:
             merged.append(package)
+
     return merged
 
 
@@ -76,6 +85,7 @@ def build_spark_submit_command(
 
     entrypoint = Path(job_spec["entrypoint"])
     entrypoint_path = entrypoint if entrypoint.is_absolute() else (repo_root_path / entrypoint).resolve()
+
     if not entrypoint_path.exists():
         raise FileNotFoundError(f"Spark entrypoint not found: {entrypoint_path}")
 

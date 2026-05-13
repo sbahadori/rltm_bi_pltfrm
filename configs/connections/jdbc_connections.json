@@ -13,9 +13,43 @@
         "user": "ECOM_SQLSERVER_USER",
         "password": "ECOM_SQLSERVER_PASSWORD"
       },
-      "spark_packages": [
-        "com.microsoft.sqlserver:mssql-jdbc:13.4.0.jre11"
-      ],
+      "spark_packages": [],
+      "default_options": {
+        "fetchsize": "10000",
+        "queryTimeout": "120"
+      }
+    },
+    "ecommerce_postgres": {
+      "type": "postgres",
+      "driver": "org.postgresql.Driver",
+      "jdbc_url_template": "jdbc:postgresql://{host}:{port}/{database}",
+      "default_port": 5432,
+      "env": {
+        "host": "ECOM_POSTGRES_HOST",
+        "port": "ECOM_POSTGRES_PORT",
+        "database": "ECOM_POSTGRES_DB",
+        "user": "ECOM_POSTGRES_USER",
+        "password": "ECOM_POSTGRES_PASSWORD"
+      },
+      "spark_packages": [],
+      "default_options": {
+        "fetchsize": "10000",
+        "queryTimeout": "120"
+      }
+    },
+    "ecommerce_mysql": {
+      "type": "mysql",
+      "driver": "com.mysql.cj.jdbc.Driver",
+      "jdbc_url_template": "jdbc:mysql://{host}:{port}/{database}?useSSL=false&allowPublicKeyRetrieval=true",
+      "default_port": 3306,
+      "env": {
+        "host": "ECOM_MYSQL_HOST",
+        "port": "ECOM_MYSQL_PORT",
+        "database": "ECOM_MYSQL_DB",
+        "user": "ECOM_MYSQL_USER",
+        "password": "ECOM_MYSQL_PASSWORD"
+      },
+      "spark_packages": [],
       "default_options": {
         "fetchsize": "10000",
         "queryTimeout": "120"

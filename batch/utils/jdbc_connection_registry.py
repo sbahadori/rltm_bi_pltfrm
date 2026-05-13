@@ -34,12 +34,6 @@ def get_jdbc_connection(connection_ref: str) -> dict[str, Any]:
     return connections[connection_ref]
 
 
-def get_spark_packages_for_manifest(manifest_ref: str) -> list[str]:
-    manifest = load_jdbc_manifest(manifest_ref)
-    connection = get_jdbc_connection(manifest["connection_ref"])
-    return connection.get("spark_packages", [])
-
-
 def build_runtime_connection(manifest: dict[str, Any]) -> dict[str, Any]:
     connection = get_jdbc_connection(manifest["connection_ref"])
     env_cfg = connection["env"]

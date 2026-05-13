@@ -1,21 +1,27 @@
 services:
   web:
+    image: ${RLTM_WEB_IMAGE}
     build:
       context: ${PROJECT_ROOT}/apps/web
       dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${RLTM_PYTHON_BASE_IMAGE}
     container_name: web
     ports:
       - "8091:8080"
     environment:
-      COLLECTOR_URL: http://collector:8000/collect
-      PUBLIC_COLLECTOR_URL: http://localhost:8000/collect
+      COLLECTOR_URL: ${WEB_COLLECTOR_URL}
+      PUBLIC_COLLECTOR_URL: ${WEB_PUBLIC_COLLECTOR_URL}
     networks:
       - rltm_shared_net
 
   dashboard-api:
+    image: ${RLTM_DASHBOARD_API_IMAGE}
     build:
       context: ${PROJECT_ROOT}
       dockerfile: docker/dashboard/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${RLTM_PYTHON_BASE_IMAGE}
     container_name: dashboard-api
     restart: unless-stopped
     env_file:
@@ -45,7 +51,7 @@ services:
       start_period: 10s
     networks:
       - rltm_shared_net
-    
+
   dashboard:
     image: nginx:alpine
     container_name: dashboard
@@ -70,9 +76,3 @@ services:
 networks:
   rltm_shared_net:
     external: true
-
-
-# داشبورد روی:
-# http://localhost:9090
-# فروشگاه دمو روی:
-# http://localhost:8091

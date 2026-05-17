@@ -15,8 +15,8 @@
       },
       "spark_packages": [],
       "default_options": {
-        "fetchsize": "10000",
-        "queryTimeout": "120"
+        "fetchsize": "5000",
+        "queryTimeout": "0"
       }
     },
     "ecommerce_postgres": {

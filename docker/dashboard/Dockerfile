@@ -5,6 +5,6 @@ WORKDIR /app
 
 COPY apps/dashboard/app.py .
 
-RUN pip install --no-cache-dir  fastapi==0.115.0  uvicorn[standard]==0.30.6 --quiet
+RUN pip install --no-cache-dir  fastapi==0.115.0  uvicorn[standard]==0.30.6 psycopg2-binary==2.9.9 --quiet
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]

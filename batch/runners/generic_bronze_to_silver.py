@@ -57,13 +57,19 @@ def parse_args():
 def build_spark() -> SparkSession:
     return create_spark("generic_bronze_to_silver")
 
+from shared.control.job_spec_store import load_current_job_spec
+
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
-    job = get_job_by_name(catalog_path, pipeline_name, job_name)
-    if job["job_type"] != "generic_bronze_to_silver":
-        raise ValueError(
-            f"Job '{job_name}' is not generic_bronze_to_silver; got '{job['job_type']}'"
-        )
-    return job["spec"]
+    try:
+        return load_current_job_spec()
+    except Exception:
+        job = get_job_by_name(catalog_path, pipeline_name, job_name)
+        if job["job_type"] != "generic_bronze_to_silver":
+            raise ValueError(
+                f"Job '{job_name}' is not generic_bronze_to_silver; got '{job['job_type']}'"
+            )
+        return job["spec"]
+    
 
 
 def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
@@ -204,140 +210,94 @@ def merge_to_target(
     )
 
 
+from shared.runtime.control_run_context import build_runtime_context, control_run
+
+
 def main():
     args = parse_args()
 
-    run_id = new_run_id(f"{args.pipeline_name}__{args.job_name}")
-    started = time.time()
-    spark = None
-
-    append_job_event(
-        event_type="batch_started",
-        run_id=run_id,
-        type="batch",
-        pipeline=args.pipeline_name,
-        job=args.job_name,
-        job_id=f"{args.pipeline_name}__{args.job_name}",
-        status="running",
-        started_at_epoch=int(started),
+    context = build_runtime_context(
+        default_pipeline_name=args.pipeline_name,
+        default_job_name=args.job_name,
+        default_job_code=f"silver.{args.pipeline_name}.{args.job_name}",
+        default_base_job_name=args.job_name,
+        default_layer="silver",
+        default_runner="generic_bronze_to_silver",
     )
 
-    try:
-        spark = build_spark()
+    spark = None
 
-        spec = load_job_spec(
-            args.catalog_path,
-            args.pipeline_name,
-            args.job_name,
-        )
+    with control_run(context=context) as run_ctx:
+        try:
+            spark = build_spark()
 
-        source_path = spec["source"]["path"]
-        target_path = spec["target"]["path"]
-        merge_keys = spec["target"].get("merge_keys", [])
-
-        bronze_df = spark.read.format(
-            spec["source"].get("format", "delta")
-        ).load(source_path)
-
-        silver_df = (
-            bronze_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
-            .transform(lambda df: apply_select_map(df, spec["select_map"]))
-            .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
-            .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
-            .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
-        )
-
-        if silver_df.rdd.isEmpty():
-            ended = time.time()
-            append_job_event(
-                event_type="batch_succeeded",
-                run_id=run_id,
-                type="batch",
-                pipeline=args.pipeline_name,
-                job=args.job_name,
-                job_id=f"{args.pipeline_name}__{args.job_name}",
-                status="success",
-                started_at_epoch=int(started),
-                ended_at_epoch=int(ended),
-                duration_seconds=round(ended - started, 3),
-                target_path=target_path,
-                records_written=0,
-                message="No rows to write to Silver.",
-            )
-            print("No rows to write to Silver.")
-            return
-
-        output_count = silver_df.count()
-
-        if spec["target"].get("mode", "merge") == "merge":
-            if not merge_keys:
-                raise ValueError("Target mode 'merge' requires target.merge_keys")
-
-            partition_by = spec["target"].get("partition_by", [])
-
-            merge_to_target(
-                spark=spark,
-                target_path=target_path,
-                df=silver_df,
-                merge_keys=merge_keys,
-                partition_by=partition_by,
-            )
-        else:
-            writer = silver_df.write.format(
-                spec["target"].get("format", "delta")
-            ).mode(
-                spec["target"].get("mode", "append")
+            spec = load_job_spec(
+                args.catalog_path,
+                args.pipeline_name,
+                args.job_name,
             )
 
-            partition_by = spec["target"].get("partition_by", [])
+            source_path = spec["source"]["path"]
+            target_path = spec["target"]["path"]
+            merge_keys = spec["target"].get("merge_keys", [])
 
-            if partition_by:
-                writer = writer.partitionBy(*partition_by)
+            run_ctx["target_path"] = target_path
 
-            writer.save(target_path)
+            bronze_df = spark.read.format(
+                spec["source"].get("format", "delta")
+            ).load(source_path)
 
-        ended = time.time()
+            silver_df = (
+                bronze_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
+                .transform(lambda df: apply_select_map(df, spec["select_map"]))
+                .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
+                .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
+                .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
+            )
 
-        append_job_event(
-            event_type="batch_succeeded",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="success",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(ended),
-            duration_seconds=round(ended - started, 3),
-            target_path=target_path,
-            records_written=output_count,
-        )
+            if silver_df.rdd.isEmpty():
+                run_ctx["records_written"] = 0
+                print("No rows to write to Silver.")
+                return
 
-        print(f"Wrote Silver rows to {target_path}")
+            output_count = silver_df.count()
 
-    except Exception as exc:
-        ended = time.time()
+            if spec["target"].get("mode", "merge") == "merge":
+                if not merge_keys:
+                    raise ValueError("Target mode 'merge' requires target.merge_keys")
 
-        append_job_event(
-            event_type="batch_failed",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="failed",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(ended),
-            duration_seconds=round(ended - started, 3),
-            error=str(exc),
-            traceback=exception_to_text(exc),
-        )
+                partition_by = spec["target"].get("partition_by", [])
 
-        raise
+                merge_to_target(
+                    spark=spark,
+                    target_path=target_path,
+                    df=silver_df,
+                    merge_keys=merge_keys,
+                    partition_by=partition_by,
+                )
+            else:
+                writer = silver_df.write.format(
+                    spec["target"].get("format", "delta")
+                ).mode(
+                    spec["target"].get("mode", "append")
+                )
 
-    finally:
-        if spark is not None:
-            spark.stop()
+                partition_by = spec["target"].get("partition_by", [])
+
+                if partition_by:
+                    writer = writer.partitionBy(*partition_by)
+
+                writer.save(target_path)
+
+            run_ctx["records_written"] = output_count
+            run_ctx["target_path"] = target_path
+
+            print(f"Wrote Silver rows to {target_path}")
+
+        finally:
+            if spark is not None:
+                spark.stop()
+
 
 if __name__ == "__main__":
     main()

@@ -5,9 +5,15 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from uuid import UUID
+
 from pathlib import Path
 from typing import Any
+import psycopg2
+import psycopg2.extras
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,6 +87,122 @@ JOB_RUN_REGISTRY_FILE = Path(
 # -----------------------------------------------------------------------------
 # Generic helpers
 # -----------------------------------------------------------------------------
+
+def _latest_control_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
+    source_id = job.get("source_id")
+    table_id = job.get("table_id")
+    pipeline_name = job.get("pipeline")
+    job_name = job.get("name")
+
+    job_code = (
+        job.get("job_code")
+        or job.get("job_key")
+        or (
+            f"bronze.{source_id}.{table_id}"
+            if source_id and table_id
+            else None
+        )
+    )
+
+    rows = query_control_db(
+        """
+        SELECT
+            run_id::text AS run_id,
+            job_id,
+            job_code,
+            job_name,
+            pipeline_name,
+            base_job_name,
+            source_id,
+            table_id,
+            entity_name,
+            layer,
+            runner,
+            airflow_dag_id,
+            airflow_dag_run_id,
+            airflow_task_id,
+            airflow_try_number,
+            status,
+            status_reason,
+            error_message,
+            effective_start_date,
+            effective_end_date,
+            started_at,
+            ended_at,
+            duration_seconds,
+            records_read,
+            records_written,
+            source_path,
+            target_path,
+            created_at
+        FROM runtime.job_run
+        WHERE
+            job_code = %s
+            OR (
+                source_id = %s
+                AND table_id = %s
+            )
+            OR (
+                pipeline_name = %s
+                AND job_name = %s
+            )
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (
+            job_code,
+            source_id,
+            table_id,
+            pipeline_name,
+            job_name,
+        ),
+    )
+
+    return rows[0] if rows else None
+
+
+def control_db_config():
+    return {
+        "host": os.getenv("CONTROL_DB_HOST", "postgres-warehouse"),
+        "port": int(os.getenv("CONTROL_DB_PORT", "5432")),
+        "dbname": os.getenv("CONTROL_DB_NAME", os.getenv("POSTGRES_DB", "warehouse")),
+        "user": os.getenv("CONTROL_DB_USER", os.getenv("POSTGRES_USER", "warehouse")),
+        "password": os.getenv("CONTROL_DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "warehouse")),
+        "sslmode": os.getenv("CONTROL_DB_SSLMODE", "disable"),
+    }
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
+    if isinstance(value, UUID):
+        return str(value)
+
+    if isinstance(value, Decimal):
+        return float(value)
+
+    return value
+
+
+def query_control_db(sql: str, params=None):
+    conn = psycopg2.connect(**control_db_config())
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = [dict(row) for row in cur.fetchall()]
+            return _json_safe(rows)
+    finally:
+        conn.close()
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -455,91 +577,28 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
             "runtime_available": False,
         }
 
-        latest_registry = _latest_registry_run_for_job(job)
+        latest_control = _latest_control_run_for_job(job)
 
-        if job.get("type") == "stream":
-            unit_match = _find_stream_unit_for_job(job, stream_status)
-
-            if unit_match:
-                unit = unit_match.get("unit") if isinstance(unit_match, dict) else None
-                unit_name = unit_match.get("unitName") or unit_match.get("unit_name") if isinstance(unit_match, dict) else None
-
-                if unit is None and isinstance(unit_match, dict):
-                    unit = unit_match
-                heartbeat = unit.get("heartbeat", {}) if unit else {}
-                runtime_job.update(
-                    {
-                        "current_status": unit.get("computed_status", "unknown") if unit else "unknown",
-                        "latest_run_state": unit.get("computed_status", "unknown") if unit else "unknown",
-                        "status_reason": unit.get("status_reason") if unit else "No stream unit found",
-                        "is_healthy": unit.get("is_healthy", False) if unit else False,
-                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds") if unit else None,
-                        "runtime_unit_name": unit_name or unit.get("unit_name") if unit else None,
-                        "runtime_source": "stream_supervisor",
-                        "runtime_available": True,
-                        "returncode": unit.get("returncode") if unit else None,
-                        "retries": unit.get("retries") if unit else None,
-                        "max_retries": unit.get("max_retries") if unit else None,
-                        
-                        "heartbeat_status": heartbeat.get("status"),
-                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds") if unit else None,
-
-                        "query_started": heartbeat.get("query_started"),
-                        "topic": heartbeat.get("topic"),
-
-                        "last_batch_id": heartbeat.get("last_batch_id"),
-                        "last_batch_ts_epoch": heartbeat.get("last_batch_ts_epoch"),
-                        "last_batch_ts_iso": heartbeat.get("last_batch_ts_iso"),
-
-                        "last_input_rows": heartbeat.get("last_input_rows"),
-                        "last_batch_rows": heartbeat.get("last_batch_rows"),
-                        "last_written_rows": heartbeat.get("last_written_rows"),
-
-                        "last_valid_rows": heartbeat.get("last_valid_rows"),
-                        "last_invalid_rows": heartbeat.get("last_invalid_rows"),
-                        "last_written_valid_rows": heartbeat.get("last_written_valid_rows"),
-                        "last_written_invalid_rows": heartbeat.get("last_written_invalid_rows"),
-
-                        "last_write_ok": heartbeat.get("last_write_ok"),
-                        "last_message": heartbeat.get("last_message"),
-                        "last_error": heartbeat.get("last_error"),
-
-                        "stream_target_path": (
-                            heartbeat.get("silver_path")
-                            or heartbeat.get("bronze_path")
-                            or job.get("target_path")
-                        ),
-                        "quarantine_path": heartbeat.get("quarantine_path") or job.get("quarantine_path"),
-                    }
-                )
-
-            elif latest_registry:
-                runtime_job.update(
-                    {
-                        "current_status": latest_registry.get("state", "unknown"),
-                        "latest_run_state": latest_registry.get("state"),
-                        "latest_run_id": latest_registry.get("run_id"),
-                        "started_at": latest_registry.get("started_at"),
-                        "ended_at": latest_registry.get("ended_at"),
-                        "duration_seconds": latest_registry.get("duration_seconds"),
-                        "status_reason": latest_registry.get("error") or latest_registry.get("message"),
-                        "runtime_source": "job_run_registry",
-                        "runtime_available": True,
-                    }
-                )
-
-            else:
-                runtime_job.update(
-                    {
-                        "current_status": "unknown",
-                        "latest_run_state": "unknown",
-                        "status_reason": "No matching stream supervisor unit or registry run found",
-                        "runtime_source": "stream_supervisor",
-                        "runtime_available": bool(stream_status.get("available")),
-                    }
-                )
-
-        elif job.get("type") == "batch":
+        if latest_control:
+            runtime_job.update(
+                {
+                    "current_status": latest_control.get("status", "unknown"),
+                    "latest_run_state": latest_control.get("status"),
+                    "latest_run_id": str(latest_control.get("run_id")),
+                    "platform_run_id": str(latest_control.get("run_id")),
+                    "airflow_dag_run_id": latest_control.get("airflow_dag_run_id"),
+                    "airflow_task_id": latest_control.get("airflow_task_id"),
+                    "started_at": latest_control.get("started_at"),
+                    "ended_at": latest_control.get("ended_at"),
+                    "duration_seconds": latest_control.get("duration_seconds"),
+                    "records_written": latest_control.get("records_written"),
+                    "target_path": latest_control.get("target_path") or job.get("target_path"),
+                    "status_reason": latest_control.get("status_reason") or latest_control.get("error_message"),
+                    "runtime_source": "control_db",
+                    "runtime_available": True,
+                }
+            )
+        else:
             latest_registry = _latest_registry_run_for_job(job)
 
             if latest_registry:
@@ -557,7 +616,6 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
             else:
-                # Fallback to Airflow if registry has no event for this job.
                 latest_airflow = _latest_task_run_for_job(
                     dag_id=job.get("pipeline", ""),
                     task_id=job.get("name", ""),
@@ -632,6 +690,9 @@ def _build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
 
                     task_id = f"{job_name}__{table_id}"
                     target_path = _manifest_table_target_path(manifest, table)
+                    job_code = f"bronze.{source_id}.{table_id}"
+                    job_key = job_code
+                    entity_name = f"{source_id}.{table_id}"
 
                     jobs.append(
                         {
@@ -641,6 +702,10 @@ def _build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
                             "type": "batch",
                             "job_type": job_type,
                             "runner": job_type,
+                            "job_code": job_code,
+                            "job_key": job_key,
+                            "entity_name": entity_name,
+                            "layer": "bronze",
                             "source_type": job.get("source_type", "jdbc"),
                             "source_url": table.get("source_table", ""),
                             "source_id": source_id,
@@ -1479,11 +1544,11 @@ async def get_stream_runtime_status(raw: bool = Query(default=False)) -> JSONRes
 
 @app.get("/api/runtime/jobs")
 async def get_runtime_jobs() -> JSONResponse:
-    bundle = _load_config_bundle()
-    runtime = _enrich_runtime_jobs(bundle["jobs"])
+    try:
+        bundle = _load_config_bundle()
+        runtime = _enrich_runtime_jobs(bundle["jobs"])
 
-    return JSONResponse(
-        {
+        payload = {
             "jobs": runtime["jobs"],
             "stream_status": runtime["stream_status"],
             "meta": {
@@ -1493,7 +1558,17 @@ async def get_runtime_jobs() -> JSONResponse:
                 "stream_registry_path": str(STREAM_REGISTRY_PATH),
             },
         }
-    )
+
+        return JSONResponse(_json_safe(payload))
+
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "error": "failed_to_load_runtime_jobs",
+                "message": str(exc),
+            },
+            status_code=500,
+        )
 
 @app.get("/api/runtime/runs/{job_id}")
 async def get_runtime_runs(
@@ -1627,3 +1702,146 @@ async def get_runtime_logs(
         f"Unsupported or unknown log kind for job_id={job_id}: {effective_kind}",
         status_code=400,
     )
+
+@app.get("/api/control/jobs")
+def control_jobs():
+    return {
+        "items": query_control_db(
+            """
+            SELECT
+                j.job_id,
+                j.job_key,
+                j.job_code,
+                j.pipeline_name,
+                j.job_name,
+                j.base_job_name,
+                j.job_type,
+                j.runner,
+                j.source_id,
+                j.table_id,
+                j.entity_name,
+                j.target_path,
+                j.is_active,
+                j.updated_at
+            FROM meta.job j
+            ORDER BY j.pipeline_name, j.job_name
+            """
+        )
+    }
+
+
+@app.get("/api/runtime/job-runs")
+def runtime_job_runs(limit: int = 50):
+    return {
+        "items": query_control_db(
+            """
+            SELECT
+                run_id::text AS run_id,
+                job_id,
+                NULL::text AS job_key,
+                job_code,
+                pipeline_name,
+                job_name,
+                base_job_name,
+                source_id,
+                table_id,
+                entity_name,
+                layer,
+                runner,
+                airflow_dag_id,
+                airflow_dag_run_id,
+                airflow_task_id,
+                airflow_try_number,
+                status,
+                status_reason,
+                error_message,
+                effective_start_date,
+                effective_end_date,
+                started_at,
+                ended_at,
+                duration_seconds,
+                records_read,
+                records_written,
+                source_path,
+                target_path,
+                created_at
+            FROM runtime.job_run
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    }
+
+
+@app.get("/api/runtime/watermarks")
+def runtime_watermarks():
+    return {
+        "items": query_control_db(
+            """
+            SELECT
+                watermark_id,
+                job_id,
+                job_key,
+                source_id,
+                table_id,
+                watermark_column,
+                last_successful_value,
+                current_value,
+                last_run_id,
+                updated_at
+            FROM runtime.watermark_state
+            ORDER BY updated_at DESC
+            """
+        )
+    }
+
+
+@app.get("/api/quality/results")
+def quality_results(limit: int = 100):
+    return {
+        "items": query_control_db(
+            """
+            SELECT
+                run_id,
+                job_id,
+                result_id,
+                job_key,
+                dataset_key,
+                status,
+                observed_value,
+                expected_value,
+                details,
+                created_at
+            FROM dq.quality_result
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    }
+
+
+@app.get("/api/lineage/datasets")
+def dataset_lineage(limit: int = 100):
+    return {
+        "items": query_control_db(
+            """
+            SELECT
+                lineage_id,
+                run_id,
+                job_id,
+                job_key,
+                source_dataset_key,
+                target_dataset_key,
+                transformation_type,
+                transformation_ref,
+                details,
+                created_at
+            FROM lineage.dataset_lineage
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    }

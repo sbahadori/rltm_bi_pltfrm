@@ -32,6 +32,113 @@ from shared.runtime.job_run_registry import (
     new_run_id,
 )
 
+from __future__ import annotations
+
+from typing import Any
+
+from shared.control.postgres import fetch_one
+
+from shared.control.job_spec_store import load_current_job_spec
+from shared.runtime.control_run_context import build_runtime_context, control_run
+
+
+def load_job_metadata_by_code(job_code: str) -> dict[str, Any]:
+    row = fetch_one(
+        """
+        SELECT
+            job_id,
+            job_key,
+            job_code,
+            pipeline_name,
+            job_name,
+            base_job_name,
+            job_type,
+            source_type,
+            runner,
+            layer,
+            source_id,
+            table_id,
+            entity_name,
+            manifest_ref,
+            target_path,
+            config,
+            runtime_policy,
+            is_active
+        FROM meta.job
+        WHERE job_code = %s
+          AND COALESCE(is_active, TRUE) = TRUE
+        """,
+        (job_code,),
+    )
+
+    if not row:
+        raise ValueError(f"Active job_code not found in meta.job: {job_code}")
+
+    return row
+
+
+def load_job_metadata_by_key(job_key: str) -> dict[str, Any]:
+    row = fetch_one(
+        """
+        SELECT
+            job_id,
+            job_key,
+            job_code,
+            pipeline_name,
+            job_name,
+            base_job_name,
+            job_type,
+            source_type,
+            runner,
+            layer,
+            source_id,
+            table_id,
+            entity_name,
+            manifest_ref,
+            target_path,
+            config,
+            runtime_policy,
+            is_active
+        FROM meta.job
+        WHERE job_key = %s
+          AND COALESCE(is_active, TRUE) = TRUE
+        """,
+        (job_key,),
+    )
+
+    if not row:
+        raise ValueError(f"Active job_key not found in meta.job: {job_key}")
+
+    return row
+
+
+def load_current_job_metadata() -> dict[str, Any]:
+    import os
+
+    job_code = os.getenv("CONTROL_JOB_CODE")
+    job_key = os.getenv("CONTROL_JOB_KEY")
+
+    if job_code:
+        return load_job_metadata_by_code(job_code)
+
+    if job_key:
+        return load_job_metadata_by_key(job_key)
+
+    raise ValueError("Neither CONTROL_JOB_CODE nor CONTROL_JOB_KEY is set.")
+
+
+def load_current_job_spec() -> dict[str, Any]:
+    meta = load_current_job_metadata()
+    config = meta.get("config") or {}
+
+    if not isinstance(config, dict):
+        raise ValueError(
+            f"meta.job.config must be JSON object for job_code={meta.get('job_code')}"
+        )
+
+    return config
+
+
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
     if str(repo_root) not in sys.path:
@@ -55,12 +162,15 @@ def build_spark() -> SparkSession:
     return create_spark("generic_silver_to_gold")
 
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
-    job = get_job_by_name(catalog_path, pipeline_name, job_name)
-    if job["job_type"] != "generic_silver_to_gold":
-        raise ValueError(
-            f"Job '{job_name}' is not generic_silver_to_gold; got '{job['job_type']}'"
-        )
-    return job["spec"]
+    try:
+        return load_current_job_spec()
+    except Exception:
+        job = get_job_by_name(catalog_path, pipeline_name, job_name)
+        if job["job_type"] != "generic_silver_to_gold":
+            raise ValueError(
+                f"Job '{job_name}' is not generic_silver_to_gold; got '{job['job_type']}'"
+            )
+        return job["spec"]
 
 
 def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
@@ -196,104 +306,81 @@ def merge_to_target(
 
 def main():
     args = parse_args()
-    run_id = new_run_id(f"{args.pipeline_name}__{args.job_name}")
-    started = time.time()
 
-    append_job_event(
-        event_type="batch_started",
-        run_id=run_id,
-        type="batch",
-        pipeline=args.pipeline_name,
-        job=args.job_name,
-        job_id=f"{args.pipeline_name}__{args.job_name}",
-        status="running",
+    context = build_runtime_context(
+        default_pipeline_name=args.pipeline_name,
+        default_job_name=args.job_name,
+        default_job_code=f"gold.{args.pipeline_name}.{args.job_name}",
+        default_base_job_name=args.job_name,
+        default_layer="gold",
+        default_runner="generic_silver_to_gold",
     )
 
-    spark = build_spark()
+    spark = None
 
-    try:
-        spec = load_job_spec(args.catalog_path, args.pipeline_name, args.job_name)
+    with control_run(context=context) as run_ctx:
+        try:
+            spark = build_spark()
 
-        source_path = spec["source"]["path"]
-        target_path = spec["target"]["path"]
-        merge_keys = spec["target"].get("merge_keys", [])
+            spec = load_job_spec(args.catalog_path, args.pipeline_name, args.job_name)
 
-        bronze_df = spark.read.format(spec["source"].get("format", "delta")).load(source_path)
+            source_path = spec["source"]["path"]
+            target_path = spec["target"]["path"]
+            merge_keys = spec["target"].get("merge_keys", [])
 
-        silver_df = (
-            bronze_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
-                     .transform(lambda df: apply_select_map(df, spec["select_map"]))
-                     .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
-                     .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
-                     .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
-        )
+            run_ctx["target_path"] = target_path
 
-        if silver_df.rdd.isEmpty():
-            print("No rows to write to Silver.")
-            return
+            silver_input_df = spark.read.format(
+                spec["source"].get("format", "delta")
+            ).load(source_path)
 
-        target_mode = spec["target"].get("mode", "merge")
-        target_format = spec["target"].get("format", "delta")
-        partition_by = spec["target"].get("partition_by", [])
-
-        if target_mode == "merge":
-            if not merge_keys:
-                raise ValueError("Target mode 'merge' requires target.merge_keys")
-
-            merge_to_target(
-                spark=spark,
-                target_path=target_path,
-                df=silver_df,
-                merge_keys=merge_keys,
-                partition_by=partition_by,
+            gold_df = (
+                silver_input_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
+                .transform(lambda df: apply_select_map(df, spec["select_map"]))
+                .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
+                .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
+                .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
             )
 
-        else:
-            writer = (
-                silver_df.write
-                .format(target_format)
-                .mode(target_mode)
-            )
+            if gold_df.rdd.isEmpty():
+                run_ctx["records_written"] = 0
+                print("No rows to write to Gold.")
+                return
 
-            if partition_by:
-                writer = writer.partitionBy(*partition_by)
+            output_count = gold_df.count()
 
-            writer.save(target_path)
+            target_mode = spec["target"].get("mode", "merge")
+            target_format = spec["target"].get("format", "delta")
+            partition_by = spec["target"].get("partition_by", [])
 
-        append_job_event(
-            event_type="batch_succeeded",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="success",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(time.time()),
-            duration_seconds=round(time.time() - started, 3),
-        )
+            if target_mode == "merge":
+                if not merge_keys:
+                    raise ValueError("Target mode 'merge' requires target.merge_keys")
 
-        print(f"Wrote Gold rows to {target_path}")
+                merge_to_target(
+                    spark=spark,
+                    target_path=target_path,
+                    df=gold_df,
+                    merge_keys=merge_keys,
+                    partition_by=partition_by,
+                )
+            else:
+                writer = gold_df.write.format(target_format).mode(target_mode)
 
-    except Exception as exc:
-        append_job_event(
-            event_type="batch_failed",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="failed",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(time.time()),
-            duration_seconds=round(time.time() - started, 3),
-            error=str(exc),
-            traceback=exception_to_text(exc),
-        )
-        raise
-  
-    finally:
-        spark.stop()
+                if partition_by:
+                    writer = writer.partitionBy(*partition_by)
+
+                writer.save(target_path)
+
+            run_ctx["records_written"] = output_count
+            run_ctx["target_path"] = target_path
+
+            print(f"Wrote Gold rows to {target_path}")
+
+        finally:
+            if spark is not None:
+                spark.stop()
+                
 
 if __name__ == "__main__":
     main()

@@ -5,11 +5,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
-
 from pathlib import Path
 from typing import Any
 import psycopg2
@@ -104,51 +102,8 @@ def _latest_control_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
         )
     )
 
-    rows = query_control_db(
-        """
-        SELECT
-            run_id::text AS run_id,
-            job_id,
-            job_code,
-            job_name,
-            pipeline_name,
-            base_job_name,
-            source_id,
-            table_id,
-            entity_name,
-            layer,
-            runner,
-            airflow_dag_id,
-            airflow_dag_run_id,
-            airflow_task_id,
-            airflow_try_number,
-            status,
-            status_reason,
-            error_message,
-            effective_start_date,
-            effective_end_date,
-            started_at,
-            ended_at,
-            duration_seconds,
-            records_read,
-            records_written,
-            source_path,
-            target_path,
-            created_at
-        FROM runtime.job_run
-        WHERE
-            job_code = %s
-            OR (
-                source_id = %s
-                AND table_id = %s
-            )
-            OR (
-                pipeline_name = %s
-                AND job_name = %s
-            )
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
+    row = call_usp_one(
+        "usp_get_latest_runtime_job_run",
         (
             job_code,
             source_id,
@@ -158,7 +113,8 @@ def _latest_control_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
         ),
     )
 
-    return rows[0] if rows else None
+    return row
+
 
 
 def control_db_config():
@@ -174,7 +130,7 @@ def control_db_config():
 
 def _json_safe(value):
     if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
+        return {k: _json_safe(v) for k, v in value.items()}
 
     if isinstance(value, list):
         return [_json_safe(v) for v in value]
@@ -194,7 +150,39 @@ def _json_safe(value):
     return value
 
 
-def query_control_db(sql: str, params=None):
+def _validate_usp_name(usp_name: str) -> str:
+    """
+    Only allow calls to explicitly named ctl.usp_* functions.
+
+    This keeps the dashboard code USP-friendly while avoiding arbitrary SQL
+    object-name injection through the helper.
+    """
+    if not usp_name.startswith("usp_"):
+        raise ValueError(f"Stored function name must start with 'usp_': {usp_name}")
+
+    if not all(ch.isalnum() or ch == "_" for ch in usp_name):
+        raise ValueError(f"Invalid stored function name: {usp_name}")
+
+    return usp_name
+
+
+def call_usp_rows(
+    usp_name: str,
+    params: tuple[Any, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Read from a PostgreSQL function under ctl schema.
+
+    Business SQL must live inside ctl.usp_* functions. The only SQL left here is
+    the generic invocation wrapper:
+        SELECT * FROM ctl.usp_name(...)
+    """
+    usp_name = _validate_usp_name(usp_name)
+    params = params or tuple()
+    placeholders = ", ".join(["%s"] * len(params))
+
+    sql = f"SELECT * FROM ctl.{usp_name}({placeholders})"
+
     conn = psycopg2.connect(**control_db_config())
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -203,6 +191,14 @@ def query_control_db(sql: str, params=None):
             return _json_safe(rows)
     finally:
         conn.close()
+
+
+def call_usp_one(
+    usp_name: str,
+    params: tuple[Any, ...] | None = None,
+) -> dict[str, Any] | None:
+    rows = call_usp_rows(usp_name, params)
+    return rows[0] if rows else None
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -1544,11 +1540,11 @@ async def get_stream_runtime_status(raw: bool = Query(default=False)) -> JSONRes
 
 @app.get("/api/runtime/jobs")
 async def get_runtime_jobs() -> JSONResponse:
-    try:
-        bundle = _load_config_bundle()
-        runtime = _enrich_runtime_jobs(bundle["jobs"])
+    bundle = _load_config_bundle()
+    runtime = _enrich_runtime_jobs(bundle["jobs"])
 
-        payload = {
+    return JSONResponse(
+        {
             "jobs": runtime["jobs"],
             "stream_status": runtime["stream_status"],
             "meta": {
@@ -1558,17 +1554,7 @@ async def get_runtime_jobs() -> JSONResponse:
                 "stream_registry_path": str(STREAM_REGISTRY_PATH),
             },
         }
-
-        return JSONResponse(_json_safe(payload))
-
-    except Exception as exc:
-        return JSONResponse(
-            {
-                "error": "failed_to_load_runtime_jobs",
-                "message": str(exc),
-            },
-            status_code=500,
-        )
+    )
 
 @app.get("/api/runtime/runs/{job_id}")
 async def get_runtime_runs(
@@ -1706,142 +1692,46 @@ async def get_runtime_logs(
 @app.get("/api/control/jobs")
 def control_jobs():
     return {
-        "items": query_control_db(
-            """
-            SELECT
-                j.job_id,
-                j.job_key,
-                j.job_code,
-                j.pipeline_name,
-                j.job_name,
-                j.base_job_name,
-                j.job_type,
-                j.runner,
-                j.source_id,
-                j.table_id,
-                j.entity_name,
-                j.target_path,
-                j.is_active,
-                j.updated_at
-            FROM meta.job j
-            ORDER BY j.pipeline_name, j.job_name
-            """
-        )
+        "items": call_usp_rows("usp_list_control_jobs")
     }
+
 
 
 @app.get("/api/runtime/job-runs")
 def runtime_job_runs(limit: int = 50):
     return {
-        "items": query_control_db(
-            """
-            SELECT
-                run_id::text AS run_id,
-                job_id,
-                NULL::text AS job_key,
-                job_code,
-                pipeline_name,
-                job_name,
-                base_job_name,
-                source_id,
-                table_id,
-                entity_name,
-                layer,
-                runner,
-                airflow_dag_id,
-                airflow_dag_run_id,
-                airflow_task_id,
-                airflow_try_number,
-                status,
-                status_reason,
-                error_message,
-                effective_start_date,
-                effective_end_date,
-                started_at,
-                ended_at,
-                duration_seconds,
-                records_read,
-                records_written,
-                source_path,
-                target_path,
-                created_at
-            FROM runtime.job_run
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
+        "items": call_usp_rows(
+            "usp_list_runtime_job_runs",
             (limit,),
         )
     }
+
 
 
 @app.get("/api/runtime/watermarks")
 def runtime_watermarks():
     return {
-        "items": query_control_db(
-            """
-            SELECT
-                watermark_id,
-                job_id,
-                job_key,
-                source_id,
-                table_id,
-                watermark_column,
-                last_successful_value,
-                current_value,
-                last_run_id,
-                updated_at
-            FROM runtime.watermark_state
-            ORDER BY updated_at DESC
-            """
-        )
+        "items": call_usp_rows("usp_list_runtime_watermarks")
     }
+
 
 
 @app.get("/api/quality/results")
 def quality_results(limit: int = 100):
     return {
-        "items": query_control_db(
-            """
-            SELECT
-                run_id,
-                job_id,
-                result_id,
-                job_key,
-                dataset_key,
-                status,
-                observed_value,
-                expected_value,
-                details,
-                created_at
-            FROM dq.quality_result
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
+        "items": call_usp_rows(
+            "usp_list_quality_results",
             (limit,),
         )
     }
 
 
+
 @app.get("/api/lineage/datasets")
 def dataset_lineage(limit: int = 100):
     return {
-        "items": query_control_db(
-            """
-            SELECT
-                lineage_id,
-                run_id,
-                job_id,
-                job_key,
-                source_dataset_key,
-                target_dataset_key,
-                transformation_type,
-                transformation_ref,
-                details,
-                created_at
-            FROM lineage.dataset_lineage
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
+        "items": call_usp_rows(
+            "usp_list_dataset_lineage",
             (limit,),
         )
     }

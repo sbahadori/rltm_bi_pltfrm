@@ -11,8 +11,7 @@ REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", ".")).resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from shared.control.postgres import get_conn  # noqa: E402
-
+from shared.control.postgres import call_usp_void
 
 def read_json(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as f:
@@ -49,31 +48,8 @@ def target_path_for_table(manifest: dict[str, Any], table: dict[str, Any]) -> st
 def upsert_pipeline(cur, pipeline: dict[str, Any]) -> None:
     dag = pipeline.get("dag", {}) or {}
 
-    cur.execute(
-        """
-        INSERT INTO meta.pipeline (
-            pipeline_name,
-            domain,
-            description,
-            owner,
-            schedule_cron,
-            airflow_dag_id,
-            is_active,
-            raw_config,
-            updated_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, CURRENT_TIMESTAMP)
-        ON CONFLICT (pipeline_name)
-        DO UPDATE SET
-            domain = EXCLUDED.domain,
-            description = EXCLUDED.description,
-            owner = EXCLUDED.owner,
-            schedule_cron = EXCLUDED.schedule_cron,
-            airflow_dag_id = EXCLUDED.airflow_dag_id,
-            is_active = EXCLUDED.is_active,
-            raw_config = EXCLUDED.raw_config,
-            updated_at = CURRENT_TIMESTAMP
-        """,
+    call_usp_void(
+        "usp_upsert_pipeline",
         (
             pipeline["name"],
             pipeline.get("domain"),
@@ -108,57 +84,8 @@ def upsert_meta_job(
     runtime_policy: dict[str, Any],
     is_active: bool,
 ) -> None:
-    cur.execute(
-        """
-        INSERT INTO meta.job (
-            job_key,
-            job_code,
-            pipeline_name,
-            job_name,
-            base_job_name,
-            job_type,
-            source_type,
-            runner,
-            layer,
-            source_id,
-            table_id,
-            entity_name,
-            manifest_ref,
-            target_path,
-            config,
-            runtime_policy,
-            is_active,
-            updated_at
-        )
-        VALUES (
-            %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s,
-            %s, %s, %s, %s,
-            %s::jsonb,
-            %s::jsonb,
-            %s,
-            CURRENT_TIMESTAMP
-        )
-        ON CONFLICT (job_key)
-        DO UPDATE SET
-            job_code = EXCLUDED.job_code,
-            pipeline_name = EXCLUDED.pipeline_name,
-            job_name = EXCLUDED.job_name,
-            base_job_name = EXCLUDED.base_job_name,
-            job_type = EXCLUDED.job_type,
-            source_type = EXCLUDED.source_type,
-            runner = EXCLUDED.runner,
-            layer = EXCLUDED.layer,
-            source_id = EXCLUDED.source_id,
-            table_id = EXCLUDED.table_id,
-            entity_name = EXCLUDED.entity_name,
-            manifest_ref = EXCLUDED.manifest_ref,
-            target_path = EXCLUDED.target_path,
-            config = EXCLUDED.config,
-            runtime_policy = EXCLUDED.runtime_policy,
-            is_active = EXCLUDED.is_active,
-            updated_at = CURRENT_TIMESTAMP
-        """,
+    call_usp_void(
+        "usp_upsert_job",
         (
             job_key,
             job_code,
@@ -179,6 +106,7 @@ def upsert_meta_job(
             is_active,
         ),
     )
+
 
 
 def register_pipeline_jobs(cur, pipeline: dict[str, Any]) -> None:
@@ -297,17 +225,15 @@ def register_pipeline_jobs(cur, pipeline: dict[str, Any]) -> None:
 def register_catalog(catalog_path: str) -> None:
     catalog = read_json(catalog_path)
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            for pipeline in catalog.get("pipelines", []):
-                if not pipeline.get("enabled", True):
-                    continue
+    for pipeline in catalog.get("pipelines", []):
+        if not pipeline.get("enabled", True):
+            continue
 
-                upsert_pipeline(cur, pipeline)
-                register_pipeline_jobs(cur, pipeline)
+        upsert_pipeline(None, pipeline)
+        register_pipeline_jobs(None, pipeline)
 
     print(f"[OK] Registered catalog into metadata DB: {catalog_path}")
-
+    
 
 def main() -> None:
     parser = argparse.ArgumentParser()

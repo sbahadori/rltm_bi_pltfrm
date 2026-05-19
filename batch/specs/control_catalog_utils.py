@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from shared.control.postgres import fetch_all
+from shared.control.postgres import call_usp_rows
 
 
 def _parse_raw_config(raw_config: Any) -> dict[str, Any] | None:
@@ -20,23 +20,7 @@ def _parse_raw_config(raw_config: Any) -> dict[str, Any] | None:
 
 
 def load_enabled_pipeline_specs_from_control_db() -> list[dict[str, Any]]:
-    """
-    Load pipeline design definitions from PostgreSQL Control Plane.
-
-    Important:
-    - meta.pipeline.raw_config is the source for DAG generation.
-    - meta.job is for runtime/control-plane observability.
-    """
-    rows = fetch_all(
-        """
-        SELECT
-            pipeline_name,
-            raw_config
-        FROM meta.pipeline
-        WHERE is_active = TRUE
-        ORDER BY pipeline_name
-        """
-    )
+    rows = call_usp_rows("usp_list_active_pipeline_specs")
 
     specs_by_name: dict[str, dict[str, Any]] = {}
 
@@ -55,8 +39,6 @@ def load_enabled_pipeline_specs_from_control_db() -> list[dict[str, Any]]:
             continue
 
         spec["name"] = pipeline_name
-
-        # Avoid duplicated DAG registration.
         specs_by_name[pipeline_name] = spec
 
     return list(specs_by_name.values())

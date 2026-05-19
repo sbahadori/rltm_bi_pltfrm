@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from shared.control.postgres import control_db_enabled, execute
+from shared.control.postgres import control_db_enabled, call_usp_void
 
 
 def write_dataset_lineage(
@@ -21,22 +21,8 @@ def write_dataset_lineage(
         return
 
     try:
-        execute(
-            """
-            INSERT INTO lineage.dataset_lineage (
-                run_id,
-                job_id,
-                job_key,
-                source_dataset_key,
-                target_dataset_key,
-                transformation_type,
-                transformation_ref,
-                details
-            )
-            VALUES (
-                %s::uuid, %s, %s, %s, %s, %s, %s, %s::jsonb
-            )
-            """,
+        call_usp_void(
+            "usp_insert_dataset_lineage",
             (
                 run_id,
                 job_id,

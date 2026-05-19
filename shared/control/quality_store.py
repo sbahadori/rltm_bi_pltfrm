@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from shared.control.postgres import control_db_enabled, execute
+from shared.control.postgres import control_db_enabled, call_usp_void
 
 
 def write_quality_result(
@@ -20,22 +20,8 @@ def write_quality_result(
     if not control_db_enabled():
         return
 
-    execute(
-        """
-        INSERT INTO dq.quality_result (
-            run_id,
-            job_id,
-            job_key,
-            dataset_key,
-            status,
-            observed_value,
-            expected_value,
-            details
-        )
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s::jsonb
-        )
-        """,
+    call_usp_void(
+        "usp_insert_quality_result",
         (
             run_id,
             job_id,

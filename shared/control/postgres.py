@@ -36,19 +36,46 @@ def get_conn() -> Iterator[psycopg2.extensions.connection]:
         conn.close()
 
 
-def fetch_all(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def call_usp_rows(
+    usp_name: str,
+    params: tuple[Any, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    For PostgreSQL functions returning rows:
+      SELECT * FROM ctl.usp_name(%s, %s, ...)
+    """
+    params = params or tuple()
+    placeholders = ", ".join(["%s"] * len(params))
+
+    sql = f"SELECT * FROM ctl.{usp_name}({placeholders})"
+
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             return [dict(row) for row in cur.fetchall()]
 
 
-def fetch_one(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> dict[str, Any] | None:
-    rows = fetch_all(sql, params)
+def call_usp_one(
+    usp_name: str,
+    params: tuple[Any, ...] | None = None,
+) -> dict[str, Any] | None:
+    rows = call_usp_rows(usp_name, params)
     return rows[0] if rows else None
 
 
-def execute(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> None:
+def call_usp_void(
+    usp_name: str,
+    params: tuple[Any, ...] | None = None,
+) -> None:
+    """
+    For PostgreSQL procedures:
+      CALL ctl.usp_name(%s, %s, ...)
+    """
+    params = params or tuple()
+    placeholders = ", ".join(["%s"] * len(params))
+
+    sql = f"CALL ctl.{usp_name}({placeholders})"
+
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)

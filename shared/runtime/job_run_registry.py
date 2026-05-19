@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from shared.control.postgres import control_db_enabled, execute
 from shared.control.metadata_store import load_job_identity
+from shared.control.postgres import call_usp_void, control_db_enabled
 
 
 def utc_now_iso() -> str:
@@ -42,8 +42,19 @@ def _write_jsonl(payload: dict[str, Any]) -> None:
 def _safe_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
+
     try:
         return int(value)
+    except Exception:
+        return None
+
+
+def _safe_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+
+    try:
+        return float(value)
     except Exception:
         return None
 
@@ -86,11 +97,48 @@ def _resolve_job_identity(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _epoch_to_naive_utc(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+
+    try:
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _iso_to_naive_utc(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+
+    try:
+        text = str(value)
+
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+
+        dt = datetime.fromisoformat(text)
+
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        return dt
+    except Exception:
+        return None
+
+
 def _upsert_job_run(payload: dict[str, Any]) -> None:
     job_identity = _resolve_job_identity(payload)
 
     job_id = int(job_identity["job_id"])
-    job_key = job_identity.get("job_key")
+
+    job_key = (
+        payload.get("job_key")
+        or job_identity.get("job_key")
+        or payload.get("job_code")
+        or job_identity.get("job_code")
+    )
+
     job_code = (
         payload.get("job_code")
         or job_identity.get("job_code")
@@ -120,62 +168,23 @@ def _upsert_job_run(payload: dict[str, Any]) -> None:
         or job_identity.get("base_job_name")
     )
 
-    started_at_epoch = payload.get("started_at_epoch")
-    ended_at_epoch = payload.get("ended_at_epoch")
+    source_id = payload.get("source_id") or job_identity.get("source_id")
+    table_id = payload.get("table_id") or job_identity.get("table_id")
+    entity_name = payload.get("entity_name") or job_identity.get("entity_name")
+    layer = payload.get("layer") or job_identity.get("layer")
+    runner = payload.get("runner") or job_identity.get("runner")
+    target_path = payload.get("target_path") or job_identity.get("target_path")
 
-    started_at_expr = "to_timestamp(%s)" if started_at_epoch is not None else "NULL"
-    ended_at_expr = "to_timestamp(%s)" if ended_at_epoch is not None else "NULL"
+    resolved_payload = {
+        **payload,
+        "resolved_job_id": job_id,
+        "resolved_job_key": job_key,
+        "resolved_job_code": job_code,
+    }
 
-    params: list[Any] = [
-        run_id,
-        job_id,
-        job_code,
-        job_name,
-        pipeline_name,
-        base_job_name,
-        payload.get("source_id") or job_identity.get("source_id"),
-        payload.get("table_id") or job_identity.get("table_id"),
-        payload.get("entity_name") or job_identity.get("entity_name"),
-        payload.get("layer") or job_identity.get("layer"),
-        payload.get("runner") or job_identity.get("runner"),
-        payload.get("airflow_dag_id"),
-        payload.get("airflow_dag_run_id"),
-        payload.get("airflow_task_id"),
-        _safe_int(payload.get("airflow_try_number")),
-        status,
-        payload.get("status_reason"),
-        payload.get("error"),
-        payload.get("effective_start_date"),
-        payload.get("effective_end_date"),
-    ]
-
-    if started_at_epoch is not None:
-        params.append(started_at_epoch)
-
-    if ended_at_epoch is not None:
-        params.append(ended_at_epoch)
-
-    params.extend(
-        [
-            payload.get("duration_seconds"),
-            payload.get("records_read"),
-            payload.get("records_written"),
-            payload.get("source_path"),
-            payload.get("target_path") or job_identity.get("target_path"),
-            json.dumps(
-                {
-                    **payload,
-                    "resolved_job_id": job_id,
-                    "resolved_job_key": job_key,
-                    "resolved_job_code": job_code,
-                },
-                default=str,
-            ),
-        ]
-    )
-
-    sql = f"""
-        INSERT INTO runtime.job_run (
+    call_usp_void(
+        "usp_upsert_job_run",
+        (
             run_id,
             job_id,
             job_code,
@@ -187,71 +196,25 @@ def _upsert_job_run(payload: dict[str, Any]) -> None:
             entity_name,
             layer,
             runner,
-            airflow_dag_id,
-            airflow_dag_run_id,
-            airflow_task_id,
-            airflow_try_number,
+            payload.get("airflow_dag_id"),
+            payload.get("airflow_dag_run_id"),
+            payload.get("airflow_task_id"),
+            _safe_int(payload.get("airflow_try_number")),
             status,
-            status_reason,
-            error_message,
-            effective_start_date,
-            effective_end_date,
-            started_at,
-            ended_at,
-            duration_seconds,
-            records_read,
-            records_written,
-            source_path,
+            payload.get("status_reason"),
+            payload.get("error"),
+            _iso_to_naive_utc(payload.get("effective_start_date")),
+            _iso_to_naive_utc(payload.get("effective_end_date")),
+            _epoch_to_naive_utc(payload.get("started_at_epoch")),
+            _epoch_to_naive_utc(payload.get("ended_at_epoch")),
+            _safe_float(payload.get("duration_seconds")),
+            _safe_int(payload.get("records_read")),
+            _safe_int(payload.get("records_written")),
+            payload.get("source_path"),
             target_path,
-            payload
-        )
-        VALUES (
-            %s::uuid,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s::timestamp,
-            %s::timestamp,
-            {started_at_expr},
-            {ended_at_expr},
-            %s,
-            %s,
-            %s,
-            %s,
-            %s,
-            %s::jsonb
-        )
-        ON CONFLICT (run_id)
-        DO UPDATE SET
-            status = EXCLUDED.status,
-            ended_at = COALESCE(EXCLUDED.ended_at, runtime.job_run.ended_at),
-            duration_seconds = COALESCE(EXCLUDED.duration_seconds, runtime.job_run.duration_seconds),
-            records_read = COALESCE(EXCLUDED.records_read, runtime.job_run.records_read),
-            records_written = COALESCE(EXCLUDED.records_written, runtime.job_run.records_written),
-            error_message = COALESCE(EXCLUDED.error_message, runtime.job_run.error_message),
-            status_reason = COALESCE(EXCLUDED.status_reason, runtime.job_run.status_reason),
-            effective_start_date = COALESCE(EXCLUDED.effective_start_date, runtime.job_run.effective_start_date),
-            effective_end_date = COALESCE(EXCLUDED.effective_end_date, runtime.job_run.effective_end_date),
-            source_path = COALESCE(EXCLUDED.source_path, runtime.job_run.source_path),
-            target_path = COALESCE(EXCLUDED.target_path, runtime.job_run.target_path),
-            payload = EXCLUDED.payload
-    """
-
-    execute(sql, tuple(params))
+            json.dumps(resolved_payload, default=str),
+        ),
+    )
 
 
 def _insert_job_event(payload: dict[str, Any]) -> None:
@@ -265,18 +228,8 @@ def _insert_job_event(payload: dict[str, Any]) -> None:
         or job_identity.get("job_code")
     )
 
-    execute(
-        """
-        INSERT INTO runtime.job_event (
-            run_id,
-            job_id,
-            job_key,
-            event_type,
-            event_message,
-            event_payload
-        )
-        VALUES (%s::uuid, %s, %s, %s, %s, %s::jsonb)
-        """,
+    call_usp_void(
+        "usp_insert_job_event",
         (
             payload.get("run_id"),
             job_id,
@@ -315,6 +268,9 @@ def append_job_event(**event: Any) -> dict[str, Any]:
 
         except Exception as exc:
             print(f"[WARN] Failed to write runtime event to control DB: {exc}", flush=True)
+
+            if os.getenv("CONTROL_DB_STRICT", "false").lower() in {"1", "true", "yes"}:
+                raise
 
     return payload
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.control.postgres import control_db_enabled, execute, fetch_one
+from shared.control.postgres import control_db_enabled, call_usp_one, call_usp_void
 
 
 def read_watermark_from_control_db(
@@ -16,17 +16,8 @@ def read_watermark_from_control_db(
     if not control_db_enabled():
         return str(default_value)
 
-    row = fetch_one(
-        """
-        SELECT last_successful_value
-        FROM runtime.watermark_state
-        WHERE job_key = %s
-          AND source_id = %s
-          AND table_id = %s
-          AND watermark_column = %s
-        ORDER BY updated_at DESC
-        LIMIT 1
-        """,
+    row = call_usp_one(
+        "usp_get_watermark_state",
         (
             job_key,
             source_id,
@@ -54,37 +45,14 @@ def write_watermark_to_control_db(
     if not control_db_enabled():
         return
 
-    execute(
-        """
-        INSERT INTO runtime.watermark_state (
-            job_id,
-            job_key,
-            source_id,
-            table_id,
-            watermark_column,
-            last_successful_value,
-            current_value,
-            last_run_id,
-            updated_at
-        )
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
-        )
-        ON CONFLICT (job_key, source_id, table_id, watermark_column)
-        DO UPDATE SET
-            job_id = EXCLUDED.job_id,
-            last_successful_value = EXCLUDED.last_successful_value,
-            current_value = EXCLUDED.current_value,
-            last_run_id = EXCLUDED.last_run_id,
-            updated_at = CURRENT_TIMESTAMP
-        """,
+    call_usp_void(
+        "usp_upsert_watermark_state",
         (
             job_id,
             job_key,
             source_id,
             table_id,
             watermark_column,
-            str(value),
             str(value),
             run_id,
         ),

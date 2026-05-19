@@ -404,17 +404,18 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
 
     try:
         if batch_df.isEmpty():
+            _last_error_state = {}
             _last_batch_state = {
-            "last_batch_id": batch_id,
-            **_utc_now_fields("last_batch"),
-            "last_input_rows": input_count,
-            "last_batch_rows": total_count,
-            "last_valid_rows": valid_count,
-            "last_invalid_rows": invalid_count,
-            "last_written_valid_rows": written_valid,
-            "last_written_invalid_rows": written_invalid,
-            "last_write_ok": True,
-            "last_message": "write_ok",
+                "last_batch_id": batch_id,
+                **_utc_now_fields("last_batch"),
+                "last_input_rows": 0,
+                "last_batch_rows": 0,
+                "last_valid_rows": 0,
+                "last_invalid_rows": 0,
+                "last_written_valid_rows": 0,
+                "last_written_invalid_rows": 0,
+                "last_write_ok": True,
+                "last_message": "empty_batch",
             }
             write_heartbeat("running", _last_batch_state)
             logger.info("[silver] batch_id=%s empty batch", batch_id)

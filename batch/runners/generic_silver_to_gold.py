@@ -10,6 +10,19 @@ from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql.functions import col, expr, lit, row_number
 
+from batch.transforms.rules import (
+    apply_select_map,
+    apply_filters,
+    apply_derived_fields,
+    apply_quality_rules,
+    apply_dedupe,
+)
+
+from batch.writers.delta_writer import (
+    merge_to_target,
+    validate_partition_columns,
+)
+
 # -----------------------------------------------------------------------------
 # Bootstrap repo path
 # -----------------------------------------------------------------------------
@@ -92,173 +105,6 @@ def load_job_spec(
             )
 
         return job["spec"]
-
-
-# -----------------------------------------------------------------------------
-# Transformation helpers
-# -----------------------------------------------------------------------------
-
-def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
-    if not select_map:
-        return df
-
-    cols = [
-        col(source_name).alias(target_name)
-        for target_name, source_name in select_map.items()
-    ]
-
-    return df.select(*cols)
-
-
-def apply_filters(df: DataFrame, filters_spec: list[dict[str, Any]]) -> DataFrame:
-    result = df
-
-    for rule in filters_spec or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        elif rule_type == "not_equals":
-            result = result.filter(col(field) != lit(rule["value"]))
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "less_than":
-            result = result.filter(col(field) < lit(rule["value"]))
-        elif rule_type == "less_or_equal":
-            result = result.filter(col(field) <= lit(rule["value"]))
-        elif rule_type == "is_not_null":
-            result = result.filter(col(field).isNotNull())
-        else:
-            raise ValueError(f"Unsupported filter type: {rule_type}")
-
-    return result
-
-
-def apply_derived_fields(
-    df: DataFrame,
-    derived_fields: dict[str, dict[str, Any]],
-) -> DataFrame:
-    result = df
-
-    for field_name, spec in (derived_fields or {}).items():
-        kind = spec["kind"]
-
-        if kind == "sql":
-            result = result.withColumn(field_name, expr(spec["expr"]))
-        else:
-            raise ValueError(f"Unsupported derived field kind: {kind}")
-
-    return result
-
-
-def apply_quality_rules(
-    df: DataFrame,
-    quality_rules: list[dict[str, Any]],
-) -> DataFrame:
-    result = df
-
-    for rule in quality_rules or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "not_null":
-            result = result.filter(col(field).isNotNull())
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        else:
-            raise ValueError(f"Unsupported quality rule type: {rule_type}")
-
-    return result
-
-
-def apply_dedupe(df: DataFrame, dedupe_spec: dict[str, Any]) -> DataFrame:
-    if not dedupe_spec:
-        return df
-
-    key_columns = dedupe_spec["key_columns"]
-    order_by = dedupe_spec.get("order_by", [])
-
-    if not order_by:
-        return df.dropDuplicates(key_columns)
-
-    order_exprs = [expr(item) for item in order_by]
-    window_spec = Window.partitionBy(*key_columns).orderBy(*order_exprs)
-
-    return (
-        df.withColumn("_rn", row_number().over(window_spec))
-          .filter(col("_rn") == 1)
-          .drop("_rn")
-    )
-
-
-# -----------------------------------------------------------------------------
-# Delta write helpers
-# -----------------------------------------------------------------------------
-
-def ensure_table(
-    spark: SparkSession,
-    path: str,
-    df: DataFrame,
-    partition_by: list[str],
-) -> None:
-    if DeltaTable.isDeltaTable(spark, path):
-        return
-
-    writer = (
-        df.limit(0)
-        .write
-        .format("delta")
-        .mode("overwrite")
-    )
-
-    if partition_by:
-        writer = writer.partitionBy(*partition_by)
-
-    writer.save(path)
-
-
-def merge_to_target(
-    spark: SparkSession,
-    target_path: str,
-    df: DataFrame,
-    merge_keys: list[str],
-    partition_by: list[str],
-) -> None:
-    ensure_table(
-        spark=spark,
-        path=target_path,
-        df=df,
-        partition_by=partition_by,
-    )
-
-    target = DeltaTable.forPath(spark, target_path)
-
-    condition = " AND ".join([f"t.{key} = s.{key}" for key in merge_keys])
-
-    (
-        target.alias("t")
-        .merge(df.alias("s"), condition)
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
-
-
-def validate_partition_columns(df: DataFrame, partition_by: list[str]) -> None:
-    missing = [column for column in partition_by if column not in df.columns]
-
-    if missing:
-        raise ValueError(
-            f"Target partition columns are missing from Gold DataFrame: {missing}. "
-            f"Available columns: {df.columns}"
-        )
 
 
 # -----------------------------------------------------------------------------

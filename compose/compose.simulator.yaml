@@ -35,6 +35,15 @@ services:
       AIRFLOW_API_BASE: ${AIRFLOW_API_BASE}
       AIRFLOW_USER: ${AIRFLOW_ADMIN_USER}
       AIRFLOW_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+
+      CONTROL_DB_ENABLED: ${CONTROL_DB_ENABLED:-true}
+      CONTROL_DB_HOST: ${CONTROL_DB_HOST:-postgres-warehouse}
+      CONTROL_DB_PORT: ${CONTROL_DB_PORT:-5432}
+      CONTROL_DB_NAME: ${CONTROL_DB_NAME:-${POSTGRES_DB}}
+      CONTROL_DB_USER: ${CONTROL_DB_USER:-${POSTGRES_USER}}
+      CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      CONTROL_DB_SSLMODE: ${CONTROL_DB_SSLMODE:-disable}
+      
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm:ro
       - ${PROJECT_ROOT}/spark_health:/runtime/spark_health:ro

@@ -23,7 +23,14 @@ COPY shared/spark-jars/delta-storage-3.2.0.jar /opt/spark/jars/
 COPY shared/spark-jars/postgresql-42.7.4.jar /opt/spark/jars/
 COPY shared/spark-jars/mysql-connector-j-9.0.0.jar /opt/spark/jars/
 
-RUN pip install --no-cache-dir  pyyaml==6.0.2   requests==2.32.3  boto3==1.34.162  delta-spark==3.2.0  pyarrow  pandas   numpy  --quiet
+COPY shared/spark-jars/spark-sql-kafka-0-10_2.12-3.5.1.jar /opt/spark/jars/
+COPY shared/spark-jars/spark-token-provider-kafka-0-10_2.12-3.5.1.jar /opt/spark/jars/
+COPY shared/spark-jars/kafka-clients-3.5.1.jar /opt/spark/jars/
+COPY shared/spark-jars/commons-pool2-2.11.1.jar /opt/spark/jars/
+
+
+
+RUN pip install --no-cache-dir  pyyaml==6.0.2   requests==2.32.3  boto3==1.34.162  delta-spark==3.2.0  psycopg2-binary  pyarrow  pandas   numpy  --quiet
 
 RUN useradd -m -u 1001 -s /bin/bash spark  && mkdir -p /opt/spark/work-dir /tmp/.ivy2 /tmp/checkpoints /tmp/health  && chown -R spark:spark /opt/spark /tmp/.ivy2 /tmp/checkpoints /tmp/health /home/spark
 

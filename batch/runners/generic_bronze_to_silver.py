@@ -6,17 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 import time
-from delta.tables import DeltaTable
-from pyspark.sql import DataFrame, SparkSession, Window
-from pyspark.sql.functions import col, expr, lit, row_number
-from pyspark.sql.types import (
-    DateType,
-    DoubleType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
+from pyspark.sql import  SparkSession
+
 
 import sys
 from pathlib import Path
@@ -27,11 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
     
-from shared.runtime.job_run_registry import (
-    append_job_event,
-    exception_to_text,
-    new_run_id,
-)
+
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -44,7 +31,20 @@ REPO_ROOT = _bootstrap_repo_path()
 
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 
+from shared.runtime.control_run_context import build_runtime_context, control_run
 
+from batch.transforms.rules import (
+    apply_select_map,
+    apply_filters,
+    apply_derived_fields,
+    apply_quality_rules,
+    apply_dedupe,
+)
+
+from batch.writers.delta_writer import (
+    merge_to_target,
+    validate_partition_columns,
+)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -70,148 +70,6 @@ def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[
             )
         return job["spec"]
     
-
-
-def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
-    if not select_map:
-        return df
-
-    cols = [
-        col(source_name).alias(target_name)
-        for target_name, source_name in select_map.items()
-    ]
-
-    return df.select(*cols)
-
-def apply_filters(df: DataFrame, filters_spec: list[dict[str, Any]]) -> DataFrame:
-    result = df
-    for rule in filters_spec or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        elif rule_type == "not_equals":
-            result = result.filter(col(field) != lit(rule["value"]))
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "less_than":
-            result = result.filter(col(field) < lit(rule["value"]))
-        elif rule_type == "less_or_equal":
-            result = result.filter(col(field) <= lit(rule["value"]))
-        elif rule_type == "is_not_null":
-            result = result.filter(col(field).isNotNull())
-        else:
-            raise ValueError(f"Unsupported filter type: {rule_type}")
-
-    return result
-
-
-def apply_derived_fields(df: DataFrame, derived_fields: dict[str, dict[str, Any]]) -> DataFrame:
-    result = df
-    for field_name, spec in (derived_fields or {}).items():
-        kind = spec["kind"]
-
-        if kind == "sql":
-            result = result.withColumn(field_name, expr(spec["expr"]))
-        else:
-            raise ValueError(f"Unsupported derived field kind: {kind}")
-
-    return result
-
-
-def apply_quality_rules(df: DataFrame, quality_rules: list[dict[str, Any]]) -> DataFrame:
-    result = df
-    for rule in quality_rules or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "not_null":
-            result = result.filter(col(field).isNotNull())
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        else:
-            raise ValueError(f"Unsupported quality rule type: {rule_type}")
-
-    return result
-
-
-def apply_dedupe(df: DataFrame, dedupe_spec: dict[str, Any]) -> DataFrame:
-    if not dedupe_spec:
-        return df
-
-    key_columns = dedupe_spec["key_columns"]
-    order_by = dedupe_spec.get("order_by", [])
-
-    if not order_by:
-        return df.dropDuplicates(key_columns)
-
-    order_exprs = [expr(item) for item in order_by]
-    w = Window.partitionBy(*key_columns).orderBy(*order_exprs)
-
-    return (
-        df.withColumn("_rn", row_number().over(w))
-          .filter(col("_rn") == 1)
-          .drop("_rn")
-    )
-
-
-def ensure_table(
-    spark: SparkSession,
-    path: str,
-    df: DataFrame,
-    partition_by: list[str],
-) -> None:
-    if DeltaTable.isDeltaTable(spark, path):
-        return
-
-    writer = (
-        df.limit(0)
-        .write
-        .format("delta")
-        .mode("overwrite")
-    )
-
-    if partition_by:
-        writer = writer.partitionBy(*partition_by)
-
-    writer.save(path)
-
-def merge_to_target(
-    spark: SparkSession,
-    target_path: str,
-    df: DataFrame,
-    merge_keys: list[str],
-    partition_by: list[str],
-) -> None:
-    ensure_table(
-        spark=spark,
-        path=target_path,
-        df=df,
-        partition_by=partition_by,
-    )
-
-    target = DeltaTable.forPath(spark, target_path)
-
-    condition = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
-
-    (
-        target.alias("t")
-        .merge(df.alias("s"), condition)
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
-
-
-from shared.runtime.control_run_context import build_runtime_context, control_run
-
 
 def main():
     args = parse_args()

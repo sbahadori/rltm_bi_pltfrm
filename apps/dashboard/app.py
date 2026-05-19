@@ -611,11 +611,22 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "runtime_available": True,
                     }
                 )
+            elif job.get("type") == "stream":
+                runtime_job.update(
+                    {
+                        "current_status": "defined",
+                        "latest_run_state": None,
+                        "latest_run_id": None,
+                        "runtime_source": "catalog",
+                        "runtime_available": False,
+                    }
+                )
             else:
                 latest_airflow = _latest_task_run_for_job(
                     dag_id=job.get("pipeline", ""),
                     task_id=job.get("name", ""),
                 )
+
 
                 runtime_job.update(
                     {
@@ -630,6 +641,88 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "status_reason": latest_airflow.get("status_reason"),
                         "runtime_source": "airflow",
                         "runtime_available": latest_airflow.get("airflow_available", False),
+                    }
+                )
+
+                        # -------------------------------------------------------------
+        # Merge live stream supervisor state into stream jobs.
+        # This is what powers Runtime unit, heartbeat, batch progress,
+        # valid/invalid rows, and write status in the dashboard drawer.
+        # -------------------------------------------------------------
+        if runtime_job.get("type") == "stream":
+            unit = _find_stream_unit_for_job(runtime_job, stream_status)
+
+            if unit:
+                heartbeat = unit.get("heartbeat") or {}
+
+                runtime_job.update(
+                    {
+                        "runtime_available": True,
+                        "runtime_source": "stream_supervisor",
+                        "runtime_unit_name": unit.get("unit_name"),
+
+                        # Current process/state
+                        "current_status": unit.get("computed_status")
+                        or runtime_job.get("current_status"),
+                        "latest_run_state": unit.get("computed_status")
+                        or runtime_job.get("latest_run_state"),
+                        "status_reason": unit.get("status_reason")
+                        or runtime_job.get("status_reason"),
+                        "is_healthy": unit.get("is_healthy"),
+                        "pid": unit.get("pid"),
+                        "returncode": unit.get("returncode"),
+                        "retries": unit.get("retries"),
+                        "max_retries": unit.get("max_retries"),
+
+                        # Heartbeat freshness
+                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),
+                        "heartbeat_status": unit.get("heartbeat_status"),
+
+                        # Stream progress from heartbeat
+                        "last_batch_id": heartbeat.get("last_batch_id"),
+                        "last_batch_ts_epoch": heartbeat.get("last_batch_ts_epoch"),
+                        "last_batch_ts_iso": heartbeat.get("last_batch_ts_iso"),
+                        "last_input_rows": heartbeat.get("last_input_rows"),
+                        "last_batch_rows": heartbeat.get("last_batch_rows"),
+
+                        # Bronze/Silver write metrics
+                        "last_written_rows": heartbeat.get("last_written_rows"),
+                        "last_valid_rows": heartbeat.get("last_valid_rows"),
+                        "last_invalid_rows": heartbeat.get("last_invalid_rows"),
+                        "last_written_valid_rows": heartbeat.get(
+                            "last_written_valid_rows"
+                        ),
+                        "last_written_invalid_rows": heartbeat.get(
+                            "last_written_invalid_rows"
+                        ),
+
+                        # Write result
+                        "last_write_ok": heartbeat.get("last_write_ok"),
+                        "last_message": heartbeat.get("last_message"),
+                        "last_error": heartbeat.get("last_error"),
+                        "last_error_ts_epoch": heartbeat.get("last_error_ts_epoch"),
+                        "last_error_ts_iso": heartbeat.get("last_error_ts_iso"),
+
+                        # Paths
+                        "stream_target_path": (
+                            heartbeat.get("silver_path")
+                            or heartbeat.get("bronze_path")
+                            or runtime_job.get("target_path")
+                        ),
+                        "checkpoint_path": (
+                            heartbeat.get("checkpoint_path")
+                            or runtime_job.get("checkpoint_path")
+                        ),
+                    }
+                )
+            else:
+                runtime_job.update(
+                    {
+                        "runtime_available": False,
+                        "runtime_source": runtime_job.get("runtime_source")
+                        or "catalog",
+                        "status_reason": runtime_job.get("status_reason")
+                        or "No matching stream supervisor unit found",
                     }
                 )
 
@@ -775,7 +868,7 @@ def _build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
                     "dependencies": [],
                     "trigger": bronze.get("trigger_interval", "15 seconds"),
                     "target_path": bronze.get("path", ""),
-                    "checkpoint_path": bronze.get("checkpoint_path", ""),
+                    "checkpoint_path": bronze.get("checkpoint_dir", ""),
                     "heartbeat_file": bronze.get("heartbeat_file", ""),
                     "defined": True,
                     "source": "stream_registry",
@@ -797,7 +890,7 @@ def _build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
                     "trigger": silver.get("trigger_interval", "30 seconds"),
                     "target_path": silver.get("path", ""),
                     "quarantine_path": silver.get("quarantine_path", ""),
-                    "checkpoint_path": silver.get("checkpoint_path", ""),
+                    "checkpoint_path": silver.get("checkpoint_dir", ""),
                     "heartbeat_file": silver.get("heartbeat_file", ""),
                     "defined": True,
                     "source": "stream_registry",

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.types import StringType, TimestampType
 
 from pyspark.sql.functions import (
     col,
@@ -374,8 +374,6 @@ def records_to_dataframe(
     *,
     request_meta: dict[str, Any],
     source_name: str,
-    raw_payload: Any | None = None,
-    keep_raw_payload: bool = False,
 ) -> DataFrame:
     clean_records = [sanitize_record(r) for r in ensure_non_empty_schema(records)]
 

@@ -374,6 +374,8 @@ def records_to_dataframe(
     *,
     request_meta: dict[str, Any],
     source_name: str,
+    raw_payload: Any | None = None,
+    keep_raw_payload: bool = False,
 ) -> DataFrame:
     clean_records = [sanitize_record(r) for r in ensure_non_empty_schema(records)]
 
@@ -399,25 +401,46 @@ def records_to_dataframe(
         .withColumn("ingestion_ts", current_timestamp())
         .withColumn("payload_json", payload_json_col.cast(StringType()))
         .withColumn("api_status", lit(api_status))
+        .withColumn("api_url", lit(str(request_meta.get("url", ""))))
+        .withColumn("api_method", lit(str(request_meta.get("method", ""))))
+        .withColumn("api_elapsed_seconds", lit(str(request_meta.get("elapsed_seconds", ""))))
+        .withColumn("api_response_bytes", lit(str(request_meta.get("response_bytes", ""))))
         .withColumn("ingest_year", year(col("ingestion_ts")))
         .withColumn("ingest_month", month(col("ingestion_ts")))
         .withColumn("ingest_day", dayofmonth(col("ingestion_ts")))
         .withColumn("ingest_hour", hour(col("ingestion_ts")))
-        .select(
-            "event_id",
-            "source_name",
-            "source_event_ts",
-            "ingestion_ts",
-            "payload_json",
-            "api_status",
+    )
+
+    if keep_raw_payload:
+        raw_payload_text = json.dumps(raw_payload, ensure_ascii=False, default=str)
+        df = df.withColumn("raw_response_json", lit(raw_payload_text).cast(StringType()))
+
+    selected_cols = [
+        "event_id",
+        "source_name",
+        "source_event_ts",
+        "ingestion_ts",
+        "payload_json",
+        "api_status",
+        "api_url",
+        "api_method",
+        "api_elapsed_seconds",
+        "api_response_bytes",
+    ]
+
+    if keep_raw_payload:
+        selected_cols.append("raw_response_json")
+
+    selected_cols.extend(
+        [
             "ingest_year",
             "ingest_month",
             "ingest_day",
             "ingest_hour",
-        )
+        ]
     )
 
-    return df
+    return df.select(*selected_cols)
 
 def write_bronze(df: DataFrame, write_spec: dict[str, Any]) -> None:
     target_path = write_spec.get("target_path") or write_spec.get("path")
@@ -442,11 +465,14 @@ def write_bronze(df: DataFrame, write_spec: dict[str, Any]) -> None:
 
     writer = df.write.format(output_format).mode(mode)
 
+    if output_format.lower() == "delta":
+        writer = writer.option("mergeSchema", "true")
+
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
     writer.save(target_path)
-
+    
 # -----------------------------------------------------------------------------
 # Spec normalization
 # -----------------------------------------------------------------------------

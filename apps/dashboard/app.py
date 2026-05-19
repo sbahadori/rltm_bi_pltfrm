@@ -644,88 +644,109 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
 
-                        # -------------------------------------------------------------
-        # Merge live stream supervisor state into stream jobs.
-        # This is what powers Runtime unit, heartbeat, batch progress,
-        # valid/invalid rows, and write status in the dashboard drawer.
-        # -------------------------------------------------------------
+# -------------------------------------------------------------
+# Merge live stream supervisor state into stream jobs.
+# This is what powers Runtime unit, heartbeat, batch progress,
+# valid/invalid rows, and write status in the dashboard drawer.
+# -------------------------------------------------------------
         if runtime_job.get("type") == "stream":
-            unit = _find_stream_unit_for_job(runtime_job, stream_status)
+            db_unit = _stream_current_from_db(runtime_job)
 
-            if unit:
-                heartbeat = unit.get("heartbeat") or {}
-
+            if db_unit:
                 runtime_job.update(
                     {
                         "runtime_available": True,
-                        "runtime_source": "stream_supervisor",
-                        "runtime_unit_name": unit.get("unit_name"),
+                        "runtime_source": "stream_runtime_db",
+                        "runtime_unit_name": db_unit.get("unit_name"),
 
-                        # Current process/state
-                        "current_status": unit.get("computed_status")
+                        "current_status": db_unit.get("computed_status")
                         or runtime_job.get("current_status"),
-                        "latest_run_state": unit.get("computed_status")
+                        "latest_run_state": db_unit.get("computed_status")
                         or runtime_job.get("latest_run_state"),
-                        "status_reason": unit.get("status_reason")
+                        "status_reason": db_unit.get("status_reason")
                         or runtime_job.get("status_reason"),
-                        "is_healthy": unit.get("is_healthy"),
-                        "pid": unit.get("pid"),
-                        "returncode": unit.get("returncode"),
-                        "retries": unit.get("retries"),
-                        "max_retries": unit.get("max_retries"),
 
-                        # Heartbeat freshness
-                        "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),
-                        "heartbeat_status": unit.get("heartbeat_status"),
+                        "pid": db_unit.get("pid"),
+                        "returncode": db_unit.get("returncode"),
+                        "retries": db_unit.get("retries"),
+                        "max_retries": db_unit.get("max_retries"),
 
-                        # Stream progress from heartbeat
-                        "last_batch_id": heartbeat.get("last_batch_id"),
-                        "last_batch_ts_epoch": heartbeat.get("last_batch_ts_epoch"),
-                        "last_batch_ts_iso": heartbeat.get("last_batch_ts_iso"),
-                        "last_input_rows": heartbeat.get("last_input_rows"),
-                        "last_batch_rows": heartbeat.get("last_batch_rows"),
+                        "heartbeat_status": db_unit.get("heartbeat_status"),
+                        "heartbeat_age_seconds": db_unit.get("heartbeat_age_seconds"),
 
-                        # Bronze/Silver write metrics
-                        "last_written_rows": heartbeat.get("last_written_rows"),
-                        "last_valid_rows": heartbeat.get("last_valid_rows"),
-                        "last_invalid_rows": heartbeat.get("last_invalid_rows"),
-                        "last_written_valid_rows": heartbeat.get(
-                            "last_written_valid_rows"
-                        ),
-                        "last_written_invalid_rows": heartbeat.get(
-                            "last_written_invalid_rows"
-                        ),
+                        "last_batch_id": db_unit.get("last_batch_id"),
+                        "last_input_rows": db_unit.get("last_input_rows"),
+                        "last_batch_rows": db_unit.get("last_batch_rows"),
 
-                        # Write result
-                        "last_write_ok": heartbeat.get("last_write_ok"),
-                        "last_message": heartbeat.get("last_message"),
-                        "last_error": heartbeat.get("last_error"),
-                        "last_error_ts_epoch": heartbeat.get("last_error_ts_epoch"),
-                        "last_error_ts_iso": heartbeat.get("last_error_ts_iso"),
+                        "last_valid_rows": db_unit.get("last_valid_rows"),
+                        "last_invalid_rows": db_unit.get("last_invalid_rows"),
 
-                        # Paths
-                        "stream_target_path": (
-                            heartbeat.get("silver_path")
-                            or heartbeat.get("bronze_path")
-                            or runtime_job.get("target_path")
-                        ),
-                        "checkpoint_path": (
-                            heartbeat.get("checkpoint_path")
-                            or runtime_job.get("checkpoint_path")
-                        ),
+                        "last_written_rows": db_unit.get("last_written_rows"),
+                        "last_written_valid_rows": db_unit.get("last_written_valid_rows"),
+                        "last_written_invalid_rows": db_unit.get("last_written_invalid_rows"),
+
+                        "last_write_ok": db_unit.get("last_write_ok"),
+                        "last_message": db_unit.get("last_message"),
+                        "last_error": db_unit.get("last_error"),
+
+                        "stream_target_path": db_unit.get("target_path")
+                        or runtime_job.get("target_path"),
+                        "checkpoint_path": db_unit.get("checkpoint_path")
+                        or runtime_job.get("checkpoint_path"),
                     }
                 )
+
             else:
-                runtime_job.update(
-                    {
-                        "runtime_available": False,
-                        "runtime_source": runtime_job.get("runtime_source")
-                        or "catalog",
-                        "status_reason": runtime_job.get("status_reason")
-                        or "No matching stream supervisor unit found",
-                    }
-                )
+                unit = _find_stream_unit_for_job(runtime_job, stream_status)
 
+                if unit:
+                    heartbeat = unit.get("heartbeat") or {}
+
+                    runtime_job.update(
+                        {
+                            "runtime_available": True,
+                            "runtime_source": "stream_supervisor_file",
+                            "runtime_unit_name": unit.get("unit_name"),
+
+                            "current_status": unit.get("computed_status")
+                            or runtime_job.get("current_status"),
+                            "latest_run_state": unit.get("computed_status")
+                            or runtime_job.get("latest_run_state"),
+                            "status_reason": unit.get("status_reason")
+                            or runtime_job.get("status_reason"),
+
+                            "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),
+                            "heartbeat_status": unit.get("heartbeat_status"),
+
+                            "last_batch_id": heartbeat.get("last_batch_id"),
+                            "last_batch_ts_epoch": heartbeat.get("last_batch_ts_epoch"),
+                            "last_batch_ts_iso": heartbeat.get("last_batch_ts_iso"),
+                            "last_input_rows": heartbeat.get("last_input_rows"),
+                            "last_batch_rows": heartbeat.get("last_batch_rows"),
+
+                            "last_valid_rows": heartbeat.get("last_valid_rows"),
+                            "last_invalid_rows": heartbeat.get("last_invalid_rows"),
+
+                            "last_written_rows": heartbeat.get("last_written_rows"),
+                            "last_written_valid_rows": heartbeat.get("last_written_valid_rows"),
+                            "last_written_invalid_rows": heartbeat.get("last_written_invalid_rows"),
+
+                            "last_write_ok": heartbeat.get("last_write_ok"),
+                            "last_message": heartbeat.get("last_message"),
+                            "last_error": heartbeat.get("last_error"),
+
+                            "stream_target_path": (
+                                heartbeat.get("silver_path")
+                                or heartbeat.get("bronze_path")
+                                or runtime_job.get("target_path")
+                            ),
+                            "checkpoint_path": (
+                                heartbeat.get("checkpoint_path")
+                                or runtime_job.get("checkpoint_path")
+                            ),
+                        }
+                    )
+                    
         enriched_jobs.append(runtime_job)
 
     return {
@@ -733,6 +754,21 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
         "stream_status": stream_status,
         "loaded_at": now_iso(),
     }
+
+
+
+def _stream_current_from_db(job: dict[str, Any]) -> dict[str, Any] | None:
+    if job.get("type") != "stream":
+        return None
+
+    unit_name = _supervisor_unit_name_for_job(job)
+
+    try:
+        row = call_usp_one("usp_get_stream_unit_current", (unit_name,))
+        return row
+    except Exception:
+        return None
+    
 
 # -----------------------------------------------------------------------------
 # Catalog builders

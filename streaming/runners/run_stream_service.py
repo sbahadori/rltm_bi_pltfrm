@@ -45,17 +45,11 @@ def build_submit_command(entrypoint: str, registry: str, stream_name: str) -> st
             f"Streaming engine entrypoint not found: {entrypoint_path}"
         )
 
-    packages = ["io.delta:delta-spark_2.12:3.2.0"]
-
-    if entrypoint.endswith("generic_kafka_to_bronze.py"):
-        packages.append("org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1")
 
     cmd = [
         spark_submit_bin,
         "--master",
         spark_master,
-        "--packages",
-        ",".join(packages),
         "--conf",
         "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension",
         "--conf",

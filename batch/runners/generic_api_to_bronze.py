@@ -403,8 +403,8 @@ def records_to_dataframe(
         .withColumn("api_status", lit(api_status))
         .withColumn("api_url", lit(str(request_meta.get("url", ""))))
         .withColumn("api_method", lit(str(request_meta.get("method", ""))))
-        .withColumn("api_elapsed_seconds", lit(str(request_meta.get("elapsed_seconds", ""))))
-        .withColumn("api_response_bytes", lit(str(request_meta.get("response_bytes", ""))))
+        .withColumn("api_elapsed_seconds", lit(float(request_meta.get("elapsed_seconds", 0.0))))
+        .withColumn("api_response_bytes", lit(int(request_meta.get("response_bytes", 0))))
         .withColumn("ingest_year", year(col("ingestion_ts")))
         .withColumn("ingest_month", month(col("ingestion_ts")))
         .withColumn("ingest_day", dayofmonth(col("ingestion_ts")))
@@ -472,7 +472,7 @@ def write_bronze(df: DataFrame, write_spec: dict[str, Any]) -> None:
         writer = writer.partitionBy(*partition_by)
 
     writer.save(target_path)
-    
+
 # -----------------------------------------------------------------------------
 # Spec normalization
 # -----------------------------------------------------------------------------

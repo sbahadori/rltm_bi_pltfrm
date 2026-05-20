@@ -93,6 +93,7 @@ class StreamSupervisor:
                 previous = self.states.get(unit_name)
 
                 state = UnitState(
+                    run_id=previous.run_id if previous else None,
                     unit_name=unit_name,
                     stream_name=stream_name,
                     layer=layer,

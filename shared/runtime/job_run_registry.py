@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from shared.control.job_spec_store  import load_job_identity
+from shared.control.job_spec_store import load_job_identity
 from shared.control.postgres import call_usp_void, control_db_enabled
 
 
@@ -25,6 +25,9 @@ def registry_path() -> Path:
             "/workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl",
         )
     )
+
+
+JOB_RUN_REGISTRY_FILE = registry_path()
 
 
 def new_run_id(prefix: str | None = None) -> str:
@@ -55,6 +58,15 @@ def _safe_float(value: Any) -> float | None:
 
     try:
         return float(value)
+    except Exception:
+        return None
+
+
+def _epoch_to_iso(value: Any) -> str | None:
+    try:
+        if value is None:
+            return None
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
     except Exception:
         return None
 
@@ -212,7 +224,7 @@ def _upsert_job_run(payload: dict[str, Any]) -> None:
             _safe_int(payload.get("records_written")),
             payload.get("source_path"),
             target_path,
-            json.dumps(resolved_payload, default=str),
+            json.dumps(resolved_payload, ensure_ascii=False, default=str),
         ),
     )
 
@@ -236,7 +248,7 @@ def _insert_job_event(payload: dict[str, Any]) -> None:
             job_key,
             payload.get("event_type", "unknown_event"),
             payload.get("event_message") or payload.get("status"),
-            json.dumps(payload, default=str),
+            json.dumps(payload, ensure_ascii=False, default=str),
         ),
     )
 
@@ -267,7 +279,10 @@ def append_job_event(**event: Any) -> dict[str, Any]:
             _insert_job_event(payload)
 
         except Exception as exc:
-            print(f"[WARN] Failed to write runtime event to control DB: {exc}", flush=True)
+            print(
+                f"[WARN] Failed to write runtime event to control DB: {exc}",
+                flush=True,
+            )
 
             if os.getenv("CONTROL_DB_STRICT", "false").lower() in {"1", "true", "yes"}:
                 raise
@@ -279,20 +294,22 @@ def exception_to_text(exc: BaseException) -> str:
     return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 
 
-def _read_job_run_registry(limit: int = 2000) -> list[dict[str, Any]]:
+def read_job_run_registry(limit: int = 2000) -> list[dict[str, Any]]:
     """
     Read runtime/job_runs/job_runs.jsonl and return normalized records.
 
-    The registry is append-only JSONL. Invalid lines are skipped intentionally,
-    because observability must not break the dashboard.
+    Invalid JSONL lines are skipped intentionally because observability
+    must not break the dashboard.
     """
-    if not JOB_RUN_REGISTRY_FILE.exists():
+    reg_file = registry_path()
+
+    if not reg_file.exists():
         return []
 
     records: list[dict[str, Any]] = []
 
     try:
-        with JOB_RUN_REGISTRY_FILE.open("r", encoding="utf-8") as f:
+        with reg_file.open("r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
 
@@ -338,7 +355,7 @@ def _normalize_registry_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _registry_match_keys_for_job(job: dict[str, Any]) -> set[str]:
+def registry_match_keys_for_job(job: dict[str, Any]) -> set[str]:
     """
     Build all possible identifiers that can refer to the same runtime job.
 
@@ -381,15 +398,15 @@ def _registry_match_keys_for_job(job: dict[str, Any]) -> set[str]:
     return keys
 
 
-def _registry_records_for_job(
+def registry_records_for_job(
     job: dict[str, Any],
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    keys = _registry_match_keys_for_job(job)
+    keys = registry_match_keys_for_job(job)
 
     matched: list[dict[str, Any]] = []
 
-    for record in _read_job_run_registry():
+    for record in read_job_run_registry():
         candidates = {
             str(record.get("job_id") or ""),
             str(record.get("job") or ""),
@@ -403,7 +420,7 @@ def _registry_records_for_job(
     return matched[-limit:]
 
 
-def _registry_runs_for_job(
+def registry_runs_for_job(
     job: dict[str, Any],
     limit: int = 20,
 ) -> list[dict[str, Any]]:
@@ -417,7 +434,7 @@ def _registry_runs_for_job(
       stream_started is returned as a running run.
       stream_exited updates the same run if run_id matches.
     """
-    records = _registry_records_for_job(job, limit=500)
+    records = registry_records_for_job(job, limit=500)
 
     by_run_id: dict[str, dict[str, Any]] = {}
 
@@ -468,6 +485,14 @@ def _registry_runs_for_job(
     return runs[:limit]
 
 
-def _latest_registry_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
-    runs = _registry_runs_for_job(job, limit=1)
+def latest_registry_run_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
+    runs = registry_runs_for_job(job, limit=1)
     return runs[0] if runs else None
+
+
+# Backward-compatible aliases for older dashboard code.
+_read_job_run_registry = read_job_run_registry
+_registry_match_keys_for_job = registry_match_keys_for_job
+_registry_records_for_job = registry_records_for_job
+_registry_runs_for_job = registry_runs_for_job
+_latest_registry_run_for_job = latest_registry_run_for_job

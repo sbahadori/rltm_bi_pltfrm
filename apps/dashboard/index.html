@@ -627,6 +627,17 @@ function shortDate(v){
   }catch(e){ return v; }
 }
 
+function latestActivityTime(job){
+  return (
+    job.last_execution_at ||
+    job.last_batch_ts_iso ||
+    job.heartbeat_ts ||
+    job.started_at ||
+    job.ended_at ||
+    null
+  );
+}
+
 function fmtDuration(v){
   if(v === null || v === undefined || v === "") return "-";
   const n = Number(v);
@@ -690,6 +701,9 @@ function streamHealthHtml(job){
       <div>${boolBadge(job.last_write_ok)}</div>
       <div class="muted" style="margin-top:4px">
         heartbeat: ${esc(fmtAge(job.heartbeat_age_seconds))}
+      </div>
+      <div class="muted">
+        last execution: ${esc(shortDate(latestActivityTime(job)))}
       </div>
       <div class="muted">
         last batch: ${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}
@@ -1035,6 +1049,8 @@ async function openJob(jobId){
     ${job.type === "stream" ? `
       <div class="kv"><div class="k">Runtime unit</div><div class="mono">${esc(job.runtime_unit_name || "-")}</div></div>
       <div class="kv"><div class="k">Heartbeat age</div><div>${esc(fmtAge(job.heartbeat_age_seconds))}</div></div>
+      <div class="kv"><div class="k">Heartbeat timestamp</div><div>${esc(job.heartbeat_ts ? shortDate(job.heartbeat_ts) : "-")}</div></div>
+      <div class="kv"><div class="k">Last execution</div><div>${esc(latestActivityTime(job) ? shortDate(latestActivityTime(job)) : "-")}</div></div>
       <div class="kv"><div class="k">Last batch</div><div class="mono">${esc(valueOrDash(job.last_batch_id))}</div></div>
       <div class="kv"><div class="k">Last batch time</div><div>${esc(job.last_batch_ts_iso ? shortDate(job.last_batch_ts_iso) : "-")}</div></div>
       <div class="kv"><div class="k">Input rows</div><div>${esc(valueOrDash(job.last_input_rows ?? job.last_batch_rows))}</div></div>
@@ -1056,17 +1072,67 @@ async function openJob(jobId){
 
   try{
     const runs = await apiJson(`/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`);
-    const rows = (runs.runs || []).map(r => `
-      <tr>
-        <td class="mono">${esc(r.dag_run_id || r.unit_name || "-")}</td>
-        <td>${statusTag(r.state || r.task_state || r.dag_run_state || "unknown")}</td>
-        <td>${shortDate(r.started_at)}</td>
-        <td>${shortDate(r.ended_at)}</td>
-        <td>${fmtDuration(r.duration_seconds)}</td>
-        <td>${esc(r.try_number ?? "-")}</td>
-      </tr>
-    `);
-    document.getElementById("runsBody").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="6">No runs found.</td></tr>`;
+    const runsHead = document.querySelector("#runsTab thead");
+
+    if(job.type === "stream"){
+      if(runsHead){
+        runsHead.innerHTML = `
+          <tr>
+            <th>Batch</th>
+            <th>State</th>
+            <th>Batch time</th>
+            <th>Input</th>
+            <th>Valid / Invalid</th>
+            <th>Message</th>
+          </tr>
+        `;
+      }
+
+      const rows = (runs.runs || []).map(r => `
+        <tr>
+          <td class="mono">${esc(valueOrDash(r.batch_id || r.run_id))}</td>
+          <td>${statusTag(r.state || "unknown")}</td>
+          <td>${shortDate(r.started_at)}</td>
+          <td>${esc(valueOrDash(r.input_rows ?? r.batch_rows))}</td>
+          <td>${esc(valueOrDash(r.valid_rows))} / ${esc(valueOrDash(r.invalid_rows))}</td>
+          <td class="mono">
+            ${esc(r.error_message || r.message || "-")}
+          </td>
+        </tr>
+      `);
+
+      document.getElementById("runsBody").innerHTML =
+        rows.length ? rows.join("") : `<tr><td colspan="6">No stream batches found.</td></tr>`;
+
+    }else{
+      if(runsHead){
+        runsHead.innerHTML = `
+          <tr>
+            <th>Run ID</th>
+            <th>State</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration</th>
+            <th>Try</th>
+          </tr>
+        `;
+      }
+
+      const rows = (runs.runs || []).map(r => `
+        <tr>
+          <td class="mono">${esc(r.dag_run_id || r.run_id || "-")}</td>
+          <td>${statusTag(r.state || r.task_state || r.dag_run_state || "unknown")}</td>
+          <td>${shortDate(r.started_at)}</td>
+          <td>${shortDate(r.ended_at)}</td>
+          <td>${fmtDuration(r.duration_seconds)}</td>
+          <td>${esc(r.try_number ?? "-")}</td>
+        </tr>
+      `);
+
+      document.getElementById("runsBody").innerHTML =
+        rows.length ? rows.join("") : `<tr><td colspan="6">No runs found.</td></tr>`;
+    }
+
   }catch(e){
     document.getElementById("runsBody").innerHTML = `<tr><td colspan="6"><div class="error-box">${esc(e.message)}</div></td></tr>`;
   }

@@ -247,19 +247,37 @@ def ingest_one_table(
                 "table_id": table_cfg["table_id"],
                 "load_type": load_type,
                 "strategy": strategy,
+                "lower_bound": lower_bound,
+                "upper_bound": upper_bound,
             },
         )
 
         if rows_read == 0:
             print(
                 f"[JDBC_SKIP_EMPTY] table_id={table_cfg['table_id']} "
-                f"load_type={load_type} strategy={strategy}",
+                f"load_type={load_type} strategy={strategy} "
+                f"lower_bound={lower_bound} upper_bound={upper_bound}",
                 flush=True,
             )
             return 0
-    else:
-        rows_read = -1
 
+    else:
+        if load_type == "incremental":
+            has_rows = df.limit(1).count() > 0
+
+            if not has_rows:
+                print(
+                    f"[JDBC_SKIP_EMPTY_INCREMENTAL] "
+                    f"table_id={table_cfg['table_id']} "
+                    f"load_type={load_type} "
+                    f"strategy={strategy} "
+                    f"lower_bound={lower_bound} "
+                    f"upper_bound={upper_bound}",
+                    flush=True,
+                )
+                return 0
+
+    rows_read = -1
     bronze_df = add_bronze_metadata(
         df,
         source_id=manifest["source_id"],

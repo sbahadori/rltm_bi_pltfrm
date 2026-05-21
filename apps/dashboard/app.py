@@ -653,6 +653,18 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
             db_unit = _stream_current_from_db(runtime_job)
 
             if db_unit:
+
+                latest_metric = _latest_stream_batch_metric_from_db(
+                    db_unit.get("unit_name")
+                )
+
+                last_batch_ts_iso = _stream_batch_time(latest_metric)
+
+                last_execution_at = (
+                    last_batch_ts_iso
+                    or db_unit.get("heartbeat_ts")
+                    or db_unit.get("updated_at")
+)
                 runtime_job.update(
                     {
                         "runtime_available": True,
@@ -693,6 +705,18 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         or runtime_job.get("target_path"),
                         "checkpoint_path": db_unit.get("checkpoint_path")
                         or runtime_job.get("checkpoint_path"),
+                        "last_batch_ts_iso": last_batch_ts_iso,
+                        "last_execution_at": last_execution_at,
+                        "heartbeat_ts": db_unit.get("heartbeat_ts"),
+                        "runtime_updated_at": db_unit.get("updated_at"),
+
+                        "latest_run_id": (
+                            f"{db_unit.get('unit_name')}::batch-{db_unit.get('last_batch_id')}"
+                            if db_unit.get("last_batch_id") is not None
+                            else db_unit.get("unit_name")
+                        ),
+
+                        "started_at": last_execution_at or runtime_job.get("started_at"),
                     }
                 )
 
@@ -701,7 +725,11 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
 
                 if unit:
                     heartbeat = unit.get("heartbeat") or {}
-
+                    last_execution_at = (
+                        heartbeat.get("last_batch_ts_iso")
+                        or heartbeat.get("ts_iso")
+                        or unit.get("last_start_ts_iso")
+                    )
                     runtime_job.update(
                         {
                             "runtime_available": True,
@@ -744,6 +772,14 @@ def _enrich_runtime_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                                 heartbeat.get("checkpoint_path")
                                 or runtime_job.get("checkpoint_path")
                             ),
+                            "last_execution_at": last_execution_at,
+                            "started_at": last_execution_at or runtime_job.get("started_at"),
+                            "heartbeat_ts": heartbeat.get("ts_iso"),
+                            "latest_run_id": (
+                                f"{unit.get('unit_name')}::batch-{heartbeat.get('last_batch_id')}"
+                                if heartbeat.get("last_batch_id") is not None
+                                else unit.get("unit_name")
+                            ),
                         }
                     )
                     
@@ -769,6 +805,38 @@ def _stream_current_from_db(job: dict[str, Any]) -> dict[str, Any] | None:
     except Exception:
         return None
     
+def _stream_batch_metrics_from_db(
+    unit_name: str,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    try:
+        return call_usp_rows(
+            "usp_list_stream_batch_metrics",
+            (
+                unit_name,
+                limit,
+            ),
+        )
+    except Exception:
+        return []
+
+
+def _latest_stream_batch_metric_from_db(
+    unit_name: str,
+) -> dict[str, Any] | None:
+    rows = _stream_batch_metrics_from_db(unit_name, limit=1)
+    return rows[0] if rows else None
+
+
+def _stream_batch_time(metric: dict[str, Any] | None) -> Any:
+    if not metric:
+        return None
+
+    return (
+        metric.get("batch_ts")
+        or metric.get("updated_at")
+        or metric.get("created_at")
+    )
 
 # -----------------------------------------------------------------------------
 # Catalog builders
@@ -1720,9 +1788,11 @@ async def get_runtime_runs(
         return JSONResponse(payload)
 
     if job.get("type") == "stream":
-        registry_runs = _registry_runs_for_job(job, limit=limit)
+        unit_name = _supervisor_unit_name_for_job(job)
+        current = _stream_current_from_db(job)
+        metrics = _stream_batch_metrics_from_db(unit_name, limit=limit)
 
-        if registry_runs:
+        if metrics:
             return JSONResponse(
                 {
                     "job_id": job.get("id"),
@@ -1730,8 +1800,35 @@ async def get_runtime_runs(
                     "pipeline": job.get("pipeline"),
                     "type": "stream",
                     "available": True,
-                    "source": "job_run_registry",
-                    "runs": registry_runs,
+                    "source": "stream_batch_metric",
+                    "runtime_unit_name": unit_name,
+                    "current_state": current.get("computed_status") if current else None,
+                    "heartbeat_age_seconds": current.get("heartbeat_age_seconds") if current else None,
+                    "runs": [
+                        {
+                            "run_id": f"{unit_name}::batch-{m.get('batch_id')}",
+                            "batch_id": m.get("batch_id"),
+                            "state": "success" if m.get("write_ok") is True else "failed",
+                            "started_at": m.get("batch_ts"),
+                            "ended_at": m.get("batch_ts"),
+                            "duration_seconds": None,
+                            "try_number": None,
+                            "input_rows": m.get("input_rows"),
+                            "batch_rows": m.get("batch_rows"),
+                            "valid_rows": m.get("valid_rows"),
+                            "invalid_rows": m.get("invalid_rows"),
+                            "written_rows": m.get("written_rows"),
+                            "written_valid_rows": m.get("written_valid_rows"),
+                            "written_invalid_rows": m.get("written_invalid_rows"),
+                            "write_ok": m.get("write_ok"),
+                            "message": m.get("message"),
+                            "error_message": m.get("error_message"),
+                            "target_path": m.get("target_path"),
+                            "checkpoint_path": m.get("checkpoint_path"),
+                            "source": "stream_batch_metric",
+                        }
+                        for m in metrics
+                    ],
                 }
             )
 
@@ -1754,13 +1851,13 @@ async def get_runtime_runs(
                         "started_at": unit.get("last_start_ts_iso") if unit else None,
                         "ended_at": None,
                         "duration_seconds": None,
+                        "try_number": None,
                         "status_reason": unit.get("status_reason") if unit else "No matching stream unit found",
                         "source": "stream_supervisor_current_state",
                     }
                 ],
             }
         )
-
 
 @app.get("/api/runtime/logs/{job_id}")
 async def get_runtime_logs(

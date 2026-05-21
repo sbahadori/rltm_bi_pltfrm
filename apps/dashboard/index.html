@@ -1111,8 +1111,10 @@ async function openJob(jobId){
             <th>Run ID</th>
             <th>State</th>
             <th>Start</th>
-            <th>End</th>
             <th>Duration</th>
+            <th>Read</th>
+            <th>Written</th>
+            <th>Ins / Upd / Del</th>
             <th>Try</th>
           </tr>
         `;
@@ -1120,17 +1122,26 @@ async function openJob(jobId){
 
       const rows = (runs.runs || []).map(r => `
         <tr>
-          <td class="mono">${esc(r.dag_run_id || r.run_id || "-")}</td>
+          <td class="mono">
+            ${esc(r.display_run_id || r.run_id || r.dag_run_id || "-")}
+            ${r.airflow_dag_run_id ? `<div class="muted">airflow: ${esc(r.airflow_dag_run_id)}</div>` : ""}
+          </td>
           <td>${statusTag(r.state || r.task_state || r.dag_run_state || "unknown")}</td>
           <td>${shortDate(r.started_at)}</td>
-          <td>${shortDate(r.ended_at)}</td>
           <td>${fmtDuration(r.duration_seconds)}</td>
+          <td>${esc(valueOrDash(r.records_read))}</td>
+          <td>${esc(valueOrDash(r.records_written))}</td>
+          <td class="mono">
+            ${esc(valueOrDash(r.records_inserted))} /
+            ${esc(valueOrDash(r.records_updated))} /
+            ${esc(valueOrDash(r.records_deleted))}
+          </td>
           <td>${esc(r.try_number ?? "-")}</td>
         </tr>
       `);
 
       document.getElementById("runsBody").innerHTML =
-        rows.length ? rows.join("") : `<tr><td colspan="6">No runs found.</td></tr>`;
+        rows.length ? rows.join("") : `<tr><td colspan="8">No runs found.</td></tr>`;
     }
 
   }catch(e){

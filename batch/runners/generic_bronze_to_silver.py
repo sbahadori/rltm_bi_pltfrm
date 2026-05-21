@@ -114,43 +114,68 @@ def main():
             )
 
             if silver_df.rdd.isEmpty():
+                run_ctx["records_read"] = 0
                 run_ctx["records_written"] = 0
-                print("No rows to write to Silver.")
+                run_ctx["records_inserted"] = 0
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
+                print("[SILVER_SKIP_EMPTY] No rows to write to Silver.", flush=True)
                 return
 
+            input_count = bronze_df.count()
             output_count = silver_df.count()
 
-            if spec["target"].get("mode", "merge") == "merge":
+            run_ctx["records_read"] = input_count
+
+            target_mode = spec["target"].get("mode", "merge")
+            partition_by = spec["target"].get("partition_by", [])
+
+            if target_mode == "merge":
                 if not merge_keys:
                     raise ValueError("Target mode 'merge' requires target.merge_keys")
 
-                partition_by = spec["target"].get("partition_by", [])
-
-                merge_to_target(
+                merge_metrics = merge_to_target(
                     spark=spark,
                     target_path=target_path,
                     df=silver_df,
                     merge_keys=merge_keys,
                     partition_by=partition_by,
                 )
+
+                run_ctx["records_written"] = merge_metrics.get("records_written", output_count)
+                run_ctx["records_inserted"] = merge_metrics.get("records_inserted", 0)
+                run_ctx["records_updated"] = merge_metrics.get("records_updated", 0)
+                run_ctx["records_deleted"] = merge_metrics.get("records_deleted", 0)
+                run_ctx["delta_operation_metrics"] = merge_metrics.get("delta_operation_metrics", {})
+
             else:
                 writer = silver_df.write.format(
                     spec["target"].get("format", "delta")
-                ).mode(
-                    spec["target"].get("mode", "append")
-                )
-
-                partition_by = spec["target"].get("partition_by", [])
+                ).mode(target_mode)
 
                 if partition_by:
                     writer = writer.partitionBy(*partition_by)
 
                 writer.save(target_path)
 
-            run_ctx["records_written"] = output_count
+                run_ctx["records_written"] = output_count
+                run_ctx["records_inserted"] = output_count
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
+
             run_ctx["target_path"] = target_path
 
-            print(f"Wrote Silver rows to {target_path}")
+            print(
+                f"[SILVER_WRITE_OK] "
+                f"job_code={context.get('job_code')} "
+                f"read={run_ctx.get('records_read')} "
+                f"written={run_ctx.get('records_written')} "
+                f"inserted={run_ctx.get('records_inserted')} "
+                f"updated={run_ctx.get('records_updated')} "
+                f"deleted={run_ctx.get('records_deleted')} "
+                f"target={target_path}",
+                flush=True,
+            )
 
         finally:
             if spark is not None:

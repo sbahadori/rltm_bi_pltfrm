@@ -139,6 +139,53 @@ def deep_get(payload: Any, path: str | None, default: Any = None) -> Any:
 
     return current
 
+def extract_payload_by_path(payload: Any, path: str | None, default: Any = None) -> Any:
+    if not path or path == "$":
+        return payload
+
+    normalized = path.strip()
+
+    if normalized.startswith("$."):
+        normalized = normalized[2:]
+
+    if normalized == "$":
+        return payload
+
+    return deep_get(payload, normalized, default=default)
+
+
+def records_from_response(
+    *,
+    request_payload: Any,
+    response_spec: dict[str, Any],
+    source_spec: dict[str, Any],
+) -> tuple[Any, list[dict[str, Any]]]:
+    record_mode = str(response_spec.get("record_mode", "")).lower().strip()
+
+    records_path = (
+        response_spec.get("records_path")
+        or response_spec.get("data_path")
+        or response_spec.get("root_path")
+        or source_spec.get("records_path")
+    )
+
+    records_payload = extract_payload_by_path(
+        request_payload,
+        records_path,
+        default=None,
+    )
+
+    if record_mode == "single_object":
+        if records_payload is None:
+            return records_payload, []
+        if isinstance(records_payload, dict):
+            return records_payload, [records_payload]
+        return records_payload, [{"value": records_payload}]
+
+    if record_mode in {"array", "list", "records"}:
+        return records_payload, normalize_records(records_payload)
+
+    return records_payload, normalize_records(records_payload)
 
 def render_template(value: Any) -> Any:
     """
@@ -574,18 +621,35 @@ def main() -> None:
 
             request_payload, request_meta = execute_api_request(source)
 
-            records_path = (
-                response.get("records_path")
-                or response.get("data_path")
-                or source.get("records_path")
+            records_payload, records = records_from_response(
+                request_payload=request_payload,
+                response_spec=response,
+                source_spec=source,
             )
 
-            records_payload = deep_get(request_payload, records_path, default=request_payload)
-            records = normalize_records(records_payload)
-
-            keep_raw_payload = bool(response.get("keep_raw_payload", False))
+            keep_raw_payload = bool(
+                response.get("keep_raw_payload", False)
+                or write_spec.get("include_raw_payload", False)
+            )
 
             source_name = get_source_name(spec, metadata)
+
+            if not records:
+                run_ctx["records_read"] = 0
+                run_ctx["records_written"] = 0
+                run_ctx["records_inserted"] = 0
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
+                run_ctx["target_path"] = write_spec.get("target_path") or write_spec.get("path")
+
+                print(
+                    f"[API_BRONZE_SKIP_EMPTY] "
+                    f"job_code={context.get('job_code')} "
+                    f"record_mode={response.get('record_mode')} "
+                    f"target={run_ctx.get('target_path')}",
+                    flush=True,
+                )
+                return
 
             df = records_to_dataframe(
                 spark,
@@ -596,18 +660,25 @@ def main() -> None:
                 keep_raw_payload=keep_raw_payload,
             )
 
+            records_read = len(records)
+            records_written = df.count()
+
             write_bronze(df, write_spec)
 
-            records_written = 0 if records_payload is None else len(records)
-
-            run_ctx["records_read"] = records_written
+            run_ctx["records_read"] = records_read
             run_ctx["records_written"] = records_written
+            run_ctx["records_inserted"] = records_written
+            run_ctx["records_updated"] = 0
+            run_ctx["records_deleted"] = 0
             run_ctx["target_path"] = write_spec.get("target_path") or write_spec.get("path")
 
             print(
                 f"[API_BRONZE_WRITE_OK] "
                 f"job_code={context.get('job_code')} "
-                f"records={records_written} "
+                f"read={records_read} "
+                f"written={records_written} "
+                f"inserted={records_written} "
+                f"updated=0 deleted=0 "
                 f"target={run_ctx.get('target_path')}",
                 flush=True,
             )

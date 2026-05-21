@@ -160,10 +160,16 @@ def main() -> None:
             if gold_df.rdd.isEmpty():
                 run_ctx["records_read"] = 0
                 run_ctx["records_written"] = 0
+                run_ctx["records_inserted"] = 0
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
                 print("[GOLD_SKIP_EMPTY] No rows to write to Gold.", flush=True)
                 return
 
+            input_count = silver_input_df.count()
             output_count = gold_df.count()
+
+            run_ctx["records_read"] = input_count
 
             validate_partition_columns(gold_df, partition_by)
 

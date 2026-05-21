@@ -7,7 +7,38 @@ from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql.functions import col, expr, lit, row_number
 
+def _safe_int(value: Any) -> int:
+    if value in (None, ""):
+        return 0
 
+    try:
+        return int(value)
+    except Exception:
+        return 0
+
+
+def _latest_delta_operation_metrics(
+    spark: SparkSession,
+    target_path: str,
+) -> dict[str, Any]:
+    try:
+        delta_table = DeltaTable.forPath(spark, target_path)
+        rows = delta_table.history(1).select("operation", "operationMetrics").collect()
+
+        if not rows:
+            return {}
+
+        row = rows[0]
+        metrics = row["operationMetrics"] or {}
+
+        return {
+            "operation": row["operation"],
+            "operation_metrics": dict(metrics),
+        }
+
+    except Exception:
+        return {}
+    
 def ensure_table(
     spark: SparkSession,
     path: str,
@@ -35,7 +66,7 @@ def merge_to_target(
     df: DataFrame,
     merge_keys: list[str],
     partition_by: list[str],
-) -> None:
+) -> dict[str, Any]:
     ensure_table(
         spark=spark,
         path=target_path,
@@ -55,6 +86,30 @@ def merge_to_target(
         .execute()
     )
 
+    latest = _latest_delta_operation_metrics(
+        spark=spark,
+        target_path=target_path,
+    )
+
+    raw = latest.get("operation_metrics") or {}
+
+    inserted = _safe_int(raw.get("numTargetRowsInserted"))
+    updated = _safe_int(raw.get("numTargetRowsUpdated"))
+    deleted = _safe_int(raw.get("numTargetRowsDeleted"))
+
+    output_rows = (
+        _safe_int(raw.get("numOutputRows"))
+        or inserted + updated + deleted
+    )
+
+    return {
+        "records_written": output_rows,
+        "records_inserted": inserted,
+        "records_updated": updated,
+        "records_deleted": deleted,
+        "delta_operation": latest.get("operation"),
+        "delta_operation_metrics": raw,
+    }
 
 
 def validate_partition_columns(df: DataFrame, partition_by: list[str]) -> None:

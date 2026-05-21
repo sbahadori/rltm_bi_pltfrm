@@ -1567,6 +1567,65 @@ def _latest_task_run_for_job(
         "latest_run": None,
     }
 
+def _control_batch_runs_for_job(
+    job: dict[str, Any],
+    limit: int,
+) -> dict[str, Any]:
+    job_code = job.get("job_code") or job.get("job_key")
+    source_id = job.get("source_id")
+    table_id = job.get("table_id")
+    pipeline_name = job.get("pipeline")
+    job_name = job.get("name")
+
+    try:
+        rows = call_usp_rows(
+            "usp_list_batch_runs_for_job",
+            (
+                job_code,
+                source_id,
+                table_id,
+                pipeline_name,
+                job_name,
+                limit,
+            ),
+        )
+
+        return {
+            "available": True,
+            "source": "control_db",
+            "runs": [
+                {
+                    "run_id": row.get("run_id"),
+                    "display_run_id": row.get("display_run_id"),
+                    "platform_run_id": row.get("run_id"),
+                    "airflow_dag_run_id": row.get("airflow_dag_run_id"),
+                    "task_id": row.get("airflow_task_id"),
+                    "state": row.get("state"),
+                    "started_at": row.get("started_at"),
+                    "ended_at": row.get("ended_at"),
+                    "duration_seconds": row.get("duration_seconds"),
+                    "try_number": row.get("airflow_try_number"),
+                    "records_read": row.get("records_read"),
+                    "records_written": row.get("records_written"),
+                    "records_inserted": row.get("records_inserted"),
+                    "records_updated": row.get("records_updated"),
+                    "records_deleted": row.get("records_deleted"),
+                    "target_path": row.get("target_path"),
+                    "status_reason": row.get("status_reason"),
+                    "error_message": row.get("error_message"),
+                    "source": "control_db",
+                }
+                for row in rows
+            ],
+        }
+
+    except Exception as exc:
+        return {
+            "available": False,
+            "source": "control_db",
+            "error": str(exc),
+            "runs": [],
+        }
 
 def _batch_runs_for_job(
     dag_id: str,
@@ -1772,11 +1831,17 @@ async def get_runtime_runs(
         )
 
     if job.get("type") == "batch":
-        payload = _batch_runs_for_job(
-            dag_id=job.get("pipeline", ""),
-            task_id=job.get("name", ""),
-            limit=limit,
-        )
+        payload = _control_batch_runs_for_job(job, limit=limit)
+
+        # Fallback to Airflow only if Control DB has no run history.
+        if not payload.get("runs"):
+            payload = _batch_runs_for_job(
+                dag_id=job.get("pipeline", ""),
+                task_id=job.get("name", ""),
+                limit=limit,
+            )
+            payload["source"] = "airflow_fallback"
+
         payload.update(
             {
                 "job_id": job.get("id"),
@@ -1785,6 +1850,7 @@ async def get_runtime_runs(
                 "type": "batch",
             }
         )
+
         return JSONResponse(payload)
 
     if job.get("type") == "stream":

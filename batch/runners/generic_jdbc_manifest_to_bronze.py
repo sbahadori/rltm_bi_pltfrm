@@ -229,6 +229,12 @@ def ingest_one_table(
 
     count_rows = bool(table_cfg.get("count_rows", False))
 
+    rows_read: int | None = None
+    records_written: int | None = None
+    records_inserted: int | None = None
+    records_updated: int | None = None
+    records_deleted: int | None = None
+
     if count_rows:
         rows_read = df.count()
 
@@ -259,7 +265,15 @@ def ingest_one_table(
                 f"lower_bound={lower_bound} upper_bound={upper_bound}",
                 flush=True,
             )
-            return 0
+
+            return {
+                "rows_read": 0,
+                "records_written": 0,
+                "records_inserted": 0,
+                "records_updated": 0,
+                "records_deleted": 0,
+                "skipped_empty": True,
+            }
 
     else:
         if load_type == "incremental":
@@ -275,9 +289,16 @@ def ingest_one_table(
                     f"upper_bound={upper_bound}",
                     flush=True,
                 )
-                return 0
 
-    rows_read = -1
+                return {
+                    "rows_read": 0,
+                    "records_written": 0,
+                    "records_inserted": 0,
+                    "records_updated": 0,
+                    "records_deleted": 0,
+                    "skipped_empty": True,
+                }
+    
     bronze_df = add_bronze_metadata(
         df,
         source_id=manifest["source_id"],
@@ -290,6 +311,11 @@ def ingest_one_table(
     )
 
     write_bronze_table(bronze_df, table_cfg)
+    if count_rows:
+        records_written = rows_read
+        records_inserted = rows_read
+        records_updated = 0
+        records_deleted = 0
 
 
     write_dataset_lineage(
@@ -338,9 +364,7 @@ def ingest_one_table(
             )
 
 
-
-
-    records_text = rows_read if rows_read >= 0 else "not_counted"
+    records_text = rows_read if rows_read is not None else "not_counted"
 
     print(
         f"[JDBC_BRONZE_WRITE_OK] table_id={table_cfg['table_id']} "
@@ -349,7 +373,14 @@ def ingest_one_table(
         flush=True,
     )
 
-    return rows_read
+    return {
+        "rows_read": rows_read,
+        "records_written": records_written,
+        "records_inserted": records_inserted,
+        "records_updated": records_updated,
+        "records_deleted": records_deleted,
+        "skipped_empty": False,
+    }
 
 
 def main():
@@ -372,7 +403,11 @@ def main():
 
     started = time.time()
     spark = None
-    total_rows = 0
+    total_rows_read = 0
+    total_records_written = 0
+    total_records_inserted = 0
+    total_records_updated = 0
+    total_records_deleted = 0
     counted_any_table = False
 
     append_job_event(
@@ -411,7 +446,7 @@ def main():
         spark = build_spark()
 
         for table in tables:
-            rows = ingest_one_table(
+            metrics = ingest_one_table(
                 spark=spark,
                 manifest=manifest,
                 runtime_connection=runtime_connection,
@@ -420,9 +455,21 @@ def main():
                 control=control,
             )
 
-            if rows >= 0:
-                total_rows += rows
+            if metrics.get("rows_read") is not None:
+                total_rows_read += int(metrics.get("rows_read") or 0)
                 counted_any_table = True
+
+            if metrics.get("records_written") is not None:
+                total_records_written += int(metrics.get("records_written") or 0)
+
+            if metrics.get("records_inserted") is not None:
+                total_records_inserted += int(metrics.get("records_inserted") or 0)
+
+            if metrics.get("records_updated") is not None:
+                total_records_updated += int(metrics.get("records_updated") or 0)
+
+            if metrics.get("records_deleted") is not None:
+                total_records_deleted += int(metrics.get("records_deleted") or 0)
 
         ended = time.time()
 
@@ -456,7 +503,11 @@ def main():
             started_at_epoch=int(started),
             ended_at_epoch=int(ended),
             duration_seconds=round(ended - started, 3),
-            records_written=total_rows if counted_any_table else None,
+            records_read=total_rows_read if counted_any_table else None,
+            records_written=total_records_written if counted_any_table else None,
+            records_inserted=total_records_inserted if counted_any_table else None,
+            records_updated=total_records_updated if counted_any_table else None,
+            records_deleted=total_records_deleted if counted_any_table else None,
             effective_start_date=control["effective_start_date"],
             effective_end_date=control["effective_end_date"],
         )

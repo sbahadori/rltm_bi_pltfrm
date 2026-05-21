@@ -64,6 +64,9 @@ def build_runtime_context(
         "effective_end_date": os.getenv("EFFECTIVE_END_DATE"),
         "records_read": None,
         "records_written": None,
+        "records_inserted": None,
+        "records_updated": None,
+        "records_deleted": None,
     }
 
 
@@ -136,6 +139,9 @@ def control_run(
             duration_seconds=round(ended - started, 3),
             records_read=context.get("records_read"),
             records_written=context.get("records_written"),
+            records_inserted=context.get("records_inserted"),
+            records_updated=context.get("records_updated"),
+            records_deleted=context.get("records_deleted"),
             effective_start_date=context.get("effective_start_date"),
             effective_end_date=context.get("effective_end_date"),
         )

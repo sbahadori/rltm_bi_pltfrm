@@ -579,4 +579,4 @@ $$;
 
 
 
--- Get-Content .\metadata\migrations\006_control_plane_usp.sql | docker compose --project-directory . -f compose/compose.phase1.yaml exec -T postgres-warehouse sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+-- Get-Content .\database\migrations\006_control_plane_usp.sql | docker compose --project-directory . -f compose/compose.phase1.yaml exec -T postgres-warehouse sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'

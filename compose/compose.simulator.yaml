@@ -29,12 +29,14 @@ services:
     environment:
       JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
+      STREAM_CONTROL_DIR: /runtime/spark_health/control
       STREAM_STATUS_FILE: /runtime/spark_health/stream_supervisor_status.json
       STREAM_LOG_DIR: /runtime/spark_health/logs
       AIRFLOW_LOG_DIR: /runtime/airflow_logs
       AIRFLOW_API_BASE: ${AIRFLOW_API_BASE}
       AIRFLOW_USER: ${AIRFLOW_ADMIN_USER}
       AIRFLOW_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+
 
       CONTROL_DB_ENABLED: ${CONTROL_DB_ENABLED:-true}
       CONTROL_DB_HOST: ${CONTROL_DB_HOST:-postgres-warehouse}

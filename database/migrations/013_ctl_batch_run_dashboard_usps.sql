@@ -103,3 +103,6 @@ AS $$
     ORDER BY COALESCE(r.started_at, r.created_at) DESC
     LIMIT COALESCE(p_limit, 10);
 $$;
+
+
+-- Get-Content .\database\migrations\013_auth_and_actions.sql -Raw | docker exec -i postgres-warehouse `  sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'

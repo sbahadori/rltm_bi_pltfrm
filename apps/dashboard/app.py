@@ -57,10 +57,17 @@ from actions import (
     trigger_dag,
 )
 
+try:
+    from job_builder import router as builder_router
+except ImportError:
+    from .job_builder import router as builder_router
+
 # ─────────────────────────────────────────────────────────────
 # App
 # ─────────────────────────────────────────────────────────────
 app = FastAPI(title="BI Platform Dashboard API")
+
+app.include_router(builder_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -464,16 +471,127 @@ def _build_pipelines(catalog: dict, registry: dict) -> list[dict]:
         })
     return pipelines
 
+def _load_ui_definitions() -> tuple[list[dict], list[dict]]:
+    """
+    Load dynamic pipelines/jobs created from the UI.
+
+    If the migration is not applied yet or DB is unavailable,
+    dashboard must continue working from static JSON configs.
+    """
+    try:
+        pipelines = call_usp_rows("usp_list_ui_pipelines", (False,))
+        jobs = call_usp_rows("usp_list_ui_jobs", (None, False))
+        return pipelines, jobs
+    except Exception as exc:
+        print(f"[WARN] UI job registry unavailable: {exc}", flush=True)
+        return [], []
+
+
+def _build_ui_pipelines(
+    pipeline_rows: list[dict],
+    job_rows: list[dict],
+) -> list[dict]:
+    result: list[dict] = []
+
+    jobs_by_pipeline: dict[str, list[str]] = {}
+
+    for job in job_rows:
+        pipeline_name = str(job.get("pipeline_name") or "")
+        job_name = str(job.get("job_name") or "")
+        if not pipeline_name or not job_name:
+            continue
+        jobs_by_pipeline.setdefault(pipeline_name, []).append(job_name)
+
+    for row in pipeline_rows:
+        pipeline_name = str(row.get("pipeline_name") or "")
+        if not pipeline_name:
+            continue
+
+        result.append(
+            {
+                "name": pipeline_name,
+                "type": row.get("pipeline_type") or "batch",
+                "description": row.get("description") or "",
+                "schedule": row.get("schedule"),
+                "tags": row.get("tags") or [],
+                "jobs": jobs_by_pipeline.get(pipeline_name, []),
+                "source": "ui_job_registry",
+                "dynamic": True,
+            }
+        )
+
+    return result
+
+
+def _build_ui_jobs(job_rows: list[dict]) -> list[dict]:
+    result: list[dict] = []
+
+    for row in job_rows:
+        pipeline_name = str(row.get("pipeline_name") or "")
+        job_name = str(row.get("job_name") or "")
+        layer = str(row.get("layer") or "")
+        spec = row.get("spec") or {}
+        runtime_policy = row.get("runtime_policy") or {}
+
+        if not pipeline_name or not job_name:
+            continue
+
+        job_type = row.get("job_type") or "unknown"
+
+        # Optional execution binding:
+        # If a UI-defined job should be executed by an existing Airflow DAG,
+        # put {"airflow_dag_id": "..."} in runtime_policy.
+        airflow_dag_id = (
+            runtime_policy.get("airflow_dag_id")
+            or runtime_policy.get("dag_id")
+            or spec.get("airflow_dag_id")
+            or spec.get("dag_id")
+        )
+
+        result.append(
+            {
+                "id": f"{pipeline_name}__{job_name}",
+                "job_def_key": row.get("job_def_key"),
+                "name": job_name,
+                "display_name": row.get("display_name") or job_name,
+                "pipeline": pipeline_name,
+                "type": "stream" if layer == "stream" else "batch",
+                "job_type": job_type,
+                "runner": job_type,
+                "layer": layer,
+                "description": row.get("description") or "",
+                "enabled": row.get("enabled", True),
+                "target_path": _target_from_spec(spec),
+                "schedule": None,
+                "tags": row.get("tags") or [],
+                "source": "ui_job_registry",
+                "dynamic": True,
+                "spec": spec,
+                "runtime_policy": runtime_policy,
+                "airflow_dag_id": airflow_dag_id,
+            }
+        )
+
+    return result
 
 def _config_bundle() -> dict:
     catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = _load_json(STREAM_REGISTRY_PATH) or {"streams": []}
-    return {
-        "catalog": catalog, "registry": registry,
-        "pipelines": _build_pipelines(catalog, registry),
-        "jobs": _build_batch_jobs(catalog) + _build_stream_jobs(registry),
-    }
 
+    static_pipelines = _build_pipelines(catalog, registry)
+    static_jobs = _build_batch_jobs(catalog) + _build_stream_jobs(registry)
+
+    ui_pipeline_rows, ui_job_rows = _load_ui_definitions()
+
+    dynamic_pipelines = _build_ui_pipelines(ui_pipeline_rows, ui_job_rows)
+    dynamic_jobs = _build_ui_jobs(ui_job_rows)
+
+    return {
+        "catalog": catalog,
+        "registry": registry,
+        "pipelines": static_pipelines + dynamic_pipelines,
+        "jobs": static_jobs + dynamic_jobs,
+    }
 
 def _config_payload() -> dict:
     b = _config_bundle()
@@ -694,6 +812,18 @@ def _latest_control_run(job: dict) -> dict | None:
     except Exception:
         return None
 
+def _has_explicit_airflow_executor(job: dict) -> bool:
+    """
+    Static catalog jobs are expected to map to Airflow DAGs by pipeline name.
+    UI-defined dynamic jobs should NOT be probed against Airflow unless
+    an explicit Airflow executor is configured.
+
+    This keeps dynamic job definition infrastructure-free.
+    """
+    if not job.get("dynamic"):
+        return True
+
+    return bool(job.get("airflow_dag_id"))
 
 def _enrich_jobs(config_jobs: list[dict]) -> dict:
     ss = _load_stream_status()
@@ -728,10 +858,30 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                     "runtime_source": "job_run_registry", "runtime_available": True,
                 })
             elif job.get("type") == "batch":
-                # 3. Try Airflow
-                af = _latest_airflow_task(job.get("pipeline", ""), job.get("name", ""))
-                rj.update({**af, "runtime_source": "airflow", "runtime_available": af.get("airflow_available", False)})
-
+                # 3. Try Airflow only for static jobs, or dynamic jobs with explicit executor binding.
+                if _has_explicit_airflow_executor(job):
+                    dag_id = job.get("airflow_dag_id") or job.get("pipeline", "")
+                    af = _latest_airflow_task(dag_id, job.get("name", ""))
+                    rj.update(
+                        {
+                            **af,
+                            "runtime_source": "airflow",
+                            "runtime_available": af.get("airflow_available", False),
+                        }
+                    )
+                elif job.get("dynamic"):
+                    rj.update(
+                        {
+                            "current_status": "defined",
+                            "latest_run_id": None,
+                            "started_at": None,
+                            "ended_at": None,
+                            "duration_seconds": None,
+                            "status_reason": "Defined in UI registry; no Airflow executor DAG configured yet.",
+                            "runtime_source": "ui_job_registry",
+                            "runtime_available": False,
+                        }
+                    )
         # 4. Stream runtime
         if rj.get("type") == "stream":
             db_unit = _stream_current_from_db(rj)

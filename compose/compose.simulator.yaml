@@ -48,7 +48,9 @@ services:
       
     volumes:
       - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm:ro
-      - ${PROJECT_ROOT}/spark_health:/runtime/spark_health:ro
+      - ${PROJECT_ROOT}/configs:/workspace/rltm_bi_pltfrm/configs:rw
+      - ${PROJECT_ROOT}/runtime:/workspace/rltm_bi_pltfrm/runtime:rw
+      - ${PROJECT_ROOT}/spark_health:/runtime/spark_health
       - ${PROJECT_ROOT}/airflow/logs:/runtime/airflow_logs:ro
     healthcheck:
       test:

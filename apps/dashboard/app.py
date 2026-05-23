@@ -58,16 +58,15 @@ from actions import (
 )
 
 try:
-    from job_builder import router as builder_router
+    from catalog_editor import router as catalog_router
 except ImportError:
-    from .job_builder import router as builder_router
+    from .catalog_editor import router as catalog_router
 
 # ─────────────────────────────────────────────────────────────
 # App
 # ─────────────────────────────────────────────────────────────
 app = FastAPI(title="BI Platform Dashboard API")
-
-app.include_router(builder_router)
+app.include_router(catalog_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,6 +94,56 @@ STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS",
 # ─────────────────────────────────────────────────────────────
 # DB helpers
 # ─────────────────────────────────────────────────────────────
+def _catalog_metadata_for_job(job: dict) -> dict | None:
+    """
+    Returns control DB metadata for a catalog-defined job.
+
+    This is different from runtime run state. It only tells us whether
+    onboarding has loaded the job into meta.pipeline/meta.job.
+    """
+    pipeline_name = job.get("pipeline")
+    job_name = job.get("name")
+
+    if not pipeline_name or not job_name:
+        return None
+
+    sql = """
+        SELECT
+            p.pipeline_id,
+            p.pipeline_name,
+            p.airflow_dag_id,
+            p.is_active AS pipeline_is_active,
+            j.job_id,
+            j.job_code,
+            j.job_name,
+            j.job_type,
+            j.runner,
+            j.layer,
+            j.source_type,
+            j.target_path,
+            j.is_active AS job_is_active,
+            j.updated_at AS job_updated_at
+        FROM meta.job j
+        JOIN meta.pipeline p
+          ON p.pipeline_name = j.pipeline_name
+        WHERE j.pipeline_name = %s
+          AND j.job_name = %s
+          AND j.is_active = TRUE
+        LIMIT 1
+    """
+
+    conn = psycopg2.connect(**_db_config())
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, (pipeline_name, job_name))
+            row = cur.fetchone()
+            return _json_safe(dict(row)) if row else None
+    except Exception as exc:
+        print(f"[WARN] Failed to read catalog metadata for {pipeline_name}.{job_name}: {exc}", flush=True)
+        return None
+    finally:
+        conn.close()
+
 
 def _db_config() -> dict[str, Any]:
     return {
@@ -471,126 +520,15 @@ def _build_pipelines(catalog: dict, registry: dict) -> list[dict]:
         })
     return pipelines
 
-def _load_ui_definitions() -> tuple[list[dict], list[dict]]:
-    """
-    Load dynamic pipelines/jobs created from the UI.
-
-    If the migration is not applied yet or DB is unavailable,
-    dashboard must continue working from static JSON configs.
-    """
-    try:
-        pipelines = call_usp_rows("usp_list_ui_pipelines", (False,))
-        jobs = call_usp_rows("usp_list_ui_jobs", (None, False))
-        return pipelines, jobs
-    except Exception as exc:
-        print(f"[WARN] UI job registry unavailable: {exc}", flush=True)
-        return [], []
-
-
-def _build_ui_pipelines(
-    pipeline_rows: list[dict],
-    job_rows: list[dict],
-) -> list[dict]:
-    result: list[dict] = []
-
-    jobs_by_pipeline: dict[str, list[str]] = {}
-
-    for job in job_rows:
-        pipeline_name = str(job.get("pipeline_name") or "")
-        job_name = str(job.get("job_name") or "")
-        if not pipeline_name or not job_name:
-            continue
-        jobs_by_pipeline.setdefault(pipeline_name, []).append(job_name)
-
-    for row in pipeline_rows:
-        pipeline_name = str(row.get("pipeline_name") or "")
-        if not pipeline_name:
-            continue
-
-        result.append(
-            {
-                "name": pipeline_name,
-                "type": row.get("pipeline_type") or "batch",
-                "description": row.get("description") or "",
-                "schedule": row.get("schedule"),
-                "tags": row.get("tags") or [],
-                "jobs": jobs_by_pipeline.get(pipeline_name, []),
-                "source": "ui_job_registry",
-                "dynamic": True,
-            }
-        )
-
-    return result
-
-
-def _build_ui_jobs(job_rows: list[dict]) -> list[dict]:
-    result: list[dict] = []
-
-    for row in job_rows:
-        pipeline_name = str(row.get("pipeline_name") or "")
-        job_name = str(row.get("job_name") or "")
-        layer = str(row.get("layer") or "")
-        spec = row.get("spec") or {}
-        runtime_policy = row.get("runtime_policy") or {}
-
-        if not pipeline_name or not job_name:
-            continue
-
-        job_type = row.get("job_type") or "unknown"
-
-        # Optional execution binding:
-        # If a UI-defined job should be executed by an existing Airflow DAG,
-        # put {"airflow_dag_id": "..."} in runtime_policy.
-        airflow_dag_id = (
-            runtime_policy.get("airflow_dag_id")
-            or runtime_policy.get("dag_id")
-            or spec.get("airflow_dag_id")
-            or spec.get("dag_id")
-        )
-
-        result.append(
-            {
-                "id": f"{pipeline_name}__{job_name}",
-                "job_def_key": row.get("job_def_key"),
-                "name": job_name,
-                "display_name": row.get("display_name") or job_name,
-                "pipeline": pipeline_name,
-                "type": "stream" if layer == "stream" else "batch",
-                "job_type": job_type,
-                "runner": job_type,
-                "layer": layer,
-                "description": row.get("description") or "",
-                "enabled": row.get("enabled", True),
-                "target_path": _target_from_spec(spec),
-                "schedule": None,
-                "tags": row.get("tags") or [],
-                "source": "ui_job_registry",
-                "dynamic": True,
-                "spec": spec,
-                "runtime_policy": runtime_policy,
-                "airflow_dag_id": airflow_dag_id,
-            }
-        )
-
-    return result
 
 def _config_bundle() -> dict:
     catalog = _load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = _load_json(STREAM_REGISTRY_PATH) or {"streams": []}
-
-    static_pipelines = _build_pipelines(catalog, registry)
-    static_jobs = _build_batch_jobs(catalog) + _build_stream_jobs(registry)
-
-    ui_pipeline_rows, ui_job_rows = _load_ui_definitions()
-
-    dynamic_pipelines = _build_ui_pipelines(ui_pipeline_rows, ui_job_rows)
-    dynamic_jobs = _build_ui_jobs(ui_job_rows)
-
     return {
         "catalog": catalog,
         "registry": registry,
-        "pipelines": static_pipelines + dynamic_pipelines,
-        "jobs": static_jobs + dynamic_jobs,
+        "pipelines": _build_pipelines(catalog, registry),
+        "jobs": _build_batch_jobs(catalog) + _build_stream_jobs(registry),
     }
 
 def _config_payload() -> dict:
@@ -773,33 +711,87 @@ def _epoch_to_iso(v: Any) -> str | None:
 
 
 def _latest_airflow_task(dag_id: str, task_id: str) -> dict:
+    """
+    Load latest Airflow task state.
+
+    Important:
+    - A catalog-defined job may not have an Airflow DAG yet.
+    - Missing DAG should not be treated as platform failure.
+    - It means the job is defined in catalog but not executable yet.
+    """
     try:
         quoted = urllib.parse.quote(dag_id, safe="")
         data = _af_get(f"/api/v2/dags/{quoted}/dagRuns?order_by=-logical_date&limit=10")
         runs = data.get("dag_runs") or []
+
         for run in runs:
             rid = str(run.get("dag_run_id") or "")
             if not rid:
                 continue
+
             quoted_run = urllib.parse.quote(rid, safe="")
             ti_data = _af_get(f"/api/v2/dags/{quoted}/dagRuns/{quoted_run}/taskInstances")
             tasks = ti_data.get("task_instances") or []
-            task = next((t for t in tasks if str(t.get("task_id") or "") == task_id), None)
+
+            task = next(
+                (t for t in tasks if str(t.get("task_id") or "") == task_id),
+                None,
+            )
+
             if task:
                 ts = task.get("start_date") or run.get("start_date")
                 te = task.get("end_date") or run.get("end_date")
+
                 return {
                     "airflow_available": True,
                     "current_status": _normalize_state(task.get("state")),
                     "latest_run_id": rid,
                     "latest_dag_run_state": _normalize_state(run.get("state")),
-                    "started_at": ts, "ended_at": te,
+                    "started_at": ts,
+                    "ended_at": te,
                     "duration_seconds": _duration(ts, te),
                 }
-        return {"airflow_available": True, "current_status": "no_runs"}
-    except Exception as exc:
-        return {"airflow_available": False, "current_status": "airflow_unavailable", "status_reason": str(exc)}
 
+        return {
+            "airflow_available": True,
+            "current_status": "no_runs",
+            "status_reason": "Airflow DAG exists, but no matching task run was found.",
+        }
+
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode(errors="replace")[:500]
+        except Exception:
+            body = ""
+
+        if exc.code == 404:
+            return {
+                "airflow_available": False,
+                "missing_airflow_dag": True,
+                "current_status": "defined",
+                "latest_run_id": None,
+                "started_at": None,
+                "ended_at": None,
+                "duration_seconds": None,
+                "status_reason": (
+                    f"Catalog-defined job; no Airflow DAG was found for dag_id=`{dag_id}`. "
+                    "Run onboarding to load metadata into DB. "
+                    "A real executor DAG is still required to execute this job."
+                ),
+            }
+
+        return {
+            "airflow_available": False,
+            "current_status": "airflow_unavailable",
+            "status_reason": f"Airflow HTTP {exc.code}: {body}",
+        }
+
+    except Exception as exc:
+        return {
+            "airflow_available": False,
+            "current_status": "airflow_unavailable",
+            "status_reason": str(exc),
+        }
 
 def _latest_control_run(job: dict) -> dict | None:
     sid = job.get("source_id")
@@ -858,18 +850,45 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                     "runtime_source": "job_run_registry", "runtime_available": True,
                 })
             elif job.get("type") == "batch":
-                # 3. Try Airflow only for static jobs, or dynamic jobs with explicit executor binding.
-                if _has_explicit_airflow_executor(job):
-                    dag_id = job.get("airflow_dag_id") or job.get("pipeline", "")
-                    af = _latest_airflow_task(dag_id, job.get("name", ""))
-                    rj.update(
-                        {
-                            **af,
-                            "runtime_source": "airflow",
-                            "runtime_available": af.get("airflow_available", False),
-                        }
-                    )
-                elif job.get("dynamic"):
+                af = _latest_airflow_task(job.get("pipeline", ""), job.get("name", ""))
+
+                runtime_source = "airflow"
+                if af.get("missing_airflow_dag"):
+                    runtime_source = "catalog"
+
+                rj.update(
+                    {
+                        **af,
+                        "runtime_source": runtime_source,
+                        "runtime_available": af.get("airflow_available", False),
+                    }
+                )
+
+                # If Airflow DAG is missing, check whether onboarding already loaded
+                # this catalog job into the control DB metadata tables.
+                if af.get("missing_airflow_dag"):
+                    meta_job = _catalog_metadata_for_job(job)
+
+                    if meta_job:
+                        rj.update(
+                            {
+                                "current_status": "onboarded",
+                                "runtime_source": "catalog_metadata",
+                                "runtime_available": False,
+                                "metadata_available": True,
+                                "metadata_job_id": meta_job.get("job_id"),
+                                "metadata_job_code": meta_job.get("job_code"),
+                                "metadata_pipeline_id": meta_job.get("pipeline_id"),
+                                "metadata_airflow_dag_id": meta_job.get("airflow_dag_id"),
+                                "source_type": meta_job.get("source_type") or rj.get("source_type"),
+                                "target_path": meta_job.get("target_path") or rj.get("target_path"),
+                                "status_reason": (
+                                    "Job is onboarded in the control DB, but no executable Airflow DAG exists yet. "
+                                    "Create a dispatcher DAG or bind this pipeline to an existing DAG to execute it."
+                                ),
+                            }
+                        )
+            elif job.get("dynamic"):
                     rj.update(
                         {
                             "current_status": "defined",
@@ -1159,6 +1178,17 @@ def dataset_lineage(limit: int = 100) -> dict:
 # ─── EXECUTION ENDPOINTS ─────────────────────────────────────
 # ─────────────────────────────────────────────────────────────
 
+@app.get("/api/catalog/change-log")
+async def catalog_change_log(
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        return {"items": call_usp_rows("usp_list_catalog_change_logs", (limit,))}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/actions/dag/trigger")
 async def action_dag_trigger(
     req: DagTriggerRequest,
@@ -1390,3 +1420,5 @@ async def ws_logs(
         pass
     except Exception:
         pass
+
+

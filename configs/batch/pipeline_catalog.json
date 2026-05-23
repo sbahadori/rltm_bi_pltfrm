@@ -705,6 +705,92 @@
           "execution_strategy": "one_task_per_table"
         }
       ]
+    },
+    {
+      "name": "demo_catalog_pipeline",
+      "description": "Demo pipeline managed through catalog editor",
+      "enabled": true,
+      "dag": {
+        "schedule": null,
+        "tags": [
+          "demo",
+          "catalog_managed",
+          "api"
+        ],
+        "start_date": "2026-01-01T00:00:00+00:00",
+        "catchup": false,
+        "max_active_runs": 1,
+        "default_args": {
+          "owner": "admin",
+          "retries": 0,
+          "retry_delay_minutes": 1
+        }
+      },
+      "jobs": [
+        {
+          "name": "demo_api_bronze",
+          "job_type": "generic_api_to_bronze",
+          "enabled": true,
+          "spec": {
+            "source": {
+              "base_url": "https://example.com/api",
+              "method": "GET",
+              "timeout_seconds": 20
+            },
+            "auth": {
+              "type": "none"
+            },
+            "response": {
+              "format": "json",
+              "root_path": "$",
+              "record_mode": "single_object"
+            },
+            "bronze_write": {
+              "target_path": "s3a://lakehouse/bronze/demo_api",
+              "mode": "append",
+              "partition_by": [
+                "ingest_year",
+                "ingest_month",
+                "ingest_day"
+              ]
+            },
+            "load_type": "event",
+            "strategy": "append_event",
+            "request": {
+              "query_params": {},
+              "headers": {},
+              "body": null
+            },
+            "validation": {
+              "required_paths": [],
+              "rules": []
+            },
+            "mapping": {},
+            "schema": [],
+            "runtime_policy": {
+              "max_retries": 3,
+              "backoff_seconds": 10
+            },
+            "spark": {
+              "master": null,
+              "packages": [],
+              "conf": {}
+            }
+          },
+          "tags": [
+            "demo",
+            "bronze",
+            "api"
+          ],
+          "source_type": "api",
+          "dependencies": [],
+          "retries": 0,
+          "retry_delay_minutes": 1,
+          "execution_timeout_minutes": 10
+        }
+      ],
+      "domain": "demo_catalog_pipeline",
+      "source_type": "api"
     }
   ]
 }

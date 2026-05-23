@@ -299,7 +299,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 <!-- ─── App ───────────────────────────────────────────── -->
 <div id="appPage" class="app" style="display:none">
-  <aside class="side">
+  <aside class="side" id="sideMenu">
     <div class="brand">
       <div class="logo">BI</div>
       <div class="brand-text">
@@ -384,7 +384,22 @@ tr:hover td{background:rgba(255,255,255,.02)}
             <button class="btn sm" onclick="pauseCurrentPipeline(false)">▶ Unpause</button>
           </div>
         </div>
-        <table><thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Latest Run</th><th>Target</th><th>Action</th></tr></thead>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Latest Run</th>
+                <th>Records</th>
+                <th>Target</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="pipelineJobsBody"></tbody>
+          </table>
+        </div>
         <tbody id="pipelineJobsBody"></tbody></table>
       </div>
     </section>
@@ -407,7 +422,25 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <section id="jobs" class="section">
       <div class="card">
         <div class="sec-title"><h3>All Jobs</h3><span id="allJobsCount" style="color:var(--muted);font-size:12px"></span></div>
-        <table><thead><tr><th>Pipeline</th><th>Job</th><th>Type</th><th>Status</th><th>Latest Run</th><th>Target</th><th>Actions</th></tr></thead>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pipeline</th>
+                <th>Job</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Latest Run</th>
+                <th>Records</th>
+                <th>Target</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="jobsBody">
+              <tr><td colspan="8" style="color:var(--muted)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
         <tbody id="jobsBody"><tr><td colspan="7" style="color:var(--muted)">Loading…</td></tr></tbody></table>
       </div>
     </section>
@@ -745,10 +778,24 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="tab" data-tab="rawTab">Raw</button>
     </div>
     <div id="runsTab" class="tab-panel active">
-      <table><thead><tr><th>Run ID</th><th>State</th><th>Started</th><th>Ended</th><th>Duration</th></tr></thead>
-      <tbody id="runsBody"></tbody></table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job Run ID</th>
+              <th>State</th>
+              <th>Records</th>
+              <th>Started</th>
+              <th>Ended</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody id="runsBody">
+            <tr><td colspan="6" style="color:var(--muted)">No job selected.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div id="logsTab" class="tab-panel">
       <div class="log-controls">
         <span id="wsStatus" class="ws-badge disconnected">● Disconnected</span>
         <button class="btn sm" onclick="connectLiveLog()">Connect Live</button>
@@ -814,7 +861,7 @@ const S = {
 
 const REFRESH_MS = 6000;
 let refreshTimer = null;
-
+let lastDrawerRunsRefreshAt = 0;
 // ═══════════════════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════════════════
@@ -824,12 +871,20 @@ function fmtDate(v){ if(!v)return'-'; try{return new Date(v).toLocaleString()}ca
 function layerFromPath(p){ const s=String(p||'').toLowerCase(); if(s.includes('/bronze'))return'Bronze'; if(s.includes('/silver'))return'Silver'; if(s.includes('/gold'))return'Gold'; return'-' }
 
 async function api(method, path, body){
+  if(method === 'GET'){
+    path += path.includes('?') ? `&_=${Date.now()}` : `?_=${Date.now()}`;
+  }
+
   const opts = { method, headers:{'Content-Type':'application/json'} };
+
   if(S.token) opts.headers['Authorization'] = `Bearer ${S.token}`;
   if(body) opts.body = JSON.stringify(body);
+
   const res = await fetch(path, opts);
   const text = await res.text();
+
   if(!res.ok) throw new Error(text.slice(0,300));
+
   return text ? JSON.parse(text) : {};
 }
 
@@ -840,6 +895,24 @@ function statusTag(s){
 }
 function typeTag(t){ return `<span class="tag ${t}">${esc(t)}</span>` }
 
+function numOrDash(v){
+  if(v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString() : esc(v);
+}
+
+function runIdText(r){
+  return r.run_id || r.job_run_id || r.runtime_run_id || r.dag_run_id || '-';
+}
+
+function counterHtml(obj){
+  return `
+    <div class="mono" style="line-height:1.55;white-space:nowrap">
+      read: ${numOrDash(obj.records_read)} · written: ${numOrDash(obj.records_written)}<br>
+      ins: ${numOrDash(obj.records_inserted)} · upd: ${numOrDash(obj.records_updated)} · del: ${numOrDash(obj.records_deleted)}
+    </div>
+  `;
+}
 // ═══════════════════════════════════════════════════════════
 // TOAST
 // ═══════════════════════════════════════════════════════════
@@ -908,6 +981,7 @@ async function refresh(){
     S.pipelines = cfg.pipelines || [];
     S.alerts = buildAlerts(runtime);
     renderAll();
+    syncOpenDrawerAfterRefresh();
     document.getElementById('topSub').textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
   }catch(e){
     document.getElementById('topSub').textContent = `Error: ${e.message}`;
@@ -985,15 +1059,20 @@ function renderRecent(){
 function renderJobs(){
   const body = document.getElementById('jobsBody');
   document.getElementById('allJobsCount').textContent = S.jobs.length;
+
   body.innerHTML = S.jobs.map(j=>`
     <tr>
       <td class="mono">${esc(j.pipeline||'-')}</td>
-      <td>${esc(j.name||'-')}</td>
+      <td>
+        <b>${esc(j.name||'-')}</b>
+        <div class="mono" style="color:var(--muted)">${esc(j.id||'')}</div>
+      </td>
       <td>${typeTag(j.type)}</td>
       <td>${statusTag(j.current_status||'defined')}</td>
       <td class="mono">${esc(j.latest_run_id||'-')}</td>
-      <td class="mono" style="color:var(--muted)">${esc((j.stream_target_path||j.target_path||'').slice(0,40))||'-'}</td>
-      <td style="display:flex;gap:6px">
+      <td>${counterHtml(j)}</td>
+      <td class="mono" style="color:var(--muted)">${esc((j.stream_target_path||j.target_path||'').slice(0,60))||'-'}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn sm" onclick="openJob('${esc(j.id)}')">Open</button>
         ${j.type==='batch' && !j.missing_airflow_dag
           ? `<button class="btn sm primary" onclick="openTriggerModal('${esc(j.pipeline)}')">▶</button>`
@@ -1001,9 +1080,13 @@ function renderJobs(){
             ? `<button class="btn sm" disabled title="No executor DAG exists yet">No DAG</button>`
             : ''
         }
-        ${j.type==='stream'?`<button class="btn sm success" onclick="doStreamRestart('${esc(j.runtime_unit_name||'')}','${esc(j.name)}')">↺ Restart</button>`:''}
+        ${j.type==='stream'
+          ? `<button class="btn sm success" onclick="doStreamRestart('${esc(j.runtime_unit_name||'')}','${esc(j.name)}')">↺ Restart</button>`
+          : ''
+        }
       </td>
-    </tr>`).join('') || '<tr><td colspan="7" style="color:var(--muted)">No jobs</td></tr>';
+    </tr>
+  `).join('') || '<tr><td colspan="8" style="color:var(--muted)">No jobs</td></tr>';
 }
 
 function renderAlerts(){
@@ -1035,21 +1118,31 @@ function openPipeline(name){
   S.selectedPipeline=name; S.selectedStream=null;
   renderPipelineDetail(name); showSection('pipelineDetail');
 }
+
 function renderPipelineDetail(name){
   const p = S.pipelines.find(x=>x.name===name);
   const jobs = S.jobs.filter(j=>j.pipeline===name);
+
   document.getElementById('pipelineTitle').textContent = name;
   document.getElementById('pipelineSchedule').textContent = p?.schedule||'manual/null';
   document.getElementById('pipelineMeta').textContent = p?.description||'';
+
   document.getElementById('pipelineJobsBody').innerHTML = jobs.map(j=>`
     <tr>
-      <td>${esc(j.name)}</td><td>${typeTag(j.type)}</td>
+      <td>
+        <b>${esc(j.name)}</b>
+        <div class="mono" style="color:var(--muted)">${esc(j.id||'')}</div>
+      </td>
+      <td>${typeTag(j.type)}</td>
       <td>${statusTag(j.current_status||'defined')}</td>
       <td class="mono">${esc(j.latest_run_id||'-')}</td>
+      <td>${counterHtml(j)}</td>
       <td class="mono">${esc(j.target_path||j.stream_target_path||'-')}</td>
       <td><button class="btn sm" onclick="openJob('${esc(j.id)}')">Open</button></td>
-    </tr>`).join('');
+    </tr>
+  `).join('') || '<tr><td colspan="7" style="color:var(--muted)">No jobs</td></tr>';
 }
+
 function triggerCurrentPipeline(){
   if(S.selectedPipeline) openTriggerModal(S.selectedPipeline);
 }
@@ -1093,15 +1186,26 @@ function renderStreamDetail(name){
 // ═══════════════════════════════════════════════════════════
 // JOB DRAWER
 // ═══════════════════════════════════════════════════════════
+
 async function openJob(jobId){
-  const job = S.jobs.find(j=>j.id===jobId||j.name===jobId);
+  const job = S.jobs.find(j=>j.id===jobId || j.name===jobId);
   if(!job) return;
+
   S.currentJob = job;
   disconnectLiveLog();
 
   document.getElementById('drawerTitle').textContent = job.name;
+  document.getElementById('drawer').classList.add('open');
+  activateTab('runsTab');
+
+  updateDrawerSnapshot(job);
+  await loadRunsForCurrentJob(true);
+}
+
+function updateDrawerSnapshot(job){
   document.getElementById('drawerTags').innerHTML = [
-    typeTag(job.type), statusTag(job.current_status||'defined'),
+    typeTag(job.type),
+    statusTag(job.current_status||'defined'),
     `<span class="tag">${esc(job.job_type||'-')}</span>`,
     `<span class="tag">${esc(job.runtime_source||'catalog')}</span>`,
   ].join('');
@@ -1110,6 +1214,9 @@ async function openJob(jobId){
     ['Pipeline', job.pipeline],
     ['Job ID', job.id],
     ['Target', job.stream_target_path||job.target_path||'-'],
+    ['Latest run', job.latest_run_id || '-'],
+    ['Records read/written', `${numOrDash(job.records_read)} / ${numOrDash(job.records_written)}`],
+    ['Inserted/Updated/Deleted', `${numOrDash(job.records_inserted)} / ${numOrDash(job.records_updated)} / ${numOrDash(job.records_deleted)}`],
     ['Status reason', job.status_reason||'-'],
     ...(job.type==='stream'?[
       ['Unit name', job.runtime_unit_name||'-'],
@@ -1118,12 +1225,17 @@ async function openJob(jobId){
       ['Valid/Invalid', `${job.last_valid_rows??'N/A'} / ${job.last_invalid_rows??'N/A'}`],
       ['Heartbeat age', job.heartbeat_age_seconds!=null?job.heartbeat_age_seconds+'s':'-'],
     ]:[]),
-  ].map(([k,v])=>`<div class="kv"><div class="k">${esc(k)}</div><div class="mono">${esc(String(v??'-'))}</div></div>`).join('');
+  ].map(([k,v])=>`
+    <div class="kv">
+      <div class="k">${esc(k)}</div>
+      <div class="mono">${esc(String(v??'-'))}</div>
+    </div>
+  `).join('');
 
-  // Action buttons
   const role = S.user?.role;
   const canAct = ['admin','operator'].includes(role);
   let actHtml = '';
+
   if(canAct){
     if(job.type==='batch'){
       if(job.missing_airflow_dag){
@@ -1134,42 +1246,89 @@ async function openJob(jobId){
         actHtml += `<button class="btn sm" onclick="safeDagPause('${esc(job.pipeline)}',false)">▶ Unpause</button>`;
       }
     }
-    
-    if(job.type==='stream'&&job.runtime_unit_name){
+
+    if(job.type==='stream' && job.runtime_unit_name){
       actHtml += `<button class="btn success sm" onclick="doStreamRestart('${esc(job.runtime_unit_name)}','${esc(job.name)}')">↺ Restart Stream</button>`;
       actHtml += `<button class="btn danger sm" onclick="doStreamStop('${esc(job.runtime_unit_name)}','${esc(job.name)}')">■ Stop Stream</button>`;
     }
   }
+
   actHtml += `<button class="btn sm" onclick="connectLiveLog()">⚡ Live Logs</button>`;
   document.getElementById('drawerActions').innerHTML = actHtml;
 
   document.getElementById('rawBody').textContent = JSON.stringify(job, null, 2);
-  document.getElementById('runsBody').innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr>';
-  document.getElementById('drawer').classList.add('open');
-  activateTab('runsTab');
+}
+
+
+async function loadRunsForCurrentJob(showLoading=true){
+  const job = S.currentJob;
+  if(!job) return;
+
+  if(showLoading){
+    document.getElementById('runsBody').innerHTML =
+      '<tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr>';
+  }
 
   try{
-    const data = await api('GET', `/api/runtime/runs/${encodeURIComponent(jobId)}?limit=10`);
+    const data = await api('GET', `/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`);
     const runs = data.runs || [];
+
     document.getElementById('runsBody').innerHTML = runs.length
-      ? runs.map(r=>`<tr>
-          <td class="mono">${esc(r.dag_run_id||r.run_id||'-')}</td>
-          <td>${statusTag(r.state||r.task_state||r.dag_run_state||'unknown')}</td>
-          <td class="mono">${fmtDate(r.started_at)}</td>
-          <td class="mono">${fmtDate(r.ended_at)}</td>
-          <td>${fmtDur(r.duration_seconds)}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="5" style="color:var(--muted)">No runs</td></tr>';
+      ? runs.map(r=>`
+          <tr>
+            <td class="mono" title="${esc(r.dag_run_id || '')}">
+              ${esc(runIdText(r))}
+              ${r.dag_run_id && r.dag_run_id !== runIdText(r)
+                ? `<div style="color:var(--muted);font-size:11px">dag: ${esc(r.dag_run_id)}</div>`
+                : ''}
+            </td>
+            <td>${statusTag(r.state||r.task_state||r.dag_run_state||'unknown')}</td>
+            <td>${counterHtml(r)}</td>
+            <td class="mono">${fmtDate(r.started_at)}</td>
+            <td class="mono">${fmtDate(r.ended_at)}</td>
+            <td>${fmtDur(r.duration_seconds)}</td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="6" style="color:var(--muted)">No runs</td></tr>';
+
   }catch(e){
-    document.getElementById('runsBody').innerHTML = `<tr><td colspan="5" style="color:var(--red)">${esc(e.message)}</td></tr>`;
+    document.getElementById('runsBody').innerHTML =
+      `<tr><td colspan="6" style="color:var(--red)">${esc(e.message)}</td></tr>`;
   }
 }
+
+
+function syncOpenDrawerAfterRefresh(){
+  const drawerOpen = document.getElementById('drawer')?.classList.contains('open');
+  if(!drawerOpen || !S.currentJob) return;
+
+  const fresh = S.jobs.find(j =>
+    j.id === S.currentJob.id ||
+    j.name === S.currentJob.name
+  );
+
+  if(fresh){
+    S.currentJob = fresh;
+    updateDrawerSnapshot(fresh);
+  }
+
+  const now = Date.now();
+
+  if(now - lastDrawerRunsRefreshAt > 3000){
+    lastDrawerRunsRefreshAt = now;
+    loadRunsForCurrentJob(false);
+  }
+}
+
 
 function closeDrawer(){
   disconnectLiveLog();
   document.getElementById('drawer').classList.remove('open');
+  document.getElementById('runsBody').innerHTML =
+    '<tr><td colspan="6" style="color:var(--muted)">No job selected.</td></tr>';
   S.currentJob = null;
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // LIVE LOG — WEBSOCKET

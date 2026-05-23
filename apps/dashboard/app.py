@@ -701,6 +701,129 @@ def _latest_registry_run(job: dict) -> dict | None:
     runs = sorted(by_run.values(), key=lambda x: int(x.get("ts_epoch") or 0), reverse=True)
     return runs[0] if runs else None
 
+def _registry_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
+    pipeline = str(job.get("pipeline") or "")
+    job_name = str(job.get("name") or "")
+    job_id = str(job.get("id") or "")
+    job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
+
+    row_pipeline = str(
+        _first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or ""
+    )
+
+    if row_pipeline and pipeline and row_pipeline != pipeline:
+        return False
+
+    row_names = {
+        str(_first_present(row, "job", default="") or ""),
+        str(_first_present(row, "job_name", default="") or ""),
+        str(_first_present(row, "base_job_name", default="") or ""),
+        str(_first_present(row, "airflow_task_id", default="") or ""),
+        str(_first_present(row, "task_id", default="") or ""),
+        str(_first_present(row, "entity_name", default="") or ""),
+        str(_first_present(row, "job_id", default="") or ""),
+    }
+
+    row_codes = {
+        str(_first_present(row, "job_code", default="") or ""),
+        str(_first_present(row, "job_key", default="") or ""),
+        str(_first_present(row, "resolved_job_code", default="") or ""),
+        str(_first_present(row, "resolved_job_key", default="") or ""),
+    }
+
+    expected_entity = f"{pipeline}.{job_name}"
+    expected_code_suffix = f".{pipeline}.{job_name}"
+
+    return (
+        job_name in row_names
+        or job_id in row_names
+        or expected_entity in row_names
+        or bool(job_code and job_code in row_codes)
+        or any(code.endswith(expected_code_suffix) for code in row_codes if code)
+        or any(code.endswith(f".{job_name}") for code in row_codes if code)
+    )
+
+
+def _normalize_registry_run_row(row: dict[str, Any]) -> dict[str, Any]:
+    records_read = _as_int_or_none(
+        _metric_value(row, "records_read", "input_rows", "last_input_rows")
+    )
+
+    records_written = _as_int_or_none(
+        _metric_value(row, "records_written", "output_rows", "last_valid_rows")
+    )
+
+    records_inserted = _as_int_or_none(
+        _metric_value(row, "records_inserted", "inserted_rows")
+    )
+
+    records_updated = _as_int_or_none(
+        _metric_value(row, "records_updated", "updated_rows")
+    )
+
+    records_deleted = _as_int_or_none(
+        _metric_value(row, "records_deleted", "deleted_rows")
+    )
+
+    if records_inserted is None and records_written is not None:
+        records_inserted = records_written
+
+    if records_updated is None:
+        records_updated = 0
+
+    if records_deleted is None:
+        records_deleted = 0
+
+    started_at = _first_present(row, "started_at", "start_time", "start_date")
+    if not started_at:
+        started_at = _epoch_to_iso(_first_present(row, "started_at_epoch", "ts_epoch"))
+
+    ended_at = _first_present(row, "ended_at", "end_time", "end_date")
+    if not ended_at:
+        ended_at = _epoch_to_iso(_first_present(row, "ended_at_epoch", "ts_epoch"))
+
+    dag_run_id = _first_present(
+        row,
+        "dag_run_id",
+        "airflow_dag_run_id",
+        "airflow_run_id",
+        default=None,
+    )
+
+    return {
+        "run_id": str(_first_present(row, "run_id", "event_id", default="-")),
+        "dag_run_id": str(dag_run_id) if dag_run_id else None,
+        "state": _normalize_state(_first_present(row, "state", "status", default="unknown")),
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_seconds": _first_present(row, "duration_seconds", "duration_sec"),
+        "records_read": records_read,
+        "records_written": records_written,
+        "records_inserted": records_inserted,
+        "records_updated": records_updated,
+        "records_deleted": records_deleted,
+        "target_path": _first_present(row, "target_path", "output_path"),
+        "status_reason": _first_present(row, "status_reason", "error", "error_message", "last_error"),
+        "runtime_source": "job_run_registry",
+    }
+
+
+def _registry_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    rows = _read_registry(limit=max(2000, limit * 100))
+
+    matched = [
+        _normalize_registry_run_row(row)
+        for row in rows
+        if _registry_row_matches_job(row, job)
+    ]
+
+    matched = sorted(
+        matched,
+        key=lambda r: str(r.get("started_at") or r.get("ended_at") or ""),
+        reverse=True,
+    )
+
+    return matched[:limit]
 
 def _epoch_to_iso(v: Any) -> str | None:
     try:
@@ -792,16 +915,274 @@ def _latest_airflow_task(dag_id: str, task_id: str) -> dict:
             "status_reason": str(exc),
         }
 
+
+def _control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
+    pipeline = str(job.get("pipeline") or "")
+    job_name = str(job.get("name") or "")
+    job_id = str(job.get("id") or "")
+    job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
+
+    row_pipeline = str(
+        _first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or ""
+    )
+
+    if row_pipeline and pipeline and row_pipeline != pipeline:
+        return False
+
+    row_names = {
+        str(_first_present(row, "job_name", default="") or ""),
+        str(_first_present(row, "base_job_name", default="") or ""),
+        str(_first_present(row, "airflow_task_id", default="") or ""),
+        str(_first_present(row, "task_id", default="") or ""),
+        str(_first_present(row, "entity_name", default="") or ""),
+    }
+
+    row_codes = {
+        str(_first_present(row, "job_code", default="") or ""),
+        str(_first_present(row, "job_key", default="") or ""),
+        str(_first_present(row, "resolved_job_code", default="") or ""),
+        str(_first_present(row, "resolved_job_key", default="") or ""),
+    }
+
+    expected_entity = f"{pipeline}.{job_name}"
+    expected_code_suffix = f".{pipeline}.{job_name}"
+
+    return (
+        job_name in row_names
+        or job_id in row_names
+        or expected_entity in row_names
+        or bool(job_code and job_code in row_codes)
+        or any(code.endswith(expected_code_suffix) for code in row_codes if code)
+        or any(code.endswith(f".{job_name}") for code in row_codes if code)
+    )
+
+
 def _latest_control_run(job: dict) -> dict | None:
-    sid = job.get("source_id")
-    tid = job.get("table_id")
-    pname = job.get("pipeline")
-    jname = job.get("name")
-    jcode = job.get("job_code") or job.get("job_key")
+    """
+    Robust latest job-level runtime run lookup.
+
+    Prefer ctl.usp_list_runtime_job_runs because it exposes real runtime rows
+    consistently across catalog-generated DAGs, including dynamic jobs.
+    """
     try:
-        return call_usp_one("usp_get_latest_runtime_job_run", (jcode, sid, tid, pname, jname))
+        rows = call_usp_rows("usp_list_runtime_job_runs", (200,))
+    except Exception as exc:
+        print(f"[WARN] Could not load control runtime runs: {exc}", flush=True)
+        return None
+
+    matched = [r for r in rows if _control_row_matches_job(r, job)]
+
+    if not matched:
+        return None
+
+    matched = sorted(
+        matched,
+        key=lambda r: str(
+            _first_present(r, "started_at", "ended_at", "created_at", default="")
+        ),
+        reverse=True,
+    )
+
+    return matched[0]
+
+
+def _first_present(row: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in row and row.get(key) is not None:
+            return row.get(key)
+    return default
+
+
+def _as_int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
     except Exception:
         return None
+
+
+def _value_from_embedded_json(row: dict[str, Any], *keys: str) -> Any:
+    """
+    Some runtime metrics are top-level columns, while others may be inside
+    an embedded event JSON column. This helper scans dict/json-string fields.
+    """
+    for value in row.values():
+        payload = None
+
+        if isinstance(value, dict):
+            payload = value
+
+        elif isinstance(value, str):
+            text = value.strip()
+            if text.startswith("{") and any(k in text for k in keys):
+                try:
+                    payload = json.loads(text)
+                except Exception:
+                    payload = None
+
+        if isinstance(payload, dict):
+            for key in keys:
+                if key in payload and payload.get(key) is not None:
+                    return payload.get(key)
+
+    return None
+
+
+def _metric_value(row: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    direct = _first_present(row, *keys, default=None)
+    if direct is not None:
+        return direct
+
+    embedded = _value_from_embedded_json(row, *keys)
+    if embedded is not None:
+        return embedded
+
+    return default
+
+
+def _normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
+    started_at = _first_present(row, "started_at", "start_time", "start_date", "observed_at")
+    ended_at = _first_present(row, "ended_at", "end_time", "end_date")
+
+    duration_seconds = _first_present(row, "duration_seconds", "duration_sec")
+    if duration_seconds is None:
+        duration_seconds = _duration(started_at, ended_at)
+
+    records_read = _as_int_or_none(
+        _metric_value(row, "records_read", "input_rows", "last_input_rows")
+    )
+
+    records_written = _as_int_or_none(
+        _metric_value(row, "records_written", "output_rows", "last_valid_rows")
+    )
+
+    records_inserted = _as_int_or_none(
+        _metric_value(row, "records_inserted", "inserted_rows")
+    )
+
+    records_updated = _as_int_or_none(
+        _metric_value(row, "records_updated", "updated_rows")
+    )
+
+    records_deleted = _as_int_or_none(
+        _metric_value(row, "records_deleted", "deleted_rows")
+    )
+
+    if records_inserted is None and records_written is not None:
+        records_inserted = records_written
+
+    if records_updated is None:
+        records_updated = 0
+
+    if records_deleted is None:
+        records_deleted = 0
+        
+
+    run_id = _first_present(row, "run_id", "job_run_id", "runtime_run_id", "event_id", default="-")
+
+    dag_run_id = _first_present(
+        row,
+        "dag_run_id",
+        "airflow_dag_run_id",
+        "airflow_run_id",
+        default=None,
+    )
+
+    return {
+        "run_id": str(run_id),
+        "dag_run_id": str(dag_run_id) if dag_run_id else None,
+        "state": _normalize_state(_first_present(row, "status", "state", default="unknown")),
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_seconds": duration_seconds,
+        "records_read": records_read,
+        "records_written": records_written,
+        "records_inserted": records_inserted,
+        "records_updated": records_updated,
+        "records_deleted": records_deleted,
+        "target_path": _first_present(row, "target_path", "output_path"),
+        "status_reason": _first_present(row, "status_reason", "error_message", "last_error"),
+        "runtime_source": "control_db",
+    }
+
+
+def _control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    try:
+        rows = call_usp_rows("usp_list_runtime_job_runs", (max(200, limit * 30),))
+    except Exception as exc:
+        print(f"[WARN] Could not load runtime job runs from control DB: {exc}", flush=True)
+        return []
+
+    matched = [
+        _normalize_runtime_run_row(row)
+        for row in rows
+        if _control_row_matches_job(row, job)
+    ]
+
+    matched = sorted(
+        matched,
+        key=lambda r: str(r.get("started_at") or r.get("ended_at") or ""),
+        reverse=True,
+    )
+
+    return matched[:limit]
+
+
+def _stream_pseudo_runs_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    """
+    Streams are long-running. They may not have discrete Airflow runs.
+    Build a latest pseudo-run from stream runtime status / heartbeat.
+    """
+    ss = _load_stream_status()
+    unit = _find_stream_unit(job, ss)
+
+    if not unit:
+        db_unit = _stream_current_from_db(job)
+        if not db_unit:
+            return []
+        unit = db_unit
+
+    hb = unit.get("heartbeat") or unit
+
+    state = _normalize_state(
+        unit.get("computed_status")
+        or unit.get("status")
+        or hb.get("status")
+        or "unknown"
+    )
+
+    last_batch_id = _first_present(hb, "last_batch_id", "batch_id", default=None)
+
+    records_read = _as_int_or_none(_first_present(hb, "records_read", "last_input_rows", "input_rows"))
+    records_written = _as_int_or_none(_first_present(hb, "records_written", "last_valid_rows", "valid_rows"))
+
+    records_inserted = _as_int_or_none(_first_present(hb, "records_inserted", "inserted_rows"))
+    if records_inserted is None:
+        records_inserted = records_written
+
+    records_updated = _as_int_or_none(_first_present(hb, "records_updated", "updated_rows", default=0))
+    records_deleted = _as_int_or_none(_first_present(hb, "records_deleted", "deleted_rows", default=0))
+
+    return [
+        {
+            "run_id": str(last_batch_id if last_batch_id is not None else unit.get("unit_name") or job.get("name")),
+            "dag_run_id": None,
+            "state": state,
+            "started_at": _first_present(hb, "started_at", "start_time"),
+            "ended_at": _first_present(hb, "observed_at", "updated_at"),
+            "duration_seconds": None,
+            "records_read": records_read,
+            "records_written": records_written,
+            "records_inserted": records_inserted,
+            "records_updated": records_updated,
+            "records_deleted": records_deleted,
+            "target_path": _first_present(hb, "target_path", "bronze_path", "silver_path", default=job.get("target_path")),
+            "status_reason": _first_present(hb, "last_error", "status_reason"),
+            "runtime_source": "stream_runtime",
+        }
+    ][:limit]
+
 
 def _has_explicit_airflow_executor(job: dict) -> bool:
     """
@@ -834,19 +1215,53 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                 "target_path": ctrl.get("target_path") or job.get("target_path"),
                 "status_reason": ctrl.get("status_reason") or ctrl.get("error_message"),
                 "runtime_source": "control_db", "runtime_available": True,
+                "records_read": _as_int_or_none(
+                    _metric_value(ctrl, "records_read", "input_rows", "last_input_rows")
+                ),
+                "records_written": _as_int_or_none(
+                    _metric_value(ctrl, "records_written", "output_rows", "last_valid_rows")
+                ),
+                "records_inserted": _as_int_or_none(
+                    _metric_value(ctrl, "records_inserted", "inserted_rows", "records_written")
+                ),
+                "records_updated": _as_int_or_none(
+                    _metric_value(ctrl, "records_updated", "updated_rows", default=0)
+                ),
+                "records_deleted": _as_int_or_none(
+                    _metric_value(ctrl, "records_deleted", "deleted_rows", default=0)
+                ),
+
             })
+            if rj.get("records_inserted") is None and rj.get("records_written") is not None:
+                rj["records_inserted"] = rj["records_written"]
+
+            if rj.get("records_updated") is None:
+                rj["records_updated"] = 0
+
+            if rj.get("records_deleted") is None:
+                rj["records_deleted"] = 0
+
         else:
             # 2. Try local registry
             reg = _latest_registry_run(job)
             if reg:
+                reg_norm = _normalize_registry_run_row(reg)
+
                 rj.update({
-                    "current_status": reg.get("state", "unknown"),
-                    "latest_run_id": reg.get("run_id"),
-                    "started_at": reg.get("started_at") or _epoch_to_iso(reg.get("started_at_epoch")),
-                    "ended_at": reg.get("ended_at") or _epoch_to_iso(reg.get("ended_at_epoch")),
-                    "duration_seconds": reg.get("duration_seconds"),
-                    "status_reason": reg.get("error"),
-                    "runtime_source": "job_run_registry", "runtime_available": True,
+                    "current_status": reg_norm.get("state", "unknown"),
+                    "latest_run_id": reg_norm.get("run_id"),
+                    "started_at": reg_norm.get("started_at"),
+                    "ended_at": reg_norm.get("ended_at"),
+                    "duration_seconds": reg_norm.get("duration_seconds"),
+                    "target_path": reg_norm.get("target_path") or rj.get("target_path"),
+                    "status_reason": reg_norm.get("status_reason"),
+                    "runtime_source": "job_run_registry",
+                    "runtime_available": True,
+                    "records_read": reg_norm.get("records_read"),
+                    "records_written": reg_norm.get("records_written"),
+                    "records_inserted": reg_norm.get("records_inserted"),
+                    "records_updated": reg_norm.get("records_updated"),
+                    "records_deleted": reg_norm.get("records_deleted"),
                 })
             elif job.get("type") == "batch":
                 af = _latest_airflow_task(job.get("pipeline", ""), job.get("name", ""))
@@ -916,6 +1331,11 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                     "last_write_ok": db_unit.get("last_write_ok"),
                     "last_error": db_unit.get("last_error"),
                     "stream_target_path": db_unit.get("target_path") or rj.get("target_path"),
+                    "records_read": _as_int_or_none(_first_present(db_unit, "records_read", "last_input_rows", "input_rows")),
+                    "records_written": _as_int_or_none(_first_present(db_unit, "records_written", "last_valid_rows", "valid_rows")),
+                    "records_inserted": _as_int_or_none(_first_present(db_unit, "records_inserted", "last_valid_rows", "valid_rows")),
+                    "records_updated": _as_int_or_none(_first_present(db_unit, "records_updated", "updated_rows", default=0)),
+                    "records_deleted": _as_int_or_none(_first_present(db_unit, "records_deleted", "deleted_rows", default=0)),
                 })
             else:
                 unit = _find_stream_unit(rj, ss)
@@ -933,6 +1353,11 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                         "last_write_ok": hb.get("last_write_ok"),
                         "last_error": hb.get("last_error"),
                         "stream_target_path": hb.get("silver_path") or hb.get("bronze_path") or rj.get("target_path"),
+                        "records_read": _as_int_or_none(_first_present(hb, "records_read", "input_rows")),
+                        "records_written": _as_int_or_none(_first_present(hb, "records_written", "output_rows")),
+                        "records_inserted": _as_int_or_none(_first_present(hb, "records_inserted", "inserted_rows")),
+                        "records_updated": _as_int_or_none(_first_present(hb, "records_updated", "updated_rows", default=0)),
+                        "records_deleted": _as_int_or_none(_first_present(hb, "records_deleted", "deleted_rows", default=0)),
                     })
         enriched.append(rj)
     return {"jobs": enriched, "stream_status": ss, "loaded_at": now_iso()}
@@ -1095,25 +1520,106 @@ async def get_stream_status(raw: bool = Query(default=False)) -> JSONResponse:
 @app.get("/api/runtime/runs/{job_id}")
 async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> JSONResponse:
     job = _job_from_config(job_id)
+
     if not job:
-        return JSONResponse({"available": False, "runs": []}, status_code=404)
+        return JSONResponse(
+            {
+                "available": False,
+                "source": "config",
+                "job_id": job_id,
+                "runs": [],
+                "error": "Job not found in /api/config",
+            },
+            status_code=404,
+        )
+
+    control_runs = _control_run_rows_for_job(job, limit=limit)
+
+    if control_runs:
+        return JSONResponse(
+            {
+                "available": True,
+                "source": "control_db",
+                "job_id": job_id,
+                "runs": control_runs,
+                "count": len(control_runs),
+            }
+        )
+    
+    registry_runs = _registry_run_rows_for_job(job, limit=limit)
+
+    if registry_runs:
+        return JSONResponse(
+            {
+                "available": True,
+                "source": "job_run_registry",
+                "job_id": job_id,
+                "runs": registry_runs,
+                "count": len(registry_runs),
+            }
+        )
+
     if job.get("type") == "batch":
         try:
             quoted = urllib.parse.quote(job.get("pipeline", ""), safe="")
             data = _af_get(f"/api/v2/dags/{quoted}/dagRuns?order_by=-logical_date&limit={limit}")
             runs = data.get("dag_runs") or []
+
             result = []
+
             for run in runs:
                 rid = str(run.get("dag_run_id") or "")
                 ts = run.get("start_date")
                 te = run.get("end_date")
-                result.append({"dag_run_id": rid, "state": _normalize_state(run.get("state")),
-                                "started_at": ts, "ended_at": te, "duration_seconds": _duration(ts, te)})
-            return JSONResponse({"available": True, "source": "airflow", "runs": result})
-        except Exception as exc:
-            return JSONResponse({"available": False, "error": str(exc), "runs": []})
-    return JSONResponse({"available": True, "source": "stream", "runs": []})
 
+                result.append(
+                    {
+                        "run_id": None,
+                        "dag_run_id": rid,
+                        "state": _normalize_state(run.get("state")),
+                        "started_at": ts,
+                        "ended_at": te,
+                        "duration_seconds": _duration(ts, te),
+                        "records_read": None,
+                        "records_written": None,
+                        "records_inserted": None,
+                        "records_updated": None,
+                        "records_deleted": None,
+                        "runtime_source": "airflow",
+                    }
+                )
+
+            return JSONResponse(
+                {
+                    "available": True,
+                    "source": "airflow",
+                    "job_id": job_id,
+                    "runs": result,
+                    "count": len(result),
+                }
+            )
+
+        except Exception as exc:
+            return JSONResponse(
+                {
+                    "available": False,
+                    "source": "airflow",
+                    "job_id": job_id,
+                    "error": str(exc),
+                    "runs": [],
+                    "count": 0,
+                }
+            )
+
+    return JSONResponse(
+        {
+            "available": False,
+            "source": "unknown",
+            "job_id": job_id,
+            "runs": [],
+            "count": 0,
+        }
+    )
 
 @app.get("/api/runtime/logs/{job_id}")
 async def get_logs(

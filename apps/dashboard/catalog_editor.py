@@ -91,6 +91,21 @@ class CatalogOnboardRequest(CatalogJobApplyRequest):
     onboarding_dry_run: bool = False
 
 
+class CatalogPipelineApplyRequest(BaseModel):
+    pipeline_name: str
+    pipeline: CatalogPipelineInput | None = None
+    jobs: list[dict[str, Any]]
+
+    create_pipeline_if_missing: bool = True
+    overwrite_existing_jobs: bool = True
+    dry_run: bool = False
+
+
+class CatalogPipelineOnboardRequest(CatalogPipelineApplyRequest):
+    onboarding_dry_run: bool = False
+
+
+
 def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
@@ -104,7 +119,7 @@ def _load_catalog() -> dict[str, Any]:
         return {"pipelines": []}
 
     try:
-        with BATCH_CATALOG_PATH.open("r", encoding="utf-8") as f:
+        with BATCH_CATALOG_PATH.open("r", encoding="utf-8-sig") as f:
             payload = json.load(f)
     except Exception as exc:
         raise HTTPException(
@@ -236,6 +251,10 @@ def validate_catalog_job_payload(pipeline_name: str, job: dict[str, Any]) -> dic
         spec = {}
 
     if job_type == "generic_api_to_bronze":
+        auth = spec.get("auth") or {}
+        auth.setdefault("type", "none")
+        auth.setdefault("secret_env", "")
+        spec["auth"] = auth
         if not spec.get("source", {}).get("base_url"):
             errors.append("spec.source.base_url is required for generic_api_to_bronze.")
         if not spec.get("bronze_write", {}).get("target_path"):
@@ -352,7 +371,12 @@ def _normalize_job_for_catalog(job: dict[str, Any], pipeline: dict[str, Any] | N
     if normalized.get("job_type") == "generic_api_to_bronze":
         spec.setdefault("load_type", "event")
         spec.setdefault("strategy", "append_event")
-        spec.setdefault("auth", {"type": "none"})
+
+        auth = spec.get("auth") or {}
+        auth.setdefault("type", "none")
+        auth.setdefault("secret_env", "")
+        spec["auth"] = auth
+
         spec.setdefault("request", {"query_params": {}, "headers": {}, "body": None})
         spec.setdefault("response", {"format": "json", "root_path": "$", "record_mode": "single_object"})
         spec.setdefault("validation", {"required_paths": [], "rules": []})
@@ -360,8 +384,7 @@ def _normalize_job_for_catalog(job: dict[str, Any], pipeline: dict[str, Any] | N
         spec.setdefault("schema", [])
         spec.setdefault("runtime_policy", {"max_retries": 3, "backoff_seconds": 10})
         spec.setdefault("spark", {"master": None, "packages": [], "conf": {}})
-
-    return normalized
+        return normalized
 
 
 def _find_pipeline(catalog: dict[str, Any], pipeline_name: str) -> tuple[int | None, dict[str, Any] | None]:
@@ -454,6 +477,105 @@ def _merge_job_into_catalog(req: CatalogJobApplyRequest) -> dict[str, Any]:
         "catalog": new_catalog,
     }
 
+def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[str, Any]:
+    if not req.jobs:
+        raise HTTPException(status_code=422, detail="jobs list cannot be empty.")
+
+    catalog = _load_catalog()
+    new_catalog = copy.deepcopy(catalog)
+
+    validation_results: list[dict[str, Any]] = []
+    normalized_jobs: list[dict[str, Any]] = []
+
+    for job in req.jobs:
+        validation = validate_catalog_job_payload(req.pipeline_name, copy.deepcopy(job))
+        validation_results.append(validation)
+
+        if not validation["ok"]:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Invalid job in pipeline payload.",
+                    "job_name": job.get("name"),
+                    "errors": validation["errors"],
+                    "warnings": validation["warnings"],
+                },
+            )
+
+        normalized_jobs.append(validation["normalized_job"])
+
+    pipeline_idx, pipeline = _find_pipeline(new_catalog, req.pipeline_name)
+
+    if pipeline is None:
+        if not req.create_pipeline_if_missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pipeline not found: {req.pipeline_name}",
+            )
+
+        raw_pipeline = req.pipeline.model_dump(exclude_none=True) if req.pipeline else {}
+        pipeline = _normalize_pipeline_for_catalog(
+            raw_pipeline,
+            pipeline_name=req.pipeline_name,
+            job=normalized_jobs[0] if normalized_jobs else None,
+        )
+        new_catalog["pipelines"].append(pipeline)
+        change_type = "created_pipeline_and_jobs"
+    else:
+        pipeline = _normalize_pipeline_for_catalog(
+            pipeline,
+            pipeline_name=req.pipeline_name,
+            job=normalized_jobs[0] if normalized_jobs else None,
+        )
+        if pipeline_idx is not None:
+            new_catalog["pipelines"][pipeline_idx] = pipeline
+        change_type = "updated_pipeline_jobs"
+
+    pipeline.setdefault("jobs", [])
+
+    applied_jobs: list[dict[str, Any]] = []
+
+    for job in normalized_jobs:
+        job = _normalize_job_for_catalog(job, pipeline)
+        job_name = job.get("name")
+
+        existing_idx = None
+        for idx, existing_job in enumerate(pipeline["jobs"]):
+            if existing_job.get("name") == job_name:
+                existing_idx = idx
+                break
+
+        if existing_idx is None:
+            pipeline["jobs"].append(job)
+            job_change_type = "created_job"
+        else:
+            if not req.overwrite_existing_jobs:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Job already exists in catalog: {req.pipeline_name}.{job_name}",
+                )
+            pipeline["jobs"][existing_idx] = job
+            job_change_type = "updated_job"
+
+        applied_jobs.append(
+            {
+                "job_name": job_name,
+                "job_type": job.get("job_type"),
+                "target_path": _target_from_job_spec(job),
+                "change_type": job_change_type,
+            }
+        )
+
+    return {
+        "ok": True,
+        "change_type": change_type,
+        "pipeline_name": req.pipeline_name,
+        "job_count": len(applied_jobs),
+        "jobs": applied_jobs,
+        "validation": validation_results,
+        "catalog": new_catalog,
+    }
+
 
 def _log_catalog_change(
     *,
@@ -487,6 +609,30 @@ def _log_catalog_change(
         )
     except Exception as exc:
         print(f"[WARN] Failed to write catalog change log: {exc}", flush=True)
+
+
+@router.post("/pipelines/validate")
+async def validate_catalog_pipeline(
+    req: CatalogPipelineApplyRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Validate a full pipeline payload with multiple jobs.
+
+    This does not write pipeline_catalog.json.
+    It only validates that all jobs can be merged into the catalog contract.
+    """
+    merged = _merge_pipeline_jobs_into_catalog(req)
+
+    return {
+        "ok": True,
+        "pipeline_name": merged["pipeline_name"],
+        "job_count": merged["job_count"],
+        "jobs": merged["jobs"],
+        "validation": merged["validation"],
+        "change_type": merged["change_type"],
+    }
+
 
 
 @router.get("/info")
@@ -661,3 +807,137 @@ async def apply_and_onboard_catalog_job(
             error_message=str(exc),
         )
         raise HTTPException(status_code=500, detail=f"Catalog applied, but onboarding failed: {exc}") from exc
+    
+
+@router.post("/pipelines/preview")
+async def preview_catalog_pipeline(
+    req: CatalogPipelineApplyRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    merged = _merge_pipeline_jobs_into_catalog(req)
+    return {
+        "ok": True,
+        "dry_run": True,
+        "change_type": merged["change_type"],
+        "pipeline_name": merged["pipeline_name"],
+        "job_count": merged["job_count"],
+        "jobs": merged["jobs"],
+        "validation": merged["validation"],
+        "catalog": merged["catalog"],
+    }
+
+
+@router.post("/pipelines/apply", dependencies=[Depends(require_role("admin", "operator"))])
+async def apply_catalog_pipeline(
+    req: CatalogPipelineApplyRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    merged = _merge_pipeline_jobs_into_catalog(req)
+
+    if req.dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "change_type": merged["change_type"],
+            "pipeline_name": merged["pipeline_name"],
+            "job_count": merged["job_count"],
+            "jobs": merged["jobs"],
+            "validation": merged["validation"],
+        }
+
+    backup_path: Path | None = None
+
+    try:
+        backup_path = _backup_catalog()
+        _atomic_write_json(BATCH_CATALOG_PATH, merged["catalog"])
+
+        result = {
+            "ok": True,
+            "applied": True,
+            "catalog_path": str(BATCH_CATALOG_PATH),
+            "backup_path": str(backup_path),
+            "change_type": merged["change_type"],
+            "pipeline_name": merged["pipeline_name"],
+            "job_count": merged["job_count"],
+            "jobs": merged["jobs"],
+            "validation": merged["validation"],
+        }
+
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_pipeline_apply",
+            pipeline_name=merged["pipeline_name"],
+            job_name=None,
+            status="success",
+            payload=result,
+            backup_path=str(backup_path),
+        )
+
+        return result
+
+    except Exception as exc:
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_pipeline_apply",
+            pipeline_name=req.pipeline_name,
+            job_name=None,
+            status="failed",
+            payload=req.model_dump(),
+            backup_path=str(backup_path) if backup_path else None,
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/pipelines/apply-and-onboard", dependencies=[Depends(require_role("admin", "operator"))])
+async def apply_and_onboard_catalog_pipeline(
+    req: CatalogPipelineOnboardRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    apply_req = CatalogPipelineApplyRequest(**req.model_dump(exclude={"onboarding_dry_run"}))
+    apply_result = await apply_catalog_pipeline(apply_req, user)
+
+    try:
+        from actions import trigger_dag
+
+        conf: dict[str, Any] = {
+            "catalog_path": "configs/batch/pipeline_catalog.json",
+            "pipeline_name": apply_result["pipeline_name"],
+            "dry_run": req.onboarding_dry_run,
+        }
+
+        onboarding_result = trigger_dag(ONBOARDING_DAG_ID, conf=conf)
+
+        result = {
+            "ok": True,
+            "applied": True,
+            "onboarding_triggered": True,
+            "apply": apply_result,
+            "onboarding": onboarding_result,
+        }
+
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_pipeline_apply_and_onboard",
+            pipeline_name=apply_result["pipeline_name"],
+            job_name=None,
+            status="success",
+            payload=result,
+            backup_path=apply_result.get("backup_path"),
+        )
+
+        return result
+
+    except Exception as exc:
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_pipeline_apply_and_onboard",
+            pipeline_name=apply_result["pipeline_name"],
+            job_name=None,
+            status="failed",
+            payload=apply_result,
+            backup_path=apply_result.get("backup_path"),
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=500, detail=f"Catalog applied, but onboarding failed: {exc}") from exc
+    

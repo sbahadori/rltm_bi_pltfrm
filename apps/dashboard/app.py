@@ -248,9 +248,8 @@ def now_iso() -> str:
 def _load_json(path: Path) -> dict | None:
     if not path.exists():
         return None
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         return json.load(f)
-
 
 def _safe_int(v: Any) -> int | None:
     try:
@@ -372,7 +371,7 @@ def _load_manifest(ref: str) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 

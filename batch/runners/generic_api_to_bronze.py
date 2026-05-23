@@ -275,6 +275,51 @@ def ensure_non_empty_schema(records: list[dict[str, Any]]) -> list[dict[str, Any
         }
     ]
 
+def _json_path_get(payload, path: str):
+    """
+    Minimal JSONPath support for catalog paths:
+    - "$" returns the full payload
+    - "$.a.b.c" returns nested fields
+    """
+    if path in (None, "", "$"):
+        return payload
+
+    if not isinstance(path, str) or not path.startswith("$."):
+        raise ValueError(f"Unsupported JSON path: {path}")
+
+    cur = payload
+    for part in path[2:].split("."):
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            return None
+    return cur
+
+
+def _extract_records_from_response(payload, response_spec: dict) -> list:
+    root_path = response_spec.get("root_path") or "$"
+    record_mode = response_spec.get("record_mode") or "single_object"
+
+    selected = _json_path_get(payload, root_path)
+
+    if record_mode == "single_object":
+        if selected is None:
+            return []
+        if isinstance(selected, dict) and not selected:
+            return []
+        return [selected]
+
+    if record_mode in {"array", "records_array", "list"}:
+        if selected is None:
+            return []
+        if not isinstance(selected, list):
+            raise ValueError(
+                f"record_mode={record_mode} expects a list at root_path={root_path}, "
+                f"but got {type(selected).__name__}"
+            )
+        return selected
+
+    raise ValueError(f"Unsupported response.record_mode: {record_mode}")
 
 # -----------------------------------------------------------------------------
 # API request handling
@@ -291,7 +336,28 @@ def build_url(source: dict[str, Any]) -> str:
     else:
         raise ValueError("API source.base_url is required")
 
-    query_params = render_dict(source.get("params") or source.get("query_params"))
+    query_params = dict(render_dict(source.get("params") or source.get("query_params")))
+
+    auth = source.get("auth") or {}
+    auth_type = str(auth.get("type", "")).lower().strip()
+
+    if auth_type == "query_param":
+        secret_env = auth.get("secret_env") or auth.get("env_var")
+        param_name = auth.get("param_name") or auth.get("name") or "api_key"
+
+        secret_value = ""
+        if secret_env:
+            secret_value = os.getenv(str(secret_env), "")
+
+        secret_value = secret_value or str(auth.get("value", ""))
+
+        if not secret_value:
+            raise ValueError(
+                f"Query-param auth value is empty. "
+                f"auth.secret_env={secret_env}, auth.param_name={param_name}"
+            )
+
+        query_params[str(param_name)] = secret_value
 
     if query_params:
         encoded = urllib.parse.urlencode(query_params, doseq=True)
@@ -299,7 +365,6 @@ def build_url(source: dict[str, Any]) -> str:
         url = f"{url}{separator}{encoded}"
 
     return url
-
 
 def build_headers(source: dict[str, Any]) -> dict[str, str]:
     headers = {
@@ -345,6 +410,33 @@ def build_headers(source: dict[str, Any]) -> dict[str, str]:
 
         token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {token}"
+
+    elif auth_type == "query_param":
+        # Handled in build_url().
+        pass
+
+    elif auth_type == "bearer":
+        secret_env = auth.get("secret_env") or auth.get("env_var")
+        token = os.getenv(str(secret_env), "") if secret_env else str(auth.get("value", ""))
+
+        if not token:
+            raise ValueError(f"Bearer token is empty. auth.secret_env={secret_env}")
+
+        headers["Authorization"] = f"Bearer {token}"
+
+    elif auth_type == "header":
+        secret_env = auth.get("secret_env") or auth.get("env_var")
+        header_name = auth.get("header_name") or auth.get("name")
+
+        if not header_name:
+            raise ValueError("auth.header_name or auth.name is required for header auth")
+
+        header_value = os.getenv(str(secret_env), "") if secret_env else str(auth.get("value", ""))
+
+        if not header_value:
+            raise ValueError(f"Header auth value is empty. auth.secret_env={secret_env}")
+
+        headers[str(header_name)] = header_value
 
     elif auth_type in ("", "none"):
         pass
@@ -532,6 +624,45 @@ def get_source_spec(spec: dict[str, Any]) -> dict[str, Any]:
 
     return source
 
+def build_effective_source_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    """
+    Merge catalog-level source/request/auth into the shape expected by
+    execute_api_request().
+
+    Catalog contract:
+      spec.source  -> base_url, method, timeout_seconds
+      spec.request -> query_params, headers, body
+      spec.auth    -> auth config
+
+    Runner contract:
+      source -> base_url, method, timeout_seconds, query_params, headers, body, auth
+    """
+    source = dict(get_source_spec(spec))
+
+    request = spec.get("request") or {}
+    if not isinstance(request, dict):
+        raise ValueError("spec.request must be a JSON object when provided")
+
+    auth = spec.get("auth") or {}
+    if auth and not isinstance(auth, dict):
+        raise ValueError("spec.auth must be a JSON object when provided")
+
+    if "query_params" not in source and request.get("query_params") is not None:
+        source["query_params"] = request.get("query_params") or {}
+
+    if "params" not in source and request.get("params") is not None:
+        source["params"] = request.get("params") or {}
+
+    if "headers" not in source and request.get("headers") is not None:
+        source["headers"] = request.get("headers") or {}
+
+    if "body" not in source and "body" in request:
+        source["body"] = request.get("body")
+
+    if "auth" not in source and auth:
+        source["auth"] = auth
+
+    return source
 
 def get_response_spec(spec: dict[str, Any]) -> dict[str, Any]:
     response = spec.get("response") or {}
@@ -610,7 +741,7 @@ def main() -> None:
                 args.job_name,
             )
 
-            source = get_source_spec(spec)
+            source = build_effective_source_spec(spec)
             response = get_response_spec(spec)
             write_spec = get_write_spec(spec)
 
@@ -625,6 +756,18 @@ def main() -> None:
                 request_payload=request_payload,
                 response_spec=response,
                 source_spec=source,
+            )
+
+            print(
+                f"[API_BRONZE_EXTRACT] "
+                f"job_code={context.get('job_code')} "
+                f"url={request_meta.get('url')} "
+                f"status={request_meta.get('status_code')} "
+                f"record_mode={response.get('record_mode')} "
+                f"root_path={response.get('root_path')} "
+                f"payload_type={type(request_payload).__name__} "
+                f"records={len(records)}",
+                flush=True,
             )
 
             keep_raw_payload = bool(
@@ -642,13 +785,31 @@ def main() -> None:
                 run_ctx["records_deleted"] = 0
                 run_ctx["target_path"] = write_spec.get("target_path") or write_spec.get("path")
 
-                print(
-                    f"[API_BRONZE_SKIP_EMPTY] "
+                runtime_policy = (
+                    context.get("runtime_policy")
+                    or (locals().get("spec") or {}).get("runtime_policy")
+                    or {}
+                )
+
+                fail_on_empty = runtime_policy.get("fail_on_empty", True)
+
+                if isinstance(fail_on_empty, str):
+                    fail_on_empty = fail_on_empty.strip().lower() in {"1", "true", "yes", "y"}
+
+                msg = (
+                    f"[API_BRONZE_EMPTY] "
                     f"job_code={context.get('job_code')} "
                     f"record_mode={response.get('record_mode')} "
-                    f"target={run_ctx.get('target_path')}",
-                    flush=True,
+                    f"root_path={response.get('root_path')} "
+                    f"target={run_ctx.get('target_path')}. "
+                    f"No records were produced from the API response."
                 )
+
+                print(msg, flush=True)
+
+                if fail_on_empty:
+                    raise RuntimeError(msg)
+
                 return
 
             df = records_to_dataframe(

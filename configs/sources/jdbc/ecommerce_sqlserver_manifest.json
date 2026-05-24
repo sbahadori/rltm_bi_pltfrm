@@ -31,6 +31,7 @@
       "enabled": true,
       "load_type": "full",
       "strategy": "overwrite",
+      "count_rows": true,
       "bronze_mode": "overwrite",
       "source_table": "dbo.brands",
       "primary_key": [
@@ -67,6 +68,7 @@
       "enabled": true,
       "load_type": "incremental",
       "strategy": "numeric_watermark",
+      "count_rows": true,
       "bronze_mode": "append",
       "source_table": "dbo.products",
       "primary_key": [

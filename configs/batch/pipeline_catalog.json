@@ -1,710 +1,729 @@
 {
-  "pipelines": [
-    {
-      "name": "weather_forecast_pipeline",
-      "enabled": true,
-      "description": "API-driven weather forecast Bronze/Silver/Gold batch pipeline",
-      "domain": "weather_forecast",
-      "source_type": "api",
-      "dag": {
-        "schedule": null,
-        "catchup": false,
-        "max_active_runs": 1,
-        "start_date": "2026-01-01T00:00:00+00:00",
-        "tags": [
-          "weather",
-          "batch",
-          "api",
-          "spark",
-          "catalog_driven"
-        ],
-        "default_args": {
-          "owner": "admin",
-          "retries": 0,
-          "retry_delay_minutes": 1
-        }
-      },
-      "jobs": [
-        {
-          "name": "weather_forecast_ingest",
-          "enabled": true,
-          "job_type": "generic_api_to_bronze",
-          "source_type": "api",
-          "dependencies": [],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "weather",
-            "api",
-            "bronze"
-          ],
-          "spec": {
-            "load_type": "event",
-            "strategy": "append_event",
-            "source": {
-              "base_url": "https://api.open-meteo.com/v1/forecast",
-              "method": "GET",
-              "timeout_seconds": 20
-            },
-            "auth": {
-              "type": "none",
-              "secret_env": "OPEN_METEO_NO_AUTH"
-            },
-            "request": {
-              "query_params": {
-                "latitude": "51.5085",
-                "longitude": "-0.1257",
-                "timezone": "Europe/London",
-                "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m",
-                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max",
-                "forecast_days": "3"
-              },
-              "headers": {},
-              "body": null
-            },
-            "response": {
-              "format": "json",
-              "root_path": "$",
-              "record_mode": "single_object"
-            },
-            "validation": {
-              "required_paths": [
-                "$.latitude",
-                "$.longitude",
-                "$.timezone",
-                "$.hourly",
-                "$.daily"
-              ],
-              "rules": []
-            },
-            "schema": [
-              "event_id string not null",
-              "source_name string not null",
-              "source_event_ts timestamp null",
-              "ingestion_ts timestamp not null",
-              "payload_json string not null",
-              "api_status string not null"
-            ],
-            "mapping": {
-              "source_name": {
-                "source": "constant",
-                "value": "open_meteo"
-              },
-              "source_event_ts": {
-                "source": "runtime",
-                "value": "current_utc"
-              },
-              "ingestion_ts": {
-                "source": "runtime",
-                "value": "current_utc"
-              },
-              "payload_json": {
-                "source": "runtime",
-                "value": "raw_payload_json"
-              },
-              "api_status": {
-                "source": "constant",
-                "value": "success"
-              }
-            },
-            "bronze_write": {
-              "target_path": "s3a://lakehouse/bronze/weather_forecast_events",
-              "mode": "append",
-              "partition_by": [
-                "ingest_year",
-                "ingest_month",
-                "ingest_day",
-                "ingest_hour"
-              ],
-              "include_raw_payload": true
-            },
-            "runtime_policy": {
-              "max_retries": 3,
-              "backoff_seconds": 10
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        },
-        {
-          "name": "weather_forecast_silver",
-          "enabled": true,
-          "job_type": "generic_bronze_to_silver",
-          "source_type": "api",
-          "dependencies": [
-            "weather_forecast_ingest"
-          ],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "weather",
-            "silver"
-          ],
-          "spec": {
-            "source": {
-              "path": "s3a://lakehouse/bronze/weather_forecast_events",
-              "format": "delta"
-            },
-            "target": {
-              "path": "s3a://lakehouse/silver/weather_forecast_clean",
-              "format": "delta",
-              "mode": "merge",
-              "merge_keys": [
-                "event_id"
-              ],
-              "partition_by": [
-                "processing_date"
-              ]
-            },
-            "transform": {
-              "type": "json_array_zip_explode",
-              "payload_column": "payload_json",
-              "root_fields": {
-                "latitude": {
-                  "path": "$.latitude",
-                  "cast": "double"
-                },
-                "longitude": {
-                  "path": "$.longitude",
-                  "cast": "double"
-                },
-                "timezone": {
-                  "path": "$.timezone",
-                  "cast": "string"
-                }
-              },
-              "array_fields": {
-                "forecast_ts_utc": {
-                  "path": "$.hourly.time",
-                  "cast": "timestamp"
-                },
-                "temperature_2m": {
-                  "path": "$.hourly.temperature_2m",
-                  "cast": "double"
-                },
-                "relative_humidity_2m": {
-                  "path": "$.hourly.relative_humidity_2m",
-                  "cast": "double"
-                },
-                "precipitation": {
-                  "path": "$.hourly.precipitation",
-                  "cast": "double"
-                },
-                "weather_code": {
-                  "path": "$.hourly.weather_code",
-                  "cast": "int"
-                },
-                "wind_speed_10m": {
-                  "path": "$.hourly.wind_speed_10m",
-                  "cast": "double"
-                }
-              },
-              "carry_fields": {
-                "source_name": "source_name",
-                "ingestion_ts": "ingestion_ts"
-              },
-              "event_id": {
-                "type": "hash",
-                "columns": [
-                  "source_name",
-                  "latitude",
-                  "longitude",
-                  "forecast_ts_utc"
-                ]
-              }
-            },
-            "schema": [
-              "event_id string not null",
-              "source_name string not null",
-              "latitude double null",
-              "longitude double null",
-              "timezone string null",
-              "forecast_ts_utc timestamp not null",
-              "temperature_2m double null",
-              "relative_humidity_2m double null",
-              "precipitation double null",
-              "weather_code int null",
-              "wind_speed_10m double null",
-              "ingestion_ts timestamp not null",
-              "processing_date date not null"
-            ],
-            "filters": [
-              {
-                "type": "equals",
-                "field": "api_status",
-                "value": "success"
-              }
-            ],
-            "select_map": {},
-            "derived_fields": {
-              "processing_date": {
-                "kind": "sql",
-                "expr": "to_date(ingestion_ts)"
-              }
-            },
-            "quality_rules": [
-              {
-                "type": "not_null",
-                "field": "event_id"
-              }
-            ],
-            "dedupe": {
-              "key_columns": [
-                "event_id"
-              ],
-              "order_by": [
-                "ingestion_ts asc"
-              ]
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        },
-        {
-          "name": "weather_forecast_gold",
-          "enabled": true,
-          "job_type": "generic_silver_to_gold",
-          "source_type": "api",
-          "dependencies": [
-            "weather_forecast_silver"
-          ],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "weather",
-            "gold"
-          ],
-          "spec": {
-            "source": {
-              "path": "s3a://lakehouse/silver/weather_forecast_clean",
-              "format": "delta"
-            },
-            "target": {
-              "path": "s3a://lakehouse/gold/weather_forecast_curated",
-              "format": "delta",
-              "mode": "merge",
-              "merge_keys": [
-                "event_id"
-              ],
-              "partition_by": [
-                "event_date"
-              ]
-            },
-            "select_map": {
-              "event_id": "event_id",
-              "source_name": "source_name",
-              "event_ts": "source_event_ts",
-              "ingestion_ts": "ingestion_ts",
-              "payload_json": "payload_json",
-              "api_status": "api_status"
-            },
-            "filters": [],
-            "derived_fields": {
-              "event_date": {
-                "kind": "sql",
-                "expr": "to_date(ingestion_ts)"
-              },
-              "dataset_name": {
-                "kind": "sql",
-                "expr": "'weather_forecast_raw'"
-              }
-            },
-            "quality_rules": [
-              {
-                "type": "not_null",
-                "field": "event_id"
-              },
-              {
-                "type": "not_null",
-                "field": "ingestion_ts"
-              },
-              {
-                "type": "not_null",
-                "field": "payload_json"
-              }
-            ],
-            "dedupe": {
-              "key_columns": [
-                "event_id"
-              ],
-              "order_by": [
-                "ingestion_ts asc"
-              ]
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "gold_price_pipeline",
-      "enabled": true,
-      "description": "API-driven gold price Bronze/Silver/Gold batch pipeline",
-      "domain": "gold_price",
-      "source_type": "api",
-      "dag": {
-        "schedule": null,
-        "catchup": false,
-        "max_active_runs": 1,
-        "start_date": "2026-01-01T00:00:00+00:00",
-        "tags": [
-          "gold_price",
-          "batch",
-          "api",
-          "spark",
-          "catalog_driven"
-        ],
-        "default_args": {
-          "owner": "admin",
-          "retries": 0,
-          "retry_delay_minutes": 1
-        }
-      },
-      "jobs": [
-        {
-          "name": "gold_price_ingest",
-          "enabled": true,
-          "job_type": "generic_api_to_bronze",
-          "source_type": "api",
-          "dependencies": [],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "gold_price",
-            "api",
-            "bronze"
-          ],
-          "spec": {
-            "load_type": "event",
-            "strategy": "append_event",
-            "source": {
-              "base_url": "https://api.metalpriceapi.com/v1/latest",
-              "method": "GET",
-              "timeout_seconds": 20
-            },
-            "auth": {
-              "type": "query_param",
-              "param_name": "api_key",
-              "secret_env": "METALPRICE_API_KEY"
-            },
-            "request": {
-              "query_params": {
-                "base": "XAU",
-                "currencies": "USD"
-              },
-              "headers": {},
-              "body": null
-            },
-            "response": {
-              "format": "json",
-              "root_path": "$",
-              "record_mode": "single_object"
-            },
-            "validation": {
-              "required_paths": [
-                "$.success",
-                "$.timestamp",
-                "$.rates.USD"
-              ],
-              "rules": [
-                {
-                  "type": "equals",
-                  "path": "$.success",
-                  "value": true
-                }
-              ]
-            },
-            "schema": [
-              "event_id string not null",
-              "source_name string not null",
-              "symbol string null",
-              "currency string null",
-              "source_event_ts timestamp null",
-              "ingestion_ts timestamp not null",
-              "price_usd double null",
-              "payload_json string not null",
-              "api_status string not null"
-            ],
-            "mapping": {
-              "source_name": {
-                "source": "constant",
-                "value": "metalpriceapi"
-              },
-              "symbol": {
-                "source": "constant",
-                "value": "XAU"
-              },
-              "currency": {
-                "source": "constant",
-                "value": "USD"
-              },
-              "source_event_ts": {
-                "source": "json",
-                "path": "$.timestamp",
-                "cast": "unix_ts"
-              },
-              "price_usd": {
-                "source": "json",
-                "path": "$.rates.USD",
-                "cast": "double"
-              },
-              "ingestion_ts": {
-                "source": "runtime",
-                "value": "current_utc"
-              },
-              "payload_json": {
-                "source": "runtime",
-                "value": "raw_payload_json"
-              },
-              "api_status": {
-                "source": "constant",
-                "value": "success"
-              }
-            },
-            "bronze_write": {
-              "target_path": "s3a://lakehouse/bronze/gold_price_events",
-              "mode": "append",
-              "partition_by": [
-                "ingest_year",
-                "ingest_month",
-                "ingest_day",
-                "ingest_hour"
-              ],
-              "include_raw_payload": true
-            },
-            "runtime_policy": {
-              "max_retries": 3,
-              "backoff_seconds": 10
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        },
-        {
-          "name": "gold_price_silver",
-          "enabled": true,
-          "job_type": "generic_bronze_to_silver",
-          "source_type": "api",
-          "dependencies": [
-            "gold_price_ingest"
-          ],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "gold_price",
-            "silver"
-          ],
-          "spec": {
-            "source": {
-              "path": "s3a://lakehouse/bronze/gold_price_events",
-              "format": "delta"
-            },
-            "target": {
-              "path": "s3a://lakehouse/silver/gold_price_ticks_clean",
-              "format": "delta",
-              "mode": "merge",
-              "merge_keys": [
-                "event_id"
-              ],
-              "partition_by": [
-                "processing_date"
-              ]
-            },
-            "select_map": {
-              "event_id": "event_id",
-              "symbol": "symbol",
-              "source_name": "source_name",
-              "event_ts_utc": "source_event_ts",
-              "ingestion_ts": "ingestion_ts",
-              "price_usd": "price_usd",
-              "currency": "currency"
-            },
-            "filters": [
-              {
-                "type": "equals",
-                "field": "api_status",
-                "value": "success"
-              }
-            ],
-            "derived_fields": {
-              "processing_date": {
-                "kind": "sql",
-                "expr": "to_date(ingestion_ts)"
-              }
-            },
-            "quality_rules": [
-              {
-                "type": "not_null",
-                "field": "event_id"
-              },
-              {
-                "type": "not_null",
-                "field": "event_ts_utc"
-              },
-              {
-                "type": "not_null",
-                "field": "price_usd"
-              },
-              {
-                "type": "greater_than",
-                "field": "price_usd",
-                "value": 0
-              }
-            ],
-            "dedupe": {
-              "key_columns": [
-                "event_id"
-              ],
-              "order_by": [
-                "ingestion_ts asc"
-              ]
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        },
-        {
-          "name": "gold_price_gold",
-          "enabled": true,
-          "job_type": "generic_silver_to_gold",
-          "source_type": "api",
-          "dependencies": [
-            "gold_price_silver"
-          ],
-          "execution_timeout_minutes": 10,
-          "retries": 0,
-          "retry_delay_minutes": 1,
-          "tags": [
-            "gold_price",
-            "gold"
-          ],
-          "spec": {
-            "source": {
-              "path": "s3a://lakehouse/silver/gold_price_ticks_clean",
-              "format": "delta"
-            },
-            "target": {
-              "path": "s3a://lakehouse/gold/gold_price_curated",
-              "format": "delta",
-              "mode": "merge",
-              "merge_keys": [
-                "event_id"
-              ],
-              "partition_by": [
-                "trade_date"
-              ]
-            },
-            "select_map": {
-              "event_id": "event_id",
-              "symbol": "symbol",
-              "source_name": "source_name",
-              "currency": "currency",
-              "event_ts": "event_ts_utc",
-              "price_usd": "price_usd"
-            },
-            "filters": [],
-            "derived_fields": {
-              "trade_date": {
-                "kind": "sql",
-                "expr": "to_date(event_ts)"
-              },
-              "price_bucket": {
-                "kind": "sql",
-                "expr": "case when price_usd < 2500 then 'low' when price_usd < 3500 then 'mid' else 'high' end"
-              }
-            },
-            "quality_rules": [
-              {
-                "type": "not_null",
-                "field": "event_id"
-              },
-              {
-                "type": "not_null",
-                "field": "event_ts"
-              }
-            ],
-            "dedupe": {
-              "key_columns": [
-                "event_id"
-              ],
-              "order_by": [
-                "event_ts asc"
-              ]
-            },
-            "spark": {
-              "master": null,
-              "packages": [],
-              "conf": {}
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "ecommerce_sqlserver_bronze_pipeline",
-      "enabled": true,
-      "description": "Ecommerce SQL Server source-manifest-driven Bronze ingestion",
-      "domain": "ecommerce",
-      "source_type": "jdbc",
-      "dag": {
-        "schedule": null,
-        "catchup": false,
-        "max_active_runs": 1,
-        "start_date": "2026-01-01T00:00:00+00:00",
-        "tags": [
-          "ecommerce",
-          "sqlserver",
-          "jdbc",
-          "batch",
-          "bronze",
-          "manifest_driven"
-        ],
-        "default_args": {
-          "owner": "admin",
-          "retries": 1,
-          "retry_delay_minutes": 2
-        }
-      },
-      "jobs": [
-        {
-          "name": "ecommerce_sqlserver_to_bronze",
-          "enabled": true,
-          "job_type": "generic_jdbc_manifest_to_bronze",
-          "source_type": "jdbc",
-          "dependencies": [],
-          "execution_timeout_minutes": 90,
-          "retries": 1,
-          "retry_delay_minutes": 2,
-          "tags": [
-            "ecommerce",
-            "sqlserver",
-            "bronze"
-          ],
-          "manifest_ref": "configs/sources/jdbc/ecommerce_sqlserver_manifest.json",
-          "execution_strategy": "one_task_per_table"
-        }
-      ]
-    }
-  ]
+    "pipelines":  [
+                      {
+                          "name":  "gold_price_pipeline",
+                          "enabled":  true,
+                          "description":  "API-driven gold price Bronze/Silver/Gold batch pipeline",
+                          "domain":  "gold_price",
+                          "source_type":  "api",
+                          "dag":  {
+                                      "schedule":  null,
+                                      "catchup":  false,
+                                      "max_active_runs":  1,
+                                      "start_date":  "2026-01-01T00:00:00+00:00",
+                                      "tags":  [
+                                                   "gold_price",
+                                                   "batch",
+                                                   "api",
+                                                   "spark",
+                                                   "catalog_driven"
+                                               ],
+                                      "default_args":  {
+                                                           "owner":  "admin",
+                                                           "retries":  0,
+                                                           "retry_delay_minutes":  1
+                                                       }
+                                  },
+                          "jobs":  [
+                                       {
+                                           "name":  "gold_price_ingest",
+                                           "enabled":  true,
+                                           "job_type":  "generic_api_to_bronze",
+                                           "source_type":  "api",
+                                           "dependencies":  [
+
+                                                            ],
+                                           "execution_timeout_minutes":  10,
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "tags":  [
+                                                        "gold_price",
+                                                        "api",
+                                                        "bronze"
+                                                    ],
+                                           "spec":  {
+                                                        "load_type":  "event",
+                                                        "strategy":  "append_event",
+                                                        "source":  {
+                                                                       "base_url":  "https://api.metalpriceapi.com/v1/latest",
+                                                                       "method":  "GET",
+                                                                       "timeout_seconds":  20
+                                                                   },
+                                                        "auth":  {
+                                                                     "type":  "query_param",
+                                                                     "param_name":  "api_key",
+                                                                     "secret_env":  "METALPRICE_API_KEY"
+                                                                 },
+                                                        "request":  {
+                                                                        "query_params":  {
+                                                                                             "base":  "XAU",
+                                                                                             "currencies":  "USD"
+                                                                                         },
+                                                                        "headers":  {
+
+                                                                                    },
+                                                                        "body":  null
+                                                                    },
+                                                        "response":  {
+                                                                         "format":  "json",
+                                                                         "root_path":  "$",
+                                                                         "record_mode":  "single_object"
+                                                                     },
+                                                        "validation":  {
+                                                                           "required_paths":  [
+                                                                                                  "$.success",
+                                                                                                  "$.timestamp",
+                                                                                                  "$.rates.USD"
+                                                                                              ],
+                                                                           "rules":  [
+                                                                                         {
+                                                                                             "type":  "equals",
+                                                                                             "path":  "$.success",
+                                                                                             "value":  true
+                                                                                         }
+                                                                                     ]
+                                                                       },
+                                                        "schema":  [
+                                                                       "event_id string not null",
+                                                                       "source_name string not null",
+                                                                       "symbol string null",
+                                                                       "currency string null",
+                                                                       "source_event_ts timestamp null",
+                                                                       "ingestion_ts timestamp not null",
+                                                                       "price_usd double null",
+                                                                       "payload_json string not null",
+                                                                       "api_status string not null"
+                                                                   ],
+                                                        "mapping":  {
+                                                                        "source_name":  {
+                                                                                            "source":  "constant",
+                                                                                            "value":  "metalpriceapi"
+                                                                                        },
+                                                                        "symbol":  {
+                                                                                       "source":  "constant",
+                                                                                       "value":  "XAU"
+                                                                                   },
+                                                                        "currency":  {
+                                                                                         "source":  "constant",
+                                                                                         "value":  "USD"
+                                                                                     },
+                                                                        "source_event_ts":  {
+                                                                                                "source":  "json",
+                                                                                                "path":  "$.timestamp",
+                                                                                                "cast":  "unix_ts"
+                                                                                            },
+                                                                        "price_usd":  {
+                                                                                          "source":  "json",
+                                                                                          "path":  "$.rates.USD",
+                                                                                          "cast":  "double"
+                                                                                      },
+                                                                        "ingestion_ts":  {
+                                                                                             "source":  "runtime",
+                                                                                             "value":  "current_utc"
+                                                                                         },
+                                                                        "payload_json":  {
+                                                                                             "source":  "runtime",
+                                                                                             "value":  "raw_payload_json"
+                                                                                         },
+                                                                        "api_status":  {
+                                                                                           "source":  "constant",
+                                                                                           "value":  "success"
+                                                                                       }
+                                                                    },
+                                                        "bronze_write":  {
+                                                                             "target_path":  "s3a://lakehouse/bronze/gold_price_events",
+                                                                             "mode":  "append",
+                                                                             "partition_by":  [
+                                                                                                  "ingest_year",
+                                                                                                  "ingest_month",
+                                                                                                  "ingest_day",
+                                                                                                  "ingest_hour"
+                                                                                              ],
+                                                                             "include_raw_payload":  true
+                                                                         },
+                                                        "runtime_policy":  {
+                                                                               "max_retries":  3,
+                                                                               "backoff_seconds":  10
+                                                                           },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    }
+                                       },
+                                       {
+                                           "name":  "gold_price_silver",
+                                           "enabled":  true,
+                                           "job_type":  "generic_bronze_to_silver",
+                                           "source_type":  "api",
+                                           "dependencies":  [
+                                                                "gold_price_ingest"
+                                                            ],
+                                           "execution_timeout_minutes":  10,
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "tags":  [
+                                                        "gold_price",
+                                                        "silver"
+                                                    ],
+                                           "spec":  {
+                                                        "source":  {
+                                                                       "path":  "s3a://lakehouse/bronze/gold_price_events",
+                                                                       "format":  "delta"
+                                                                   },
+                                                        "target":  {
+                                                                       "path":  "s3a://lakehouse/silver/gold_price_ticks_clean",
+                                                                       "format":  "delta",
+                                                                       "mode":  "merge",
+                                                                       "merge_keys":  [
+                                                                                          "event_id"
+                                                                                      ],
+                                                                       "partition_by":  [
+                                                                                            "processing_date"
+                                                                                        ]
+                                                                   },
+                                                        "select_map":  {
+                                                                           "event_id":  "event_id",
+                                                                           "symbol":  "symbol",
+                                                                           "source_name":  "source_name",
+                                                                           "event_ts_utc":  "source_event_ts",
+                                                                           "ingestion_ts":  "ingestion_ts",
+                                                                           "price_usd":  "price_usd",
+                                                                           "currency":  "currency"
+                                                                       },
+                                                        "filters":  [
+                                                                        {
+                                                                            "type":  "equals",
+                                                                            "field":  "api_status",
+                                                                            "value":  "success"
+                                                                        }
+                                                                    ],
+                                                        "derived_fields":  {
+                                                                               "processing_date":  {
+                                                                                                       "kind":  "sql",
+                                                                                                       "expr":  "to_date(ingestion_ts)"
+                                                                                                   }
+                                                                           },
+                                                        "quality_rules":  [
+                                                                              {
+                                                                                  "type":  "not_null",
+                                                                                  "field":  "event_id"
+                                                                              },
+                                                                              {
+                                                                                  "type":  "not_null",
+                                                                                  "field":  "event_ts_utc"
+                                                                              },
+                                                                              {
+                                                                                  "type":  "not_null",
+                                                                                  "field":  "price_usd"
+                                                                              },
+                                                                              {
+                                                                                  "type":  "greater_than",
+                                                                                  "field":  "price_usd",
+                                                                                  "value":  0
+                                                                              }
+                                                                          ],
+                                                        "dedupe":  {
+                                                                       "key_columns":  [
+                                                                                           "event_id"
+                                                                                       ],
+                                                                       "order_by":  [
+                                                                                        "ingestion_ts asc"
+                                                                                    ]
+                                                                   },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    }
+                                       },
+                                       {
+                                           "name":  "gold_price_gold",
+                                           "enabled":  true,
+                                           "job_type":  "generic_silver_to_gold",
+                                           "source_type":  "api",
+                                           "dependencies":  [
+                                                                "gold_price_silver"
+                                                            ],
+                                           "execution_timeout_minutes":  10,
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "tags":  [
+                                                        "gold_price",
+                                                        "gold"
+                                                    ],
+                                           "spec":  {
+                                                        "source":  {
+                                                                       "path":  "s3a://lakehouse/silver/gold_price_ticks_clean",
+                                                                       "format":  "delta"
+                                                                   },
+                                                        "target":  {
+                                                                       "path":  "s3a://lakehouse/gold/gold_price_curated",
+                                                                       "format":  "delta",
+                                                                       "mode":  "merge",
+                                                                       "merge_keys":  [
+                                                                                          "event_id"
+                                                                                      ],
+                                                                       "partition_by":  [
+                                                                                            "trade_date"
+                                                                                        ]
+                                                                   },
+                                                        "select_map":  {
+                                                                           "event_id":  "event_id",
+                                                                           "symbol":  "symbol",
+                                                                           "source_name":  "source_name",
+                                                                           "currency":  "currency",
+                                                                           "event_ts":  "event_ts_utc",
+                                                                           "price_usd":  "price_usd"
+                                                                       },
+                                                        "filters":  [
+
+                                                                    ],
+                                                        "derived_fields":  {
+                                                                               "trade_date":  {
+                                                                                                  "kind":  "sql",
+                                                                                                  "expr":  "to_date(event_ts)"
+                                                                                              },
+                                                                               "price_bucket":  {
+                                                                                                    "kind":  "sql",
+                                                                                                    "expr":  "case when price_usd \u003c 2500 then \u0027low\u0027 when price_usd \u003c 3500 then \u0027mid\u0027 else \u0027high\u0027 end"
+                                                                                                }
+                                                                           },
+                                                        "quality_rules":  [
+                                                                              {
+                                                                                  "type":  "not_null",
+                                                                                  "field":  "event_id"
+                                                                              },
+                                                                              {
+                                                                                  "type":  "not_null",
+                                                                                  "field":  "event_ts"
+                                                                              }
+                                                                          ],
+                                                        "dedupe":  {
+                                                                       "key_columns":  [
+                                                                                           "event_id"
+                                                                                       ],
+                                                                       "order_by":  [
+                                                                                        "event_ts asc"
+                                                                                    ]
+                                                                   },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    }
+                                       }
+                                   ]
+                      },
+                      {
+                          "name":  "ecommerce_sqlserver_bronze_pipeline",
+                          "enabled":  true,
+                          "description":  "Ecommerce SQL Server source-manifest-driven Bronze ingestion",
+                          "domain":  "ecommerce",
+                          "source_type":  "jdbc",
+                          "dag":  {
+                                      "schedule":  null,
+                                      "catchup":  false,
+                                      "max_active_runs":  1,
+                                      "start_date":  "2026-01-01T00:00:00+00:00",
+                                      "tags":  [
+                                                   "ecommerce",
+                                                   "sqlserver",
+                                                   "jdbc",
+                                                   "batch",
+                                                   "bronze",
+                                                   "manifest_driven"
+                                               ],
+                                      "default_args":  {
+                                                           "owner":  "admin",
+                                                           "retries":  1,
+                                                           "retry_delay_minutes":  2
+                                                       }
+                                  },
+                          "jobs":  [
+                                       {
+                                           "name":  "ecommerce_sqlserver_to_bronze",
+                                           "enabled":  true,
+                                           "job_type":  "generic_jdbc_manifest_to_bronze",
+                                           "source_type":  "jdbc",
+                                           "dependencies":  [
+
+                                                            ],
+                                           "execution_timeout_minutes":  90,
+                                           "retries":  1,
+                                           "retry_delay_minutes":  2,
+                                           "tags":  [
+                                                        "ecommerce",
+                                                        "sqlserver",
+                                                        "bronze"
+                                                    ],
+                                           "manifest_ref":  "configs/sources/jdbc/ecommerce_sqlserver_manifest.json",
+                                           "execution_strategy":  "one_task_per_table"
+                                       }
+                                   ]
+                      },
+                      {
+                          "name":  "demo_catalog_pipeline",
+                          "description":  "Demo pipeline managed through catalog editor",
+                          "enabled":  true,
+                          "dag":  {
+                                      "schedule":  null,
+                                      "tags":  [
+                                                   "demo",
+                                                   "catalog_managed",
+                                                   "api"
+                                               ],
+                                      "start_date":  "2026-01-01T00:00:00+00:00",
+                                      "catchup":  false,
+                                      "max_active_runs":  1,
+                                      "default_args":  {
+                                                           "owner":  "admin",
+                                                           "retries":  0,
+                                                           "retry_delay_minutes":  1
+                                                       }
+                                  },
+                          "jobs":  [
+                                       {
+                                           "name":  "demo_api_bronze",
+                                           "job_type":  "generic_api_to_bronze",
+                                           "enabled":  true,
+                                           "spec":  {
+                                                        "source":  {
+                                                                       "base_url":  "https://example.com/api",
+                                                                       "method":  "GET",
+                                                                       "timeout_seconds":  20
+                                                                   },
+                                                        "auth":  {
+                                                                     "type":  "none",
+                                                                     "secret_env":  ""
+                                                                 },
+                                                        "response":  {
+                                                                         "format":  "json",
+                                                                         "root_path":  "$",
+                                                                         "record_mode":  "single_object"
+                                                                     },
+                                                        "bronze_write":  {
+                                                                             "target_path":  "s3a://lakehouse/bronze/demo_api",
+                                                                             "mode":  "append",
+                                                                             "partition_by":  [
+                                                                                                  "ingest_year",
+                                                                                                  "ingest_month",
+                                                                                                  "ingest_day"
+                                                                                              ]
+                                                                         },
+                                                        "load_type":  "event",
+                                                        "strategy":  "append_event",
+                                                        "request":  {
+                                                                        "query_params":  {
+
+                                                                                         },
+                                                                        "headers":  {
+
+                                                                                    },
+                                                                        "body":  null
+                                                                    },
+                                                        "validation":  {
+                                                                           "required_paths":  [
+
+                                                                                              ],
+                                                                           "rules":  [
+
+                                                                                     ]
+                                                                       },
+                                                        "mapping":  {
+
+                                                                    },
+                                                        "schema":  [
+
+                                                                   ],
+                                                        "runtime_policy":  {
+                                                                               "max_retries":  3,
+                                                                               "backoff_seconds":  10
+                                                                           },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    },
+                                           "tags":  [
+                                                        "demo",
+                                                        "bronze",
+                                                        "api"
+                                                    ],
+                                           "source_type":  "api",
+                                           "dependencies":  [
+
+                                                            ],
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "execution_timeout_minutes":  10
+                                       }
+                                   ],
+                          "domain":  "demo_catalog_pipeline",
+                          "source_type":  "api"
+                      },
+                      {
+                          "name":  "weather_forecast_pipeline",
+                          "description":  "Weather forecast API pipeline managed through catalog editor",
+                          "enabled":  true,
+                          "dag":  {
+                                      "schedule":  null,
+                                      "start_date":  "2026-01-01T00:00:00+00:00",
+                                      "catchup":  false,
+                                      "max_active_runs":  1,
+                                      "default_args":  {
+                                                           "owner":  "admin",
+                                                           "retries":  0,
+                                                           "retry_delay_minutes":  1
+                                                       },
+                                      "tags":  [
+                                                   "weather",
+                                                   "api",
+                                                   "catalog_managed"
+                                               ]
+                                  },
+                          "domain":  "weather_forecast_pipeline",
+                          "source_type":  "api",
+                          "jobs":  [
+                                       {
+                                           "name":  "weather_forecast_ingest",
+                                           "job_type":  "generic_api_to_bronze",
+                                           "source_type":  "api",
+                                           "enabled":  true,
+                                           "dependencies":  [
+
+                                                            ],
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "execution_timeout_minutes":  10,
+                                           "spec":  {
+                                                        "load_type":  "event",
+                                                        "strategy":  "append_event",
+                                                        "source":  {
+                                                                       "base_url":  "https://api.open-meteo.com/v1/forecast",
+                                                                       "method":  "GET",
+                                                                       "timeout_seconds":  20
+                                                                   },
+                                                        "auth":  {
+                                                                     "type":  "none",
+                                                                     "secret_env":  ""
+                                                                 },
+                                                        "request":  {
+                                                                        "query_params":  {
+                                                                                             "latitude":  "51.5085",
+                                                                                             "longitude":  "-0.1257",
+                                                                                             "timezone":  "Europe/London",
+                                                                                             "forecast_days":  "1",
+                                                                                             "hourly":  "temperature_2m,relative_humidity_2m"
+                                                                                         },
+                                                                        "headers":  {
+
+                                                                                    },
+                                                                        "body":  null
+                                                                    },
+                                                        "response":  {
+                                                                         "format":  "json",
+                                                                         "root_path":  "$",
+                                                                         "record_mode":  "single_object"
+                                                                     },
+                                                        "validation":  {
+                                                                           "required_paths":  [
+                                                                                                  "$.latitude",
+                                                                                                  "$.longitude",
+                                                                                                  "$.timezone",
+                                                                                                  "$.hourly"
+                                                                                              ],
+                                                                           "rules":  [
+
+                                                                                     ]
+                                                                       },
+                                                        "mapping":  {
+
+                                                                    },
+                                                        "schema":  [
+
+                                                                   ],
+                                                        "bronze_write":  {
+                                                                             "target_path":  "s3a://lakehouse/bronze/weather_forecast_events",
+                                                                             "mode":  "append",
+                                                                             "partition_by":  [
+                                                                                                  "ingest_year",
+                                                                                                  "ingest_month",
+                                                                                                  "ingest_day",
+                                                                                                  "ingest_hour"
+                                                                                              ],
+                                                                             "include_raw_payload":  true
+                                                                         },
+                                                        "runtime_policy":  {
+                                                                               "max_retries":  3,
+                                                                               "backoff_seconds":  10
+                                                                           },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    },
+                                           "tags":  [
+                                                        "weather",
+                                                        "bronze",
+                                                        "api"
+                                                    ]
+                                       },
+                                       {
+                                           "name":  "weather_forecast_silver",
+                                           "job_type":  "generic_bronze_to_silver",
+                                           "source_type":  "api",
+                                           "enabled":  true,
+                                           "dependencies":  [
+                                                                "weather_forecast_ingest"
+                                                            ],
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "execution_timeout_minutes":  10,
+                                           "spec":  {
+                                                        "source":  {
+                                                                       "path":  "s3a://lakehouse/bronze/weather_forecast_events",
+                                                                       "format":  "delta"
+                                                                   },
+                                                        "target":  {
+                                                                       "path":  "s3a://lakehouse/silver/weather_forecast_clean",
+                                                                       "format":  "delta",
+                                                                       "mode":  "append",
+                                                                       "partition_by":  [
+                                                                                            "processing_date"
+                                                                                        ],
+                                                                       "merge_keys":  [
+
+                                                                                      ]
+                                                                   },
+                                                        "select_map":  {
+
+                                                                       },
+                                                        "filters":  [
+
+                                                                    ],
+                                                        "derived_fields":  {
+                                                                               "processing_date":  {
+                                                                                                       "kind":  "sql",
+                                                                                                       "expr":  "current_date()"
+                                                                                                   }
+                                                                           },
+                                                        "quality_rules":  [
+
+                                                                          ],
+                                                        "dedupe":  {
+                                                                       "key_columns":  [
+
+                                                                                       ],
+                                                                       "order_by":  [
+
+                                                                                    ]
+                                                                   },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    },
+                                           "tags":  [
+                                                        "weather",
+                                                        "silver",
+                                                        "api"
+                                                    ]
+                                       },
+                                       {
+                                           "name":  "weather_forecast_gold",
+                                           "job_type":  "generic_silver_to_gold",
+                                           "source_type":  "api",
+                                           "enabled":  true,
+                                           "dependencies":  [
+                                                                "weather_forecast_silver"
+                                                            ],
+                                           "retries":  0,
+                                           "retry_delay_minutes":  1,
+                                           "execution_timeout_minutes":  10,
+                                           "spec":  {
+                                                        "source":  {
+                                                                       "path":  "s3a://lakehouse/silver/weather_forecast_clean",
+                                                                       "format":  "delta"
+                                                                   },
+                                                        "target":  {
+                                                                       "path":  "s3a://lakehouse/gold/weather_forecast_curated",
+                                                                       "format":  "delta",
+                                                                       "mode":  "overwrite",
+                                                                       "partition_by":  [
+
+                                                                                        ],
+                                                                       "merge_keys":  [
+
+                                                                                      ]
+                                                                   },
+                                                        "select_map":  {
+
+                                                                       },
+                                                        "filters":  [
+
+                                                                    ],
+                                                        "derived_fields":  {
+
+                                                                           },
+                                                        "quality_rules":  [
+
+                                                                          ],
+                                                        "dedupe":  {
+                                                                       "key_columns":  [
+
+                                                                                       ],
+                                                                       "order_by":  [
+
+                                                                                    ]
+                                                                   },
+                                                        "spark":  {
+                                                                      "master":  null,
+                                                                      "packages":  [
+
+                                                                                   ],
+                                                                      "conf":  {
+
+                                                                               }
+                                                                  }
+                                                    },
+                                           "tags":  [
+                                                        "weather",
+                                                        "gold",
+                                                        "api"
+                                                    ]
+                                       }
+                                   ]
+                      }
+                  ]
 }

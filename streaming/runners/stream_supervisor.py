@@ -93,6 +93,7 @@ class StreamSupervisor:
                 previous = self.states.get(unit_name)
 
                 state = UnitState(
+                    run_id=previous.run_id if previous else None,
                     unit_name=unit_name,
                     stream_name=stream_name,
                     layer=layer,
@@ -209,6 +210,7 @@ class StreamSupervisor:
     def _refresh_process_states(self) -> None:
         for unit_name, proc in list(self.processes.items()):
             rc = proc.poll()
+            state = self.states.get(unit_name)
 
             if rc is None:
                 state = self.states.get(unit_name)
@@ -217,28 +219,26 @@ class StreamSupervisor:
                     state.returncode = None
                 continue
             
-            try:
-                append_job_event(
-                    event_type="stream_exited",
-                    run_id=getattr(state, "run_id", None),
-                    type="stream",
-                    unit_name=unit_name,
-                    stream_name=state.stream_name,
-                    layer=state.layer,
-                    job_id=f"{state.stream_name}__{state.layer}",
-                    job=f"{state.layer}_{state.stream_name}",
-                    pipeline=state.stream_name,
-                    status="failed" if rc != 0 else "stopped",
-                    returncode=rc,
-                    retries=state.retries,
-                    max_retries=state.max_retries,
-                )
-            except Exception as exc:
-                print(f"[supervisor][WARN] registry write failed: {exc}", flush=True)
-
-            state = self.states.get(unit_name)
-
             if state:
+                try:
+                    append_job_event(
+                        event_type="stream_exited",
+                        run_id=getattr(state, "run_id", None),
+                        type="stream",
+                        unit_name=unit_name,
+                        stream_name=state.stream_name,
+                        layer=state.layer,
+                        job_id=f"{state.stream_name}__{state.layer}",
+                        job=f"{state.layer}_{state.stream_name}",
+                        pipeline=state.stream_name,
+                        status="failed" if rc != 0 else "stopped",
+                        returncode=rc,
+                        retries=state.retries,
+                        max_retries=state.max_retries,
+                    )
+                except Exception as exc:
+                    print(f"[supervisor][WARN] registry write failed: {exc}", flush=True)
+
                 state.pid = None
                 state.returncode = rc
                 state.next_retry_ts_epoch = int(time.time()) + state.backoff_seconds

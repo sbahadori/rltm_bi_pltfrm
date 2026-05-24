@@ -6,17 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 import time
-from delta.tables import DeltaTable
-from pyspark.sql import DataFrame, SparkSession, Window
-from pyspark.sql.functions import col, expr, lit, row_number
-from pyspark.sql.types import (
-    DateType,
-    DoubleType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
+from pyspark.sql import  SparkSession
+
 
 import sys
 from pathlib import Path
@@ -27,11 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
     
-from shared.runtime.job_run_registry import (
-    append_job_event,
-    exception_to_text,
-    new_run_id,
-)
+
 
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -44,7 +31,20 @@ REPO_ROOT = _bootstrap_repo_path()
 
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 
+from shared.runtime.control_run_context import build_runtime_context, control_run
 
+from batch.transforms.rules import (
+    apply_select_map,
+    apply_filters,
+    apply_derived_fields,
+    apply_quality_rules,
+    apply_dedupe,
+)
+
+from batch.writers.delta_writer import (
+    merge_to_target,
+    validate_partition_columns,
+)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -57,287 +57,130 @@ def parse_args():
 def build_spark() -> SparkSession:
     return create_spark("generic_bronze_to_silver")
 
+from shared.control.job_spec_store import load_current_job_spec
+
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
-    job = get_job_by_name(catalog_path, pipeline_name, job_name)
-    if job["job_type"] != "generic_bronze_to_silver":
-        raise ValueError(
-            f"Job '{job_name}' is not generic_bronze_to_silver; got '{job['job_type']}'"
-        )
-    return job["spec"]
-
-
-def apply_select_map(df: DataFrame, select_map: dict[str, str]) -> DataFrame:
-    if not select_map:
-        return df
-
-    cols = [
-        col(source_name).alias(target_name)
-        for target_name, source_name in select_map.items()
-    ]
-
-    return df.select(*cols)
-
-def apply_filters(df: DataFrame, filters_spec: list[dict[str, Any]]) -> DataFrame:
-    result = df
-    for rule in filters_spec or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        elif rule_type == "not_equals":
-            result = result.filter(col(field) != lit(rule["value"]))
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "less_than":
-            result = result.filter(col(field) < lit(rule["value"]))
-        elif rule_type == "less_or_equal":
-            result = result.filter(col(field) <= lit(rule["value"]))
-        elif rule_type == "is_not_null":
-            result = result.filter(col(field).isNotNull())
-        else:
-            raise ValueError(f"Unsupported filter type: {rule_type}")
-
-    return result
-
-
-def apply_derived_fields(df: DataFrame, derived_fields: dict[str, dict[str, Any]]) -> DataFrame:
-    result = df
-    for field_name, spec in (derived_fields or {}).items():
-        kind = spec["kind"]
-
-        if kind == "sql":
-            result = result.withColumn(field_name, expr(spec["expr"]))
-        else:
-            raise ValueError(f"Unsupported derived field kind: {kind}")
-
-    return result
-
-
-def apply_quality_rules(df: DataFrame, quality_rules: list[dict[str, Any]]) -> DataFrame:
-    result = df
-    for rule in quality_rules or []:
-        rule_type = rule["type"]
-        field = rule["field"]
-
-        if rule_type == "not_null":
-            result = result.filter(col(field).isNotNull())
-        elif rule_type == "greater_than":
-            result = result.filter(col(field) > lit(rule["value"]))
-        elif rule_type == "greater_or_equal":
-            result = result.filter(col(field) >= lit(rule["value"]))
-        elif rule_type == "equals":
-            result = result.filter(col(field) == lit(rule["value"]))
-        else:
-            raise ValueError(f"Unsupported quality rule type: {rule_type}")
-
-    return result
-
-
-def apply_dedupe(df: DataFrame, dedupe_spec: dict[str, Any]) -> DataFrame:
-    if not dedupe_spec:
-        return df
-
-    key_columns = dedupe_spec["key_columns"]
-    order_by = dedupe_spec.get("order_by", [])
-
-    if not order_by:
-        return df.dropDuplicates(key_columns)
-
-    order_exprs = [expr(item) for item in order_by]
-    w = Window.partitionBy(*key_columns).orderBy(*order_exprs)
-
-    return (
-        df.withColumn("_rn", row_number().over(w))
-          .filter(col("_rn") == 1)
-          .drop("_rn")
-    )
-
-
-def ensure_table(
-    spark: SparkSession,
-    path: str,
-    df: DataFrame,
-    partition_by: list[str],
-) -> None:
-    if DeltaTable.isDeltaTable(spark, path):
-        return
-
-    writer = (
-        df.limit(0)
-        .write
-        .format("delta")
-        .mode("overwrite")
-    )
-
-    if partition_by:
-        writer = writer.partitionBy(*partition_by)
-
-    writer.save(path)
-
-def merge_to_target(
-    spark: SparkSession,
-    target_path: str,
-    df: DataFrame,
-    merge_keys: list[str],
-    partition_by: list[str],
-) -> None:
-    ensure_table(
-        spark=spark,
-        path=target_path,
-        df=df,
-        partition_by=partition_by,
-    )
-
-    target = DeltaTable.forPath(spark, target_path)
-
-    condition = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
-
-    (
-        target.alias("t")
-        .merge(df.alias("s"), condition)
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
-
+    try:
+        return load_current_job_spec()
+    except Exception:
+        job = get_job_by_name(catalog_path, pipeline_name, job_name)
+        if job["job_type"] != "generic_bronze_to_silver":
+            raise ValueError(
+                f"Job '{job_name}' is not generic_bronze_to_silver; got '{job['job_type']}'"
+            )
+        return job["spec"]
+    
 
 def main():
     args = parse_args()
 
-    run_id = new_run_id(f"{args.pipeline_name}__{args.job_name}")
-    started = time.time()
-    spark = None
-
-    append_job_event(
-        event_type="batch_started",
-        run_id=run_id,
-        type="batch",
-        pipeline=args.pipeline_name,
-        job=args.job_name,
-        job_id=f"{args.pipeline_name}__{args.job_name}",
-        status="running",
-        started_at_epoch=int(started),
+    context = build_runtime_context(
+        default_pipeline_name=args.pipeline_name,
+        default_job_name=args.job_name,
+        default_job_code=f"silver.{args.pipeline_name}.{args.job_name}",
+        default_base_job_name=args.job_name,
+        default_layer="silver",
+        default_runner="generic_bronze_to_silver",
     )
 
-    try:
-        spark = build_spark()
+    spark = None
 
-        spec = load_job_spec(
-            args.catalog_path,
-            args.pipeline_name,
-            args.job_name,
-        )
+    with control_run(context=context) as run_ctx:
+        try:
+            spark = build_spark()
 
-        source_path = spec["source"]["path"]
-        target_path = spec["target"]["path"]
-        merge_keys = spec["target"].get("merge_keys", [])
-
-        bronze_df = spark.read.format(
-            spec["source"].get("format", "delta")
-        ).load(source_path)
-
-        silver_df = (
-            bronze_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
-            .transform(lambda df: apply_select_map(df, spec["select_map"]))
-            .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
-            .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
-            .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
-        )
-
-        if silver_df.rdd.isEmpty():
-            ended = time.time()
-            append_job_event(
-                event_type="batch_succeeded",
-                run_id=run_id,
-                type="batch",
-                pipeline=args.pipeline_name,
-                job=args.job_name,
-                job_id=f"{args.pipeline_name}__{args.job_name}",
-                status="success",
-                started_at_epoch=int(started),
-                ended_at_epoch=int(ended),
-                duration_seconds=round(ended - started, 3),
-                target_path=target_path,
-                records_written=0,
-                message="No rows to write to Silver.",
+            spec = load_job_spec(
+                args.catalog_path,
+                args.pipeline_name,
+                args.job_name,
             )
-            print("No rows to write to Silver.")
-            return
 
-        output_count = silver_df.count()
+            source_path = spec["source"]["path"]
+            target_path = spec["target"]["path"]
+            merge_keys = spec["target"].get("merge_keys", [])
 
-        if spec["target"].get("mode", "merge") == "merge":
-            if not merge_keys:
-                raise ValueError("Target mode 'merge' requires target.merge_keys")
+            run_ctx["target_path"] = target_path
 
+            bronze_df = spark.read.format(
+                spec["source"].get("format", "delta")
+            ).load(source_path)
+
+            silver_df = (
+                bronze_df.transform(lambda df: apply_filters(df, spec.get("filters", [])))
+                .transform(lambda df: apply_select_map(df, spec["select_map"]))
+                .transform(lambda df: apply_derived_fields(df, spec.get("derived_fields", {})))
+                .transform(lambda df: apply_quality_rules(df, spec.get("quality_rules", [])))
+                .transform(lambda df: apply_dedupe(df, spec.get("dedupe", {})))
+            )
+
+            if silver_df.rdd.isEmpty():
+                run_ctx["records_read"] = 0
+                run_ctx["records_written"] = 0
+                run_ctx["records_inserted"] = 0
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
+                print("[SILVER_SKIP_EMPTY] No rows to write to Silver.", flush=True)
+                return
+
+            input_count = bronze_df.count()
+            output_count = silver_df.count()
+
+            run_ctx["records_read"] = input_count
+
+            target_mode = spec["target"].get("mode", "merge")
             partition_by = spec["target"].get("partition_by", [])
 
-            merge_to_target(
-                spark=spark,
-                target_path=target_path,
-                df=silver_df,
-                merge_keys=merge_keys,
-                partition_by=partition_by,
+            if target_mode == "merge":
+                if not merge_keys:
+                    raise ValueError("Target mode 'merge' requires target.merge_keys")
+
+                merge_metrics = merge_to_target(
+                    spark=spark,
+                    target_path=target_path,
+                    df=silver_df,
+                    merge_keys=merge_keys,
+                    partition_by=partition_by,
+                )
+
+                run_ctx["records_written"] = merge_metrics.get("records_written", output_count)
+                run_ctx["records_inserted"] = merge_metrics.get("records_inserted", 0)
+                run_ctx["records_updated"] = merge_metrics.get("records_updated", 0)
+                run_ctx["records_deleted"] = merge_metrics.get("records_deleted", 0)
+                run_ctx["delta_operation_metrics"] = merge_metrics.get("delta_operation_metrics", {})
+
+            else:
+                writer = silver_df.write.format(
+                    spec["target"].get("format", "delta")
+                ).mode(target_mode)
+
+                if partition_by:
+                    writer = writer.partitionBy(*partition_by)
+
+                writer.save(target_path)
+
+                run_ctx["records_written"] = output_count
+                run_ctx["records_inserted"] = output_count
+                run_ctx["records_updated"] = 0
+                run_ctx["records_deleted"] = 0
+
+            run_ctx["target_path"] = target_path
+
+            print(
+                f"[SILVER_WRITE_OK] "
+                f"job_code={context.get('job_code')} "
+                f"read={run_ctx.get('records_read')} "
+                f"written={run_ctx.get('records_written')} "
+                f"inserted={run_ctx.get('records_inserted')} "
+                f"updated={run_ctx.get('records_updated')} "
+                f"deleted={run_ctx.get('records_deleted')} "
+                f"target={target_path}",
+                flush=True,
             )
-        else:
-            writer = silver_df.write.format(
-                spec["target"].get("format", "delta")
-            ).mode(
-                spec["target"].get("mode", "append")
-            )
 
-            partition_by = spec["target"].get("partition_by", [])
+        finally:
+            if spark is not None:
+                spark.stop()
 
-            if partition_by:
-                writer = writer.partitionBy(*partition_by)
-
-            writer.save(target_path)
-
-        ended = time.time()
-
-        append_job_event(
-            event_type="batch_succeeded",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="success",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(ended),
-            duration_seconds=round(ended - started, 3),
-            target_path=target_path,
-            records_written=output_count,
-        )
-
-        print(f"Wrote Silver rows to {target_path}")
-
-    except Exception as exc:
-        ended = time.time()
-
-        append_job_event(
-            event_type="batch_failed",
-            run_id=run_id,
-            type="batch",
-            pipeline=args.pipeline_name,
-            job=args.job_name,
-            job_id=f"{args.pipeline_name}__{args.job_name}",
-            status="failed",
-            started_at_epoch=int(started),
-            ended_at_epoch=int(ended),
-            duration_seconds=round(ended - started, 3),
-            error=str(exc),
-            traceback=exception_to_text(exc),
-        )
-
-        raise
-
-    finally:
-        if spark is not None:
-            spark.stop()
 
 if __name__ == "__main__":
     main()

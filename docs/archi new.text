@@ -1,0 +1,43 @@
+                         ┌──────────────────────┐
+                         │ JSON/YAML Manifests   │
+                         │ Onboarding Configs    │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │ PostgreSQL Metadata   │
+                         │ & Control Plane       │
+                         │                      │
+                         │ meta.pipeline         │
+                         │ meta.job              │
+                         │ meta.dataset          │
+                         │ meta.job_dependency   │
+                         │ runtime.job_run       │
+                         │ runtime.watermark     │
+                         │ dq.quality_result     │
+                         │ lineage.dataset_lineage│
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │ Dynamic DAG Generator │
+                         │ Airflow               │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │ Generic Runners       │
+                         │ Spark / Python / dbt  │
+                         └──────────┬───────────┘
+                                    │
+             ┌──────────────────────┼──────────────────────┐
+             ▼                      ▼                      ▼
+        ┌─────────┐            ┌─────────┐            ┌─────────┐
+        │ Bronze  │───────────▶│ Silver  │───────────▶│ Gold    │
+        │ / SRZ   │            │ Cleaned │            │ BI/ML   │
+        └─────────┘            └─────────┘            └─────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │ Dashboard / BI / ML   │
+                         └──────────────────────┘

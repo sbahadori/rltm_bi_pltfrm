@@ -1,18 +1,20 @@
-import os
-import json
 import asyncio
-from pathlib import Path
-from datetime import datetime, timezone
-from typing import Any
+import json
 import logging
-logger = logging.getLogger("collector")
-logging.basicConfig(level=logging.INFO)
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Kafka-ready Collector")
+
+logger = logging.getLogger("collector")
+logging.basicConfig(level=logging.INFO)
+
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "user_events")
@@ -24,18 +26,12 @@ allowed_origins = [
     x.strip()
     for x in os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://localhost:8091,http://127.0.0.1:8091",
+        "http://localhost:8080,http://127.0.0.1:8080,"
+        "http://localhost:8081,http://127.0.0.1:8081,"
+        "http://localhost:8091,http://127.0.0.1:8091",
     ).split(",")
     if x.strip()
 ]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 producer: AIOKafkaProducer | None = None
 producer_ready = False
@@ -55,7 +51,9 @@ def serialize_json(value: dict[str, Any]) -> bytes:
 async def write_event_to_file(event: dict[str, Any]) -> None:
     if STORAGE_FILE is None:
         return
+
     STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     async with write_lock:
         with STORAGE_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -75,11 +73,18 @@ async def connect_producer() -> bool:
                 compression_type="gzip",
             )
             await new_producer.start()
+
             producer = new_producer
             producer_ready = True
+
+            logger.info("Kafka producer connected to %s", BOOTSTRAP_SERVERS)
             return True
+
         except Exception:
-            logger.exception("Failed to connect Kafka producer to %s", BOOTSTRAP_SERVERS)
+            logger.exception(
+                "Failed to connect Kafka producer to %s",
+                BOOTSTRAP_SERVERS,
+            )
             producer = None
             producer_ready = False
             return False
@@ -89,32 +94,51 @@ async def reconnect_loop() -> None:
     while True:
         if not producer_ready:
             await connect_producer()
+
         await asyncio.sleep(5)
 
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    global reconnect_task
-    await connect_producer()  # best effort only
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global producer, producer_ready, reconnect_task
+
+    await connect_producer()
     reconnect_task = asyncio.create_task(reconnect_loop())
 
+    try:
+        yield
 
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    global producer, reconnect_task, producer_ready
+    finally:
+        if reconnect_task is not None:
+            reconnect_task.cancel()
 
-    if reconnect_task is not None:
-        reconnect_task.cancel()
-        try:
-            await reconnect_task
-        except asyncio.CancelledError:
-            pass
+            try:
+                await reconnect_task
+            except asyncio.CancelledError:
+                pass
 
-    if producer is not None:
-        await producer.stop()
+        if producer is not None:
+            await producer.stop()
 
-    producer = None
-    producer_ready = False
+        producer = None
+        producer_ready = False
+        reconnect_task = None
+
+        logger.info("Collector shutdown complete")
+
+
+app = FastAPI(
+    title="Kafka-ready Collector",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -142,6 +166,7 @@ async def collect(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Payload must be a JSON object")
 
     event_type = payload.get("event_type")
+
     if not event_type:
         raise HTTPException(status_code=400, detail="event_type is required")
 
@@ -165,18 +190,31 @@ async def collect(request: Request) -> dict[str, Any]:
 
     if producer_ready and producer is not None:
         try:
-            await producer.send_and_wait(KAFKA_TOPIC, value=enriched, key=event_key)
+            await producer.send_and_wait(
+                KAFKA_TOPIC,
+                value=enriched,
+                key=event_key,
+            )
             kafka_written = True
+
         except Exception as exc:
             kafka_error = str(exc)
             producer_ready = False
             producer = None
 
+            logger.warning(
+                "Kafka write failed, marking producer not ready: %s",
+                exc,
+            )
+
     if ENABLE_FILE_FALLBACK:
         await write_event_to_file(enriched)
 
     if not kafka_written and not ENABLE_FILE_FALLBACK:
-        raise HTTPException(status_code=503, detail="Kafka unavailable and file fallback disabled")
+        raise HTTPException(
+            status_code=503,
+            detail="Kafka unavailable and file fallback disabled",
+        )
 
     return {
         "ok": True,
@@ -191,7 +229,11 @@ async def collect(request: Request) -> dict[str, Any]:
 @app.get("/events")
 async def events(limit: int = 20) -> dict[str, Any]:
     if STORAGE_FILE is None or not STORAGE_FILE.exists():
-        return {"count": 0, "items": [], "bad_lines": 0}
+        return {
+            "count": 0,
+            "items": [],
+            "bad_lines": 0,
+        }
 
     items: list[dict[str, Any]] = []
     bad_lines = 0
@@ -199,8 +241,10 @@ async def events(limit: int = 20) -> dict[str, Any]:
     with STORAGE_FILE.open("r", encoding="utf-8") as f:
         for raw_line in f:
             line = raw_line.strip()
+
             if not line:
                 continue
+
             try:
                 items.append(json.loads(line))
             except json.JSONDecodeError:

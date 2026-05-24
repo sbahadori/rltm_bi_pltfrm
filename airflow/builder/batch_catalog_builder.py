@@ -10,6 +10,66 @@ from airflow.providers.standard.operators.bash import BashOperator
 from batch.utils.jdbc_manifest_loader import get_enabled_tables, load_jdbc_manifest
 
 
+def infer_layer(job: dict) -> str:
+    job_type = job.get("job_type", "")
+    job_name = job.get("name", "")
+
+    if job_type == "generic_api_to_bronze" or "bronze" in job_name:
+        return "bronze"
+    if "silver" in job_type or "silver" in job_name:
+        return "silver"
+    if "gold" in job_type or "gold" in job_name:
+        return "gold"
+
+    return "batch"
+
+
+def build_control_env_for_regular_job(
+    *,
+    env: dict[str, str],
+    pipeline_spec: dict,
+    job: dict,
+) -> dict[str, str]:
+    layer = infer_layer(job)
+    pipeline_name = pipeline_spec["name"]
+    job_name = job["name"]
+    job_type = job["job_type"]
+
+    job_code = f"{layer}.{pipeline_name}.{job_name}"
+
+    target_path = (
+        job.get("spec", {}).get("bronze_write", {}).get("target_path")
+        or job.get("spec", {}).get("silver_write", {}).get("target_path")
+        or job.get("spec", {}).get("gold_write", {}).get("target_path")
+        or job.get("spec", {}).get("target", {}).get("path")
+        or ""
+    )
+
+    env_job = dict(env)
+    env_job.update(
+        {
+            "CONTROL_JOB_KEY": job_code,
+            "CONTROL_JOB_CODE": job_code,
+            "CONTROL_PIPELINE_NAME": pipeline_name,
+            "CONTROL_JOB_NAME": job_name,
+            "CONTROL_BASE_JOB_NAME": job_name,
+            "CONTROL_ENTITY_NAME": f"{pipeline_name}.{job_name}",
+            "CONTROL_LAYER": layer,
+            "CONTROL_RUNNER": job_type,
+            "CONTROL_TARGET_PATH": target_path,
+
+            "AIRFLOW_DAG_ID": "{{ dag.dag_id }}",
+            "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
+            "AIRFLOW_TASK_ID": "{{ task.task_id }}",
+            "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
+            "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
+            "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+        }
+    )
+
+    return env_job
+
+
 def build_airflow_tasks_from_job(
     job: dict[str, Any],
     pipeline_spec: dict[str, Any],
@@ -28,9 +88,9 @@ def build_airflow_tasks_from_job(
             )
         ]
 
-    env = build_common_env()
+    base_env = build_common_env()
     if common_env:
-        env.update(common_env)
+        base_env.update(common_env)
 
     manifest_ref = job["manifest_ref"]
     execution_strategy = job.get("execution_strategy", "one_task_per_manifest")
@@ -41,6 +101,35 @@ def build_airflow_tasks_from_job(
     tasks: list[BashOperator] = []
 
     if execution_strategy == "one_task_per_manifest":
+        manifest = load_jdbc_manifest(manifest_ref)
+        source_id = manifest["source_id"]
+
+        job_code = f"bronze.{source_id}.manifest"
+        task_name = job["name"]
+
+        env_manifest = dict(base_env)
+        env_manifest.update(
+            {
+                "CONTROL_JOB_KEY": job_code,
+                "CONTROL_JOB_CODE": job_code,
+                "CONTROL_PIPELINE_NAME": pipeline_spec["name"],
+                "CONTROL_JOB_NAME": task_name,
+                "CONTROL_BASE_JOB_NAME": job["name"],
+                "CONTROL_SOURCE_ID": source_id,
+                "CONTROL_TABLE_ID": "manifest",
+                "CONTROL_ENTITY_NAME": f"{source_id}.manifest",
+                "CONTROL_LAYER": "bronze",
+                "CONTROL_RUNNER": "generic_jdbc_manifest_to_bronze",
+                "CONTROL_TARGET_PATH": "",
+                "AIRFLOW_DAG_ID": "{{ dag.dag_id }}",
+                "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
+                "AIRFLOW_TASK_ID": "{{ task.task_id }}",
+                "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
+                "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
+                "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+            }
+        )
+
         spark_job_config = {
             "entrypoint": "batch/runners/generic_jdbc_manifest_to_bronze.py",
             "args": {
@@ -55,7 +144,7 @@ def build_airflow_tasks_from_job(
             BashOperator(
                 task_id=job["name"],
                 bash_command=cmd,
-                env=env,
+                env=env_manifest,
                 append_env=True,
                 execution_timeout=timedelta(minutes=job.get("execution_timeout_minutes", 30)),
                 retries=job.get("retries", 0),
@@ -68,9 +157,42 @@ def build_airflow_tasks_from_job(
 
     if execution_strategy == "one_task_per_table":
         manifest = load_jdbc_manifest(manifest_ref)
+        source_id = manifest["source_id"]
 
         for table in get_enabled_tables(manifest):
             table_id = table["table_id"]
+            task_name = f"{job['name']}__{table_id}"
+            job_code = f"bronze.{source_id}.{table_id}"
+            entity_name = f"{source_id}.{table_id}"
+            target_path = (
+                table.get("target_path")
+                or (manifest.get("defaults") or {})
+                .get("target_path_template", "")
+                .format(source_id=source_id, table_id=table_id)
+            )
+
+            env_table = dict(base_env)
+            env_table.update(
+                {
+                    "CONTROL_JOB_KEY": job_code,
+                    "CONTROL_JOB_CODE": job_code,
+                    "CONTROL_PIPELINE_NAME": pipeline_spec["name"],
+                    "CONTROL_JOB_NAME": task_name,
+                    "CONTROL_BASE_JOB_NAME": job["name"],
+                    "CONTROL_SOURCE_ID": source_id,
+                    "CONTROL_TABLE_ID": table_id,
+                    "CONTROL_ENTITY_NAME": entity_name,
+                    "CONTROL_LAYER": "bronze",
+                    "CONTROL_RUNNER": "generic_jdbc_manifest_to_bronze",
+                    "CONTROL_TARGET_PATH": target_path,
+                    "AIRFLOW_DAG_ID": "{{ dag.dag_id }}",
+                    "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
+                    "AIRFLOW_TASK_ID": "{{ task.task_id }}",
+                    "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
+                    "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
+                    "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+                }
+            )
 
             spark_job_config = {
                 "entrypoint": "batch/runners/generic_jdbc_manifest_to_bronze.py",
@@ -85,9 +207,9 @@ def build_airflow_tasks_from_job(
 
             tasks.append(
                 BashOperator(
-                    task_id=f"{job['name']}__{table_id}",
+                    task_id=task_name,
                     bash_command=cmd,
-                    env=env,
+                    env=env_table,
                     append_env=True,
                     execution_timeout=timedelta(minutes=job.get("execution_timeout_minutes", 30)),
                     retries=job.get("retries", 0),
@@ -145,6 +267,13 @@ def build_common_env() -> dict[str, str]:
         "SPARK_SUBMIT": os.getenv("SPARK_SUBMIT", "/home/airflow/.local/bin/spark-submit"),
         "SPARK_MASTER_URL": os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077"),
         "PATH": f"/home/airflow/.local/bin:{os.getenv('PATH', '')}",
+        "CONTROL_DB_ENABLED": os.getenv("CONTROL_DB_ENABLED", "true"),
+        "CONTROL_DB_HOST": os.getenv("CONTROL_DB_HOST", "postgres-warehouse"),
+        "CONTROL_DB_PORT": os.getenv("CONTROL_DB_PORT", "5432"),
+        "CONTROL_DB_NAME": os.getenv("CONTROL_DB_NAME", os.getenv("POSTGRES_DB", "warehouse")),
+        "CONTROL_DB_USER": os.getenv("CONTROL_DB_USER", os.getenv("POSTGRES_USER", "warehouse")),
+        "CONTROL_DB_PASSWORD": os.getenv("CONTROL_DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "warehouse")),
+        "CONTROL_DB_SSLMODE": os.getenv("CONTROL_DB_SSLMODE", "disable"),
     }
 
     env.update(
@@ -213,8 +342,15 @@ def build_airflow_task_from_job(
     common_env: dict[str, str] | None = None,
 ) -> BashOperator:
     env = build_common_env()
+
     if common_env:
         env.update(common_env)
+
+    env = build_control_env_for_regular_job(
+        env=env,
+        pipeline_spec=pipeline_spec,
+        job=job,
+    )
 
     spark_job_config = _build_runner_job_spec(job, pipeline_spec, catalog_path)
     cmd = build_spark_submit_command(spark_job_config)

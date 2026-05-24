@@ -26,6 +26,7 @@ data/
 data/**
 **/data/
 
+
 # spark
 spark_checkpoints/
 **/spark_checkpoints/
@@ -46,4 +47,15 @@ shared/spark-dist/**
 shared/spark-jars/**
 
 # job runs for dashboard
-runtime/job_runs/*.jsonl
+runtime/
+runtime/**
+!runtime/.gitkeep
+!runtime/job_runs/
+!runtime/job_runs/.gitkeep
+
+
+# airflow local db volume if created locally
+airflow_postgres_data/
+
+# logs
+*.log

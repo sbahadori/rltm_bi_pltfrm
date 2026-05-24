@@ -14,6 +14,13 @@ from typing import Optional
 from pyspark.sql.utils import StreamingQueryException
 from shared.core.spark import create_spark
 
+from shared.runtime.stream_runtime_db import (
+    insert_stream_batch_metric,
+    upsert_stream_unit_current_from_heartbeat,
+)
+
+_last_db_current_ts_epoch: int = 0
+
 def _bootstrap_repo_path() -> Path:
     repo_root = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
     if str(repo_root) not in sys.path:
@@ -114,6 +121,29 @@ def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> No
         payload.update(extra)
 
     p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+   
+    global _last_db_current_ts_epoch
+
+    now_epoch = int(payload["ts_epoch"])
+    db_interval = int(_runtime.get("db_current_interval_seconds", 30))
+
+    force_db_write = status in {
+        "starting",
+        "waiting_for_topic",
+        "error",
+        "stopping",
+        "stopped",
+    }
+
+    if force_db_write or now_epoch - _last_db_current_ts_epoch >= db_interval:
+        _last_db_current_ts_epoch = now_epoch
+        upsert_stream_unit_current_from_heartbeat(
+            unit_name=_runtime["unit_name"],
+            stream_name=_runtime["stream_name"],
+            layer=_runtime["layer"],
+            heartbeat=payload,
+        )
+
 
 
 def heartbeat_loop() -> None:
@@ -220,6 +250,23 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
                 "last_write_ok": True,
                 "last_message": "empty_batch",
             }
+
+            insert_stream_batch_metric(
+                unit_name=_runtime["unit_name"],
+                stream_name=_runtime["stream_name"],
+                layer=_runtime["layer"],
+                batch_id=batch_id,
+                input_rows=0,
+                batch_rows=0,
+                written_rows=0,
+                write_ok=True,
+                message="empty_batch",
+                target_path=_runtime["bronze_path"],
+                checkpoint_path=_runtime["checkpoint_path"],
+                batch_ts_epoch=_last_batch_state.get("last_batch_ts_epoch"),
+                payload=_last_batch_state,
+            )
+
             write_heartbeat("running", _last_batch_state)
             return
 
@@ -242,6 +289,22 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
             "last_message": "write_ok",
         }
 
+        insert_stream_batch_metric(
+            unit_name=_runtime["unit_name"],
+            stream_name=_runtime["stream_name"],
+            layer=_runtime["layer"],
+            batch_id=batch_id,
+            input_rows=row_count,
+            batch_rows=row_count,
+            written_rows=row_count,
+            write_ok=True,
+            message="write_ok",
+            target_path=_runtime["bronze_path"],
+            checkpoint_path=_runtime["checkpoint_path"],
+            batch_ts_epoch=_last_batch_state.get("last_batch_ts_epoch"),
+            payload=_last_batch_state,
+        )
+
         write_heartbeat("running", _last_batch_state)
 
     except Exception as exc:
@@ -254,6 +317,20 @@ def write_batch(batch_df: DataFrame, batch_id: int) -> None:
             "last_error": str(exc),
         }
 
+        insert_stream_batch_metric(
+            unit_name=_runtime["unit_name"],
+            stream_name=_runtime["stream_name"],
+            layer=_runtime["layer"],
+            batch_id=batch_id,
+            write_ok=False,
+            message="write_failed",
+            error_message=str(exc),
+            target_path=_runtime["bronze_path"],
+            checkpoint_path=_runtime["checkpoint_path"],
+            batch_ts_epoch=_last_error_state.get("last_error_ts_epoch"),
+            payload=_last_error_state,
+        )
+        
         write_heartbeat("error", _last_error_state)
         raise
 
@@ -282,6 +359,9 @@ def main() -> None:
         "derived_fields": bronze.get("derived_fields", {}),
         "startup_wait_seconds": source.get("startup_wait_seconds", 60),
         "metadata_retry_interval_seconds": source.get("metadata_retry_interval_seconds", 5),
+        "layer": "bronze",
+        "unit_name": f"{spec['name']}_bronze",
+        "db_current_interval_seconds": int(os.getenv("STREAM_DB_CURRENT_INTERVAL_SECONDS", "30")),
     }
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)

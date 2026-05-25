@@ -808,6 +808,157 @@ def _normalize_registry_run_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+TERMINAL_STATES = {
+    "success",
+    "failed",
+    "error",
+    "skipped",
+    "upstream_failed",
+    "cancelled",
+    "canceled",
+}
+
+
+def _state_rank(state: Any) -> int:
+    s = _normalize_state(state)
+
+    if s in TERMINAL_STATES:
+        return 3
+
+    if s in {"running", "restarting"}:
+        return 2
+
+    if s in {"queued", "scheduled"}:
+        return 1
+
+    return 0
+
+
+def _has_value(value: Any) -> bool:
+    return value is not None and value != "" and value != "-"
+
+
+def _run_group_key(row: dict[str, Any]) -> str:
+    run_id = str(row.get("run_id") or "").strip()
+
+    if run_id and run_id != "-":
+        return f"run:{run_id}"
+
+    dag_run_id = str(row.get("dag_run_id") or "").strip()
+
+    if dag_run_id:
+        return f"dag:{dag_run_id}"
+
+    return f"fallback:{row.get('started_at') or ''}:{row.get('state') or ''}"
+
+
+def _is_later(a: Any, b: Any) -> bool:
+    da = _parse_dt(a)
+    db = _parse_dt(b)
+
+    if da and db:
+        return da > db
+
+    if da and not db:
+        return True
+
+    return False
+
+
+def _is_earlier(a: Any, b: Any) -> bool:
+    da = _parse_dt(a)
+    db = _parse_dt(b)
+
+    if da and db:
+        return da < db
+
+    if da and not db:
+        return True
+
+    return False
+
+
+def _collapse_run_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Collapse event-level rows into job-run-level rows.
+
+    Example:
+      batch_started   -> state=running
+      batch_succeeded -> state=success
+
+    Same run_id should appear once in the UI.
+    """
+    groups: dict[str, dict[str, Any]] = {}
+
+    metric_keys = {
+        "records_read",
+        "records_written",
+        "records_inserted",
+        "records_updated",
+        "records_deleted",
+    }
+
+    for row in rows:
+        key = _run_group_key(row)
+        current = groups.get(key, {}).copy()
+
+        if not current:
+            current = row.copy()
+            groups[key] = current
+            continue
+
+        incoming_state = _normalize_state(row.get("state"))
+        current_state = _normalize_state(current.get("state"))
+
+        # Prefer terminal state over running/queued.
+        if _state_rank(incoming_state) >= _state_rank(current_state):
+            current["state"] = incoming_state
+
+        # Earliest start.
+        if _has_value(row.get("started_at")):
+            if not _has_value(current.get("started_at")) or _is_earlier(row.get("started_at"), current.get("started_at")):
+                current["started_at"] = row.get("started_at")
+
+        # Latest end.
+        if _has_value(row.get("ended_at")):
+            if not _has_value(current.get("ended_at")) or _is_later(row.get("ended_at"), current.get("ended_at")):
+                current["ended_at"] = row.get("ended_at")
+
+        # Prefer duration from terminal event.
+        if _has_value(row.get("duration_seconds")):
+            if incoming_state in TERMINAL_STATES or not _has_value(current.get("duration_seconds")):
+                current["duration_seconds"] = row.get("duration_seconds")
+
+        # Merge counters. Zero is valid and must be preserved.
+        for k in metric_keys:
+            if row.get(k) is not None:
+                current[k] = row.get(k)
+
+        # Merge useful identity fields.
+        for k in [
+            "run_id",
+            "dag_run_id",
+            "target_path",
+            "status_reason",
+            "runtime_source",
+        ]:
+            if _has_value(row.get(k)) and not _has_value(current.get(k)):
+                current[k] = row.get(k)
+
+        groups[key] = current
+
+    collapsed = list(groups.values())
+
+    collapsed = sorted(
+        collapsed,
+        key=lambda r: str(r.get("ended_at") or r.get("started_at") or ""),
+        reverse=True,
+    )
+
+    return collapsed
+
+
+
 def _registry_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
     rows = _read_registry(limit=max(2000, limit * 100))
 
@@ -817,13 +968,10 @@ def _registry_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dic
         if _registry_row_matches_job(row, job)
     ]
 
-    matched = sorted(
-        matched,
-        key=lambda r: str(r.get("started_at") or r.get("ended_at") or ""),
-        reverse=True,
-    )
+    collapsed = _collapse_run_events(matched)
 
-    return matched[:limit]
+    return collapsed[:limit]
+
 
 def _epoch_to_iso(v: Any) -> str | None:
     try:
@@ -1120,13 +1268,9 @@ def _control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict
         if _control_row_matches_job(row, job)
     ]
 
-    matched = sorted(
-        matched,
-        key=lambda r: str(r.get("started_at") or r.get("ended_at") or ""),
-        reverse=True,
-    )
+    collapsed = _collapse_run_events(matched)
 
-    return matched[:limit]
+    return collapsed[:limit]
 
 
 def _stream_pseudo_runs_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
@@ -1242,10 +1386,12 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                 rj["records_deleted"] = 0
 
         else:
-            # 2. Try local registry
-            reg = _latest_registry_run(job)
-            if reg:
-                reg_norm = _normalize_registry_run_row(reg)
+
+            # 2. Try local registry with the same robust matcher used by /api/runtime/runs/{job_id}
+            registry_runs = _registry_run_rows_for_job(job, limit=1)
+
+            if registry_runs:
+                reg_norm = registry_runs[0]
 
                 rj.update({
                     "current_status": reg_norm.get("state", "unknown"),
@@ -1263,6 +1409,7 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
                     "records_updated": reg_norm.get("records_updated"),
                     "records_deleted": reg_norm.get("records_deleted"),
                 })
+
             elif job.get("type") == "batch":
                 af = _latest_airflow_task(job.get("pipeline", ""), job.get("name", ""))
 

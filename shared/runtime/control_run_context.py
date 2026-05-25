@@ -21,6 +21,55 @@ def _env_int(name: str) -> int | None:
     except ValueError:
         return None
 
+def _required_success_metric(context: dict[str, Any], key: str) -> int:
+    value = context.get(key)
+
+    if value is None or value == "":
+        raise RuntimeError(
+            f"Runtime contract violation: successful job has null metric `{key}`. "
+            f"job_code={context.get('job_code')} run_id={context.get('run_id')}"
+        )
+
+    try:
+        return int(value)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Runtime contract violation: metric `{key}` must be integer-like. "
+            f"value={value!r} job_code={context.get('job_code')}"
+        ) from exc
+
+
+def _optional_failure_metric(context: dict[str, Any], key: str) -> int | None:
+    value = context.get(key)
+
+    if value is None or value == "":
+        return None
+
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _finalize_success_metrics(context: dict[str, Any]) -> dict[str, int]:
+    return {
+        "records_read": _required_success_metric(context, "records_read"),
+        "records_written": _required_success_metric(context, "records_written"),
+        "records_inserted": _required_success_metric(context, "records_inserted"),
+        "records_updated": _required_success_metric(context, "records_updated"),
+        "records_deleted": _required_success_metric(context, "records_deleted"),
+    }
+
+
+def _finalize_failure_metrics(context: dict[str, Any]) -> dict[str, int | None]:
+    return {
+        "records_read": _optional_failure_metric(context, "records_read"),
+        "records_written": _optional_failure_metric(context, "records_written"),
+        "records_inserted": _optional_failure_metric(context, "records_inserted"),
+        "records_updated": _optional_failure_metric(context, "records_updated"),
+        "records_deleted": _optional_failure_metric(context, "records_deleted"),
+    }
+
 
 def build_runtime_context(
     *,
@@ -110,7 +159,7 @@ def control_run(
         yield context
 
         ended = time.time()
-
+        metrics=_finalize_success_metrics(context)
         append_job_event(
             event_type="batch_succeeded",
             run_id=context["run_id"],
@@ -137,18 +186,18 @@ def control_run(
             started_at_epoch=int(started),
             ended_at_epoch=int(ended),
             duration_seconds=round(ended - started, 3),
-            records_read=context.get("records_read"),
-            records_written=context.get("records_written"),
-            records_inserted=context.get("records_inserted"),
-            records_updated=context.get("records_updated"),
-            records_deleted=context.get("records_deleted"),
+            records_read=metrics["records_read"],
+            records_written=metrics["records_written"],
+            records_inserted=metrics["records_inserted"],
+            records_updated=metrics["records_updated"],
+            records_deleted=metrics["records_deleted"],
             effective_start_date=context.get("effective_start_date"),
             effective_end_date=context.get("effective_end_date"),
         )
 
     except Exception as exc:
         ended = time.time()
-
+        metrics = _finalize_failure_metrics(context)
         append_job_event(
             event_type="batch_failed",
             run_id=context["run_id"],
@@ -177,6 +226,11 @@ def control_run(
             duration_seconds=round(ended - started, 3),
             error=str(exc),
             traceback=exception_to_text(exc),
+            records_read=metrics["records_read"],
+            records_written=metrics["records_written"],
+            records_inserted=metrics["records_inserted"],
+            records_updated=metrics["records_updated"],
+            records_deleted=metrics["records_deleted"],
             effective_start_date=context.get("effective_start_date"),
             effective_end_date=context.get("effective_end_date"),
         )

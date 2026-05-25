@@ -10,19 +10,53 @@ from airflow.providers.standard.operators.bash import BashOperator
 from batch.utils.jdbc_manifest_loader import get_enabled_tables, load_jdbc_manifest
 
 
-def infer_layer(job: dict) -> str:
-    job_type = job.get("job_type", "")
-    job_name = job.get("name", "")
+def _target_path_from_job(job: dict) -> str:
+    spec = job.get("spec") or {}
 
-    if job_type == "generic_api_to_bronze" or "bronze" in job_name:
-        return "bronze"
-    if "silver" in job_type or "silver" in job_name:
-        return "silver"
-    if "gold" in job_type or "gold" in job_name:
+    return (
+        (spec.get("bronze_write") or {}).get("target_path")
+        or (spec.get("target") or {}).get("path")
+        or (spec.get("silver_write") or {}).get("target_path")
+        or (spec.get("gold_write") or {}).get("target_path")
+        or job.get("target_path")
+        or ""
+    )
+
+
+def infer_layer(job: dict) -> str:
+    """
+    Infer the OUTPUT layer of a job.
+    This value is used for CONTROL_LAYER and CONTROL_JOB_CODE.
+    """
+
+    explicit = str(job.get("layer") or "").strip().lower()
+
+    if explicit in {"bronze", "silver", "gold", "stream"}:
+        return explicit
+
+    job_type = str(job.get("job_type") or "").strip().lower()
+
+    by_job_type = {
+        "generic_api_to_bronze": "bronze",
+        "generic_jdbc_manifest_to_bronze": "bronze",
+        "generic_bronze_to_silver": "silver",
+        "generic_silver_to_gold": "gold",
+        "generic_delta_to_gold": "gold",
+    }
+
+    if job_type in by_job_type:
+        return by_job_type[job_type]
+
+    target_path = _target_path_from_job(job).lower()
+
+    if "/gold/" in target_path:
         return "gold"
+    if "/silver/" in target_path:
+        return "silver"
+    if "/bronze/" in target_path:
+        return "bronze"
 
     return "batch"
-
 
 def build_control_env_for_regular_job(
     *,

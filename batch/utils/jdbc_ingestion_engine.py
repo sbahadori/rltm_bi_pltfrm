@@ -185,6 +185,8 @@ def build_sql_context(
         "raw_incremental_column": watermark_column or "",
         "lower_bound": format_sql_literal(lower_bound, watermark_type),
         "upper_bound": format_sql_literal(upper_bound, watermark_type),
+        "read_policy": table_cfg.get("read_policy", {}),
+        "write_policy": table_cfg.get("write_policy", {}),
     }
 
 
@@ -432,10 +434,12 @@ def add_bronze_metadata(
 
     return enriched
 
-
 def write_bronze_table(df: DataFrame, table_cfg: dict[str, Any]) -> None:
-    bronze_format = table_cfg.get("bronze_format", "delta")
-    bronze_mode = table_cfg.get("bronze_mode", "append")
+    write_policy = table_cfg.get("write_policy") or {}
+
+    bronze_format = write_policy.get("format") or table_cfg.get("bronze_format", "delta")
+    bronze_mode = write_policy.get("mode") or table_cfg.get("bronze_mode", "append")
+    target_path = write_policy.get("target_path") or table_cfg["target_path"]
 
     writer = df.write.format(bronze_format).mode(bronze_mode)
 
@@ -445,8 +449,8 @@ def write_bronze_table(df: DataFrame, table_cfg: dict[str, Any]) -> None:
         else:
             writer = writer.option("mergeSchema", "true")
 
-    partition_by = table_cfg.get("partition_by", [])
+    partition_by = write_policy.get("partition_by") or table_cfg.get("partition_by", [])
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
-    writer.save(table_cfg["target_path"])
+    writer.save(target_path)

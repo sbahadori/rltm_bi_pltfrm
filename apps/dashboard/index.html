@@ -2158,6 +2158,7 @@ async function previewCatalogJob(){
 async function applyCatalogJob(withOnboarding){
   try{
     const payload = readCatalogPayload();
+    
 
     const isPipelinePayload = Array.isArray(payload.jobs);
 

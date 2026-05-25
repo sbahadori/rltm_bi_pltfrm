@@ -1217,8 +1217,8 @@ def _normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
         _metric_value(row, "records_deleted", "deleted_rows")
     )
 
-    if records_inserted is None and records_written is not None:
-        records_inserted = records_written
+    if records_inserted is None:
+        records_inserted = 0
 
     if records_updated is None:
         records_updated = 0
@@ -1348,34 +1348,31 @@ def _enrich_jobs(config_jobs: list[dict]) -> dict:
         rj = {**job, "current_status": "defined", "latest_run_id": None,
                "started_at": None, "ended_at": None, "duration_seconds": None,
                "status_reason": None, "runtime_source": "catalog", "runtime_available": False}
-        # 1. Try control DB
-        ctrl = _latest_control_run(job)
-        if ctrl:
+
+        # 1. Try control DB as source of truth
+        control_runs = _control_run_rows_for_job(job, limit=1)
+
+        if control_runs:
+            ctrl = control_runs[0]
+
             rj.update({
-                "current_status": ctrl.get("status", "unknown"),
-                "latest_run_id": str(ctrl.get("run_id") or ""),
-                "started_at": ctrl.get("started_at"), "ended_at": ctrl.get("ended_at"),
+                "current_status": ctrl.get("state", "unknown"),
+                "latest_run_id": ctrl.get("run_id"),
+                "latest_dag_run_id": ctrl.get("dag_run_id"),
+                "started_at": ctrl.get("started_at"),
+                "ended_at": ctrl.get("ended_at"),
                 "duration_seconds": ctrl.get("duration_seconds"),
                 "target_path": ctrl.get("target_path") or job.get("target_path"),
-                "status_reason": ctrl.get("status_reason") or ctrl.get("error_message"),
-                "runtime_source": "control_db", "runtime_available": True,
-                "records_read": _as_int_or_none(
-                    _metric_value(ctrl, "records_read", "input_rows", "last_input_rows")
-                ),
-                "records_written": _as_int_or_none(
-                    _metric_value(ctrl, "records_written", "output_rows", "last_valid_rows")
-                ),
-                "records_inserted": _as_int_or_none(
-                    _metric_value(ctrl, "records_inserted", "inserted_rows", "records_written")
-                ),
-                "records_updated": _as_int_or_none(
-                    _metric_value(ctrl, "records_updated", "updated_rows", default=0)
-                ),
-                "records_deleted": _as_int_or_none(
-                    _metric_value(ctrl, "records_deleted", "deleted_rows", default=0)
-                ),
-
+                "status_reason": ctrl.get("status_reason"),
+                "runtime_source": "control_db",
+                "runtime_available": True,
+                "records_read": ctrl.get("records_read"),
+                "records_written": ctrl.get("records_written"),
+                "records_inserted": ctrl.get("records_inserted"),
+                "records_updated": ctrl.get("records_updated"),
+                "records_deleted": ctrl.get("records_deleted"),
             })
+
             if rj.get("records_inserted") is None and rj.get("records_written") is not None:
                 rj["records_inserted"] = rj["records_written"]
 

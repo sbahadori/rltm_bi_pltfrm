@@ -8,8 +8,8 @@ from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
 
 try:
-    from config_loader import AIRFLOW_LOG_DIR, STREAM_LOG_DIR, job_from_config
-    from stream_runtime import resolve_stream_log_name
+    from apps.dashboard.config_loader import AIRFLOW_LOG_DIR, STREAM_LOG_DIR, job_from_config
+    from apps.dashboard.stream_runtime import resolve_stream_log_name
 except ImportError:  # pragma: no cover
     from .config_loader import AIRFLOW_LOG_DIR, STREAM_LOG_DIR, job_from_config
     from .stream_runtime import resolve_stream_log_name

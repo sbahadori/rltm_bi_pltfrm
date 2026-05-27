@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 try:
-    from db import call_usp_rows
+    from apps.dashboard.db import call_usp_rows
 except ImportError:  # pragma: no cover
     from .db import call_usp_rows
 

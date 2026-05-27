@@ -17,14 +17,14 @@ import time
 from typing import Any
 
 try:
-    from config_loader import (
+    from apps.dashboard.config_loader import (
         STREAM_CONTROL_DIR,
         STREAM_HEARTBEAT_STALE_SECONDS,
         STREAM_STATUS_FILE,
         STREAM_STATUS_STALE_SECONDS,
     )
-    from db import call_usp_one
-    from runtime_models import as_int_or_none, first_present, normalize_state, now_iso, safe_int
+    from apps.dashboard.db import call_usp_one
+    from apps.dashboard.runtime_models import as_int_or_none, first_present, normalize_state, now_iso, safe_int
 except ImportError:  # pragma: no cover
     from .config_loader import (
         STREAM_CONTROL_DIR,

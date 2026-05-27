@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
-    from config_loader import AIRFLOW_API_BASE, AIRFLOW_PASSWORD, AIRFLOW_USER
-    from runtime_models import duration_seconds, normalize_state
+    from apps.dashboard.config_loader import AIRFLOW_API_BASE, AIRFLOW_PASSWORD, AIRFLOW_USER
+    from apps.dashboard.runtime_models import duration_seconds, normalize_state
 except ImportError:  # pragma: no cover
     from .config_loader import AIRFLOW_API_BASE, AIRFLOW_PASSWORD, AIRFLOW_USER
     from .runtime_models import duration_seconds, normalize_state

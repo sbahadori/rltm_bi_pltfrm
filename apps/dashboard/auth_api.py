@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 try:
     from auth import create_access_token, get_current_user, hash_password, require_role, verify_password
-    from db import call_usp_one, call_usp_void
+    from apps.dashboard.db import call_usp_one, call_usp_void
 except ImportError:  # pragma: no cover
     from .auth import create_access_token, get_current_user, hash_password, require_role, verify_password
     from .db import call_usp_one, call_usp_void

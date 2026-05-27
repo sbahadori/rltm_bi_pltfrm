@@ -8,9 +8,9 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 
 try:
     from auth import get_current_user_ws
-    from config_loader import STREAM_LOG_DIR
-    from log_api import find_airflow_log, tail_file
-    from stream_runtime import resolve_stream_log_name
+    from apps.dashboard.config_loader import STREAM_LOG_DIR
+    from apps.dashboard.log_api import find_airflow_log, tail_file
+    from apps.dashboard.stream_runtime import resolve_stream_log_name
 except ImportError:  # pragma: no cover
     from .auth import get_current_user_ws
     from .config_loader import STREAM_LOG_DIR

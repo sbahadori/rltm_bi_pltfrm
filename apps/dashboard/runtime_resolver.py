@@ -20,10 +20,10 @@ import json
 from typing import Any
 
 try:
-    from airflow_client import latest_airflow_task
-    from config_loader import JOB_RUN_REGISTRY_FILE
-    from db import call_usp_rows, catalog_metadata_for_job
-    from runtime_models import (
+    from apps.dashboard.airflow_client import latest_airflow_task
+    from apps.dashboard.config_loader import JOB_RUN_REGISTRY_FILE
+    from apps.dashboard.db import call_usp_rows, catalog_metadata_for_job
+    from apps.dashboard.runtime_models import (
         TERMINAL_STATES,
         as_int_or_none,
         duration_seconds,
@@ -37,7 +37,7 @@ try:
         run_group_key,
         state_rank,
     )
-    from stream_runtime import find_stream_unit, load_stream_status, stream_current_from_db
+    from apps.dashboard.stream_runtime import find_stream_unit, load_stream_status, stream_current_from_db
 except ImportError:  # pragma: no cover
     from .airflow_client import latest_airflow_task
     from .config_loader import JOB_RUN_REGISTRY_FILE

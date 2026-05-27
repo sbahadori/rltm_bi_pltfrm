@@ -17,10 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 try:
-    from airflow_client import cancel_dag_run, get_dag_runs, list_dags, pause_dag, trigger_dag
+    from apps.dashboard.airflow_client import cancel_dag_run, get_dag_runs, list_dags, pause_dag, trigger_dag
     from auth import get_current_user, require_role
-    from db import call_usp_rows, insert_action_log
-    from stream_runtime import restart_stream, stop_stream
+    from apps.dashboard.db import call_usp_rows, insert_action_log
+    from apps.dashboard.stream_runtime import restart_stream, stop_stream
 except ImportError:  # pragma: no cover
     from .airflow_client import cancel_dag_run, get_dag_runs, list_dags, pause_dag, trigger_dag
     from .auth import get_current_user, require_role

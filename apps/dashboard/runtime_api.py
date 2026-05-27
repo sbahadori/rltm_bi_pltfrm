@@ -15,8 +15,8 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 try:
-    from airflow_client import dag_run_rows_for_job
-    from config_loader import (
+    from apps.dashboard.airflow_client import dag_run_rows_for_job
+    from apps.dashboard.config_loader import (
         AIRFLOW_LOG_DIR,
         JOB_RUN_REGISTRY_FILE,
         STREAM_LOG_DIR,
@@ -26,9 +26,9 @@ try:
         job_from_config,
         path_state,
     )
-    from runtime_models import now_iso
-    from runtime_resolver import control_run_rows_for_job, enrich_jobs, registry_run_rows_for_job
-    from stream_runtime import load_stream_status
+    from apps.dashboard.runtime_models import now_iso
+    from apps.dashboard.runtime_resolver import control_run_rows_for_job, enrich_jobs, registry_run_rows_for_job
+    from apps.dashboard.stream_runtime import load_stream_status
 except ImportError:  # pragma: no cover
     from .airflow_client import dag_run_rows_for_job
     from .config_loader import (

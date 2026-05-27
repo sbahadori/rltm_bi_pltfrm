@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from runtime_models import now_iso
+    from apps.dashboard.runtime_models import now_iso
 except ImportError:  # pragma: no cover - package import fallback
     from .runtime_models import now_iso
 

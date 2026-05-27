@@ -106,6 +106,9 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
             {
                 "available": True,
                 "source": "control_db",
+                "source_rank": 1,
+                "is_fallback": False,
+                "fallback_reason": None,
                 "job_id": job_id,
                 "runs": control_runs,
                 "count": len(control_runs),
@@ -118,6 +121,12 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
             {
                 "available": True,
                 "source": "job_run_registry",
+                "source_rank": 2,
+                "is_fallback": True,
+                "fallback_reason": (
+                    "Control DB had no matching runtime rows; "
+                    "using local job_run_registry JSONL as debug fallback."
+                ),
                 "job_id": job_id,
                 "runs": registry_runs,
                 "count": len(registry_runs),

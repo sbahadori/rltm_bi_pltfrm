@@ -195,6 +195,9 @@ def normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
         "target_path": first_present(row, "target_path", "output_path"),
         "status_reason": first_present(row, "status_reason", "error_message", "last_error"),
         "runtime_source": "control_db",
+        "runtime_source_rank": 1,
+        "is_fallback": False,
+        "fallback_reason": None,
     }
 
 
@@ -237,6 +240,12 @@ def normalize_registry_run_row(row: dict[str, Any]) -> dict[str, Any]:
         "target_path": first_present(row, "target_path", "output_path"),
         "status_reason": first_present(row, "status_reason", "error", "error_message", "last_error"),
         "runtime_source": "job_run_registry",
+        "runtime_source_rank": 2,
+        "is_fallback": True,
+        "fallback_reason": (
+            "Control DB had no matching runtime rows; "
+            "using local job_run_registry JSONL as debug fallback."
+),
     }
 
 
@@ -342,6 +351,9 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     "target_path": control.get("target_path") or job.get("target_path"),
                     "status_reason": control.get("status_reason"),
                     "runtime_source": "control_db",
+                    "runtime_source_rank": 1,
+                    "is_fallback": False,
+                    "fallback_reason": None,
                     "runtime_available": True,
                     "records_read": control.get("records_read"),
                     "records_written": control.get("records_written"),
@@ -371,7 +383,14 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "target_path": registry.get("target_path") or runtime_job.get("target_path"),
                         "status_reason": registry.get("status_reason"),
                         "runtime_source": "job_run_registry",
+                        "runtime_source_rank": 2,
+                        "is_fallback": True,
+                        "fallback_reason": (
+                            "Control DB had no matching runtime rows; "
+                            "using local job_run_registry JSONL as debug fallback."
+                        ),
                         "runtime_available": True,
+                        "latest_dag_run_id": registry.get("dag_run_id"),
                         "records_read": registry.get("records_read"),
                         "records_written": registry.get("records_written"),
                         "records_inserted": registry.get("records_inserted"),
@@ -421,8 +440,11 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "started_at": None,
                         "ended_at": None,
                         "duration_seconds": None,
-                        "status_reason": "Defined in UI registry; no Airflow executor DAG configured yet.",
-                        "runtime_source": "ui_job_registry",
+                        "status_reason": (
+                            "Defined in catalog/config layer; no Airflow executor DAG configured yet. "
+                            "Executable jobs must be materialized through pipeline_catalog.json and onboarding."
+                        ),
+                        "runtime_source": "catalog_defined",
                         "runtime_available": False,
                     }
                 )

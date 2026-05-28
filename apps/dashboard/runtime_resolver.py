@@ -456,6 +456,9 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     {
                         "runtime_available": True,
                         "runtime_source": "stream_runtime_db",
+                        "runtime_source_rank": 1,
+                        "is_fallback": False,
+                        "fallback_reason": None,
                         "runtime_unit_name": db_unit.get("unit_name"),
                         "current_status": db_unit.get("computed_status") or runtime_job.get("current_status"),
                         "heartbeat_age_seconds": db_unit.get("heartbeat_age_seconds"),
@@ -481,6 +484,9 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         {
                             "runtime_available": True,
                             "runtime_source": "stream_supervisor_file",
+                            "runtime_source_rank": 2,
+                            "is_fallback": True,
+                            "fallback_reason": "Stream runtime DB had no current row; using supervisor status file fallback.",
                             "runtime_unit_name": unit.get("unit_name"),
                             "current_status": unit.get("computed_status") or runtime_job.get("current_status"),
                             "heartbeat_age_seconds": unit.get("heartbeat_age_seconds"),

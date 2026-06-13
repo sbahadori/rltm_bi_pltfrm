@@ -510,10 +510,3 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
     return {"jobs": enriched, "stream_status": stream_status}
 
 
-# Backward-compatible aliases for existing tests/scripts during migration.
-_normalize_runtime_run_row = normalize_runtime_run_row
-_normalize_registry_run_row = normalize_registry_run_row
-_collapse_run_events = collapse_run_events
-_control_run_rows_for_job = control_run_rows_for_job
-_registry_run_rows_for_job = registry_run_rows_for_job
-_enrich_jobs = enrich_jobs

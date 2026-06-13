@@ -1,0 +1,22 @@
+# compose build 
+
+$env:PROJECT_ROOT = "C:\src\rltm_bi_pltfrm"
+
+docker compose `
+  --project-directory . `
+  -f .\compose\compose.phase1.yaml `
+  -f .\compose\compose.phase2.yaml `
+  -f .\compose\compose.simulator.yaml `
+  up -d --build
+
+
+# down remove
+
+$compose = @(
+  "--project-directory", ".",
+  "-f", ".\compose\compose.phase1.yaml",
+  "-f", ".\compose\compose.phase2.yaml",
+  "-f", ".\compose\compose.simulator.yaml"
+)
+
+docker compose @compose down --remove-orphans

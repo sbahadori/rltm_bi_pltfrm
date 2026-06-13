@@ -15,6 +15,21 @@ except ImportError:  # pragma: no cover
     from .runtime_models import now_iso
 
 
+def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
+    JOB_RUN_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    event = {
+        **event,
+        "event_id": event.get("event_id") or str(uuid.uuid4()),
+        "observed_at": event.get("observed_at") or now_iso(),
+        "ts_epoch": event.get("ts_epoch") or int(time.time()),
+    }
+
+    with JOB_RUN_REGISTRY_FILE.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    return event
+
 def write_job_run_event(
     *,
     job: dict[str, Any],
@@ -73,8 +88,4 @@ def write_job_run_event(
         "runtime_source": "runtime_event_writer",
     }
 
-    JOB_RUN_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with JOB_RUN_REGISTRY_FILE.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(event, ensure_ascii=False) + "\n")
-
-    return event
+    return append_runtime_event(event)

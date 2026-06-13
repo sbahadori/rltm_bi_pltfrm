@@ -272,3 +272,22 @@ def dag_run_rows_for_job(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
         )
 
     return result
+
+def get_dag_run(dag_id: str, dag_run_id: str) -> dict[str, Any]:
+    """Return one Airflow DAG run by dag_id and dag_run_id."""
+    quoted_dag = urllib.parse.quote(dag_id, safe="")
+    quoted_run = urllib.parse.quote(dag_run_id, safe="")
+    run = airflow_get(f"/api/v2/dags/{quoted_dag}/dagRuns/{quoted_run}")
+
+    started_at = run.get("start_date")
+    ended_at = run.get("end_date")
+
+    return {
+        "dag_id": dag_id,
+        "dag_run_id": run.get("dag_run_id") or dag_run_id,
+        "state": normalize_state(run.get("state")),
+        "logical_date": run.get("logical_date"),
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_seconds": duration_seconds(started_at, ended_at),
+    }

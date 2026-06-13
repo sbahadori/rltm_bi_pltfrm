@@ -26,6 +26,11 @@ try:
 except ImportError:  # pragma: no cover
     from .settings import get_settings
 
+try:
+    from apps.dashboard.domain_contracts import canonical_job, canonical_pipeline
+except ImportError:  # pragma: no cover
+    from .domain_contracts import canonical_job, canonical_pipeline
+
 settings = get_settings()
 
 PIPELINE_REPO_ROOT = settings.pipeline_repo_root
@@ -189,8 +194,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
                     "tags": job.get("tags", []) or dag_tags,
                 }
             )
-
-    return jobs
+    return [canonical_job(job) for job in jobs]
 
 
 def build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -234,8 +238,7 @@ def build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
                     "heartbeat_file": silver.get("heartbeat_file", ""),
                 }
             )
-
-    return jobs
+    return [canonical_job(job) for job in jobs]
 
 
 def build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -278,8 +281,7 @@ def build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[d
                 "jobs": jobs,
             }
         )
-
-    return pipelines
+    return [canonical_pipeline(pipeline) for pipeline in pipelines]
 
 
 def config_bundle() -> dict[str, Any]:

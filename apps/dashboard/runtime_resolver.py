@@ -58,6 +58,22 @@ except ImportError:  # pragma: no cover
     )
     from .stream_runtime import find_stream_unit, load_stream_status, stream_current_from_db
 
+try:
+    from apps.dashboard.domain_contracts import (
+        canonical_job,
+        job_id_of,
+        job_name_of,
+        job_mode_of,
+        pipeline_id_of,
+    )
+except ImportError:  # pragma: no cover
+    from .domain_contracts import (
+        canonical_job,
+        job_id_of,
+        job_name_of,
+        job_mode_of,
+        pipeline_id_of,
+    )
 
 def read_registry(limit: int = 2000) -> list[dict[str, Any]]:
     if not JOB_RUN_REGISTRY_FILE.exists():
@@ -81,9 +97,10 @@ def read_registry(limit: int = 2000) -> list[dict[str, Any]]:
 
 
 def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
-    pipeline = str(job.get("pipeline") or "")
-    job_name = str(job.get("name") or "")
-    job_id = str(job.get("id") or "")
+    job = canonical_job(job)
+    pipeline = pipeline_id_of(job)
+    job_name = job_name_of(job)
+    job_id = job_id_of(job)
     job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
 
     row_pipeline = str(first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or "")
@@ -118,9 +135,10 @@ def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
 
 
 def registry_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
-    pipeline = str(job.get("pipeline") or "")
-    job_name = str(job.get("name") or "")
-    job_id = str(job.get("id") or "")
+    job = canonical_job(job)
+    pipeline = pipeline_id_of(job)
+    job_name = job_name_of(job)
+    job_id = job_id_of(job)
     job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
 
     row_pipeline = str(first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or "")
@@ -304,6 +322,7 @@ def collapse_run_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    job = canonical_job(job)
     try:
         rows = call_usp_rows("usp_list_runtime_job_runs", (max(200, limit * 30),))
     except Exception as exc:
@@ -315,6 +334,7 @@ def control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[
 
 
 def registry_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    job = canonical_job(job)
     rows = read_registry(limit=max(2000, limit * 100))
     matched = [normalize_registry_run_row(row) for row in rows if registry_row_matches_job(row, job)]
     return collapse_run_events(matched)[:limit]
@@ -325,6 +345,8 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
     enriched: list[dict[str, Any]] = []
 
     for job in config_jobs:
+        job = canonical_job(job)
+
         runtime_job = {
             **job,
             "current_status": "defined",
@@ -399,8 +421,8 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
 
-            elif job.get("type") == "batch":
-                airflow = latest_airflow_task(job.get("pipeline", ""), job.get("name", ""))
+            elif job_mode_of(job) == "batch":
+                airflow = latest_airflow_task(pipeline_id_of(job), job_name_of(job))
                 runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
                 runtime_job.update(
                     {
@@ -432,7 +454,7 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                             }
                         )
 
-            elif job.get("dynamic"):
+            elif job_mode_of(job) == "dynamic":
                 runtime_job.update(
                     {
                         "current_status": "defined",
@@ -449,7 +471,7 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
 
-        if runtime_job.get("type") == "stream":
+        if job_mode_of(runtime_job) == "stream":
             db_unit = stream_current_from_db(runtime_job)
             if db_unit:
                 runtime_job.update(

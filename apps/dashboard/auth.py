@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import os
+try:
+    from apps.dashboard.settings import get_settings
+except ImportError:  # pragma: no cover
+    from .settings import get_settings
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -13,16 +18,17 @@ from passlib.context import CryptContext
 # Config
 # ─────────────────────────────────────────────────────────────
 
-SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY")
+settings = get_settings()
+
+SECRET_KEY = settings.dashboard_secret_key
 
 if not SECRET_KEY:
-    APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "dev")).lower()
-    if APP_ENV in {"prod", "production"}:
+    if settings.app_env in {"prod", "production"}:
         raise RuntimeError("DASHBOARD_SECRET_KEY is required in production.")
     SECRET_KEY = "dev-only-rltm-bi-dashboard-secret-change-me"
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("DASHBOARD_TOKEN_EXPIRE_MINUTES", "480"))
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.dashboard_token_expire_minutes
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)

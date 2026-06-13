@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     from apps.dashboard.action_api import router as action_router
     from apps.dashboard.auth_api import router as auth_router
-    from catalog_editor import router as catalog_router
+    from apps.dashboard.catalog_editor import router as catalog_router
     from apps.dashboard.control_api import router as control_router
     from apps.dashboard.log_api import router as log_router
     from apps.dashboard.runtime_api import router as runtime_router

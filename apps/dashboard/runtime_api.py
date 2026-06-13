@@ -45,6 +45,16 @@ except ImportError:  # pragma: no cover
     from .runtime_resolver import control_run_rows_for_job, enrich_jobs, registry_run_rows_for_job
     from .stream_runtime import load_stream_status
 
+
+def dag_id_for_job(job: dict) -> str | None:
+    return (
+        job.get("metadata_airflow_dag_id")
+        or job.get("airflow_dag_id")
+        or job.get("dag_id")
+        or job.get("pipeline_airflow_dag_id")
+        or job.get("pipeline")
+    )
+
 router = APIRouter()
 
 
@@ -135,12 +145,31 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
 
     if job.get("type") == "batch":
         try:
-            runs = dag_run_rows_for_job(job.get("pipeline", ""), limit=limit)
+            dag_id = dag_id_for_job(job)
+            if not dag_id:
+                return JSONResponse(
+                    {
+                        "available": False,
+                        "source": "airflow",
+                        "source_rank": 3,
+                        "is_fallback": True,
+                        "fallback_reason": "No Airflow DAG ID could be resolved for this batch job.",
+                        "job_id": job_id,
+                        "runs": [],
+                        "count": 0,
+                    }
+                )
+
+            runs = dag_run_rows_for_job(dag_id, limit=limit)
             return JSONResponse(
                 {
                     "available": True,
                     "source": "airflow",
+                    "source_rank": 3,
+                    "is_fallback": True,
+                    "fallback_reason": "Control DB and job_run_registry had no matching runtime rows; using Airflow DAG runs as executor fallback.",
                     "job_id": job_id,
+                    "dag_id": dag_id,
                     "runs": runs,
                     "count": len(runs),
                 }

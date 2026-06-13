@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 try:
-    from auth import get_current_user_ws
+    from apps.dashboard.auth import get_current_user_ws
     from apps.dashboard.config_loader import STREAM_LOG_DIR
     from apps.dashboard.log_api import find_airflow_log, tail_file
     from apps.dashboard.stream_runtime import resolve_stream_log_name

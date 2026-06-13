@@ -14,6 +14,10 @@ No FastAPI routes, no Airflow logic, no stream-supervisor logic belongs here.
 
 import json
 import os
+try:
+    from apps.dashboard.settings import get_settings
+except ImportError:  # pragma: no cover
+    from .settings import get_settings
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -24,15 +28,15 @@ import psycopg2.extras
 
 
 def _db_config() -> dict[str, Any]:
+    settings = get_settings()
     return {
-        "host": os.getenv("CONTROL_DB_HOST", "postgres-warehouse"),
-        "port": int(os.getenv("CONTROL_DB_PORT", "5432")),
-        "dbname": os.getenv("CONTROL_DB_NAME", os.getenv("POSTGRES_DB", "warehouse")),
-        "user": os.getenv("CONTROL_DB_USER", os.getenv("POSTGRES_USER", "warehouse")),
-        "password": os.getenv("CONTROL_DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "warehouse")),
-        "sslmode": os.getenv("CONTROL_DB_SSLMODE", "disable"),
+        "host": settings.control_db_host,
+        "port": settings.control_db_port,
+        "dbname": settings.control_db_name,
+        "user": settings.control_db_user,
+        "password": settings.control_db_password,
+        "sslmode": settings.control_db_sslmode,
     }
-
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):

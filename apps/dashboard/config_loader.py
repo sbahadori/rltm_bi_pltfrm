@@ -21,38 +21,29 @@ try:
 except ImportError:  # pragma: no cover - package import fallback
     from .runtime_models import now_iso
 
-PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
-BATCH_CATALOG_PATH = Path(
-    os.getenv(
-        "BATCH_CATALOG_PATH",
-        str(PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"),
-    )
-)
-STREAM_REGISTRY_PATH = Path(
-    os.getenv(
-        "STREAM_REGISTRY_PATH",
-        str(PIPELINE_REPO_ROOT / "configs" / "streaming" / "stream_registry.json"),
-    )
-)
+try:
+    from apps.dashboard.settings import get_settings
+except ImportError:  # pragma: no cover
+    from .settings import get_settings
 
-STREAM_STATUS_FILE = Path(os.getenv("STREAM_STATUS_FILE", "/runtime/spark_health/stream_supervisor_status.json"))
-STREAM_LOG_DIR = Path(os.getenv("STREAM_LOG_DIR", "/runtime/spark_health/logs"))
-AIRFLOW_LOG_DIR = Path(os.getenv("AIRFLOW_LOG_DIR", "/runtime/airflow_logs"))
-JOB_RUN_REGISTRY_FILE = Path(
-    os.getenv(
-        "JOB_RUN_REGISTRY_FILE",
-        str(PIPELINE_REPO_ROOT / "runtime" / "job_runs" / "job_runs.jsonl"),
-    )
-)
+settings = get_settings()
 
-AIRFLOW_API_BASE = os.getenv("AIRFLOW_API_BASE", "http://airflow-api-server:8080").rstrip("/")
-AIRFLOW_USER = os.getenv("AIRFLOW_USER", "admin")
-AIRFLOW_PASSWORD = os.getenv("AIRFLOW_PASSWORD", "admin")
+PIPELINE_REPO_ROOT = settings.pipeline_repo_root
+BATCH_CATALOG_PATH = settings.batch_catalog_path
+STREAM_REGISTRY_PATH = settings.stream_registry_path
 
-STREAM_CONTROL_DIR = Path(os.getenv("STREAM_CONTROL_DIR", "/runtime/spark_health/control"))
-STREAM_STATUS_STALE_SECONDS = int(os.getenv("STREAM_STATUS_STALE_SECONDS", "120"))
-STREAM_HEARTBEAT_STALE_SECONDS = int(os.getenv("STREAM_HEARTBEAT_STALE_SECONDS", "120"))
+STREAM_STATUS_FILE = settings.stream_status_file
+STREAM_LOG_DIR = settings.stream_log_dir
+AIRFLOW_LOG_DIR = settings.airflow_log_dir
+JOB_RUN_REGISTRY_FILE = settings.job_run_registry_file
 
+AIRFLOW_API_BASE = settings.airflow_api_base
+AIRFLOW_USER = settings.airflow_user
+AIRFLOW_PASSWORD = settings.airflow_password
+
+STREAM_CONTROL_DIR = settings.stream_control_dir
+STREAM_STATUS_STALE_SECONDS = settings.stream_status_stale_seconds
+STREAM_HEARTBEAT_STALE_SECONDS = settings.stream_heartbeat_stale_seconds
 
 def load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():

@@ -20,11 +20,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
-    from apps.dashboard.config_loader import AIRFLOW_API_BASE, AIRFLOW_PASSWORD, AIRFLOW_USER
     from apps.dashboard.runtime_models import duration_seconds, normalize_state
+    from apps.dashboard.settings import get_settings
 except ImportError:  # pragma: no cover
-    from .config_loader import AIRFLOW_API_BASE, AIRFLOW_PASSWORD, AIRFLOW_USER
     from .runtime_models import duration_seconds, normalize_state
+    from .settings import get_settings
+
+settings = get_settings()
+
+AIRFLOW_API_BASE = settings.airflow_api_base
+AIRFLOW_USER = settings.airflow_user
+AIRFLOW_PASSWORD = settings.airflow_password
 
 _token_lock = threading.Lock()
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
@@ -230,7 +236,6 @@ def latest_airflow_task(dag_id: str, task_id: str) -> dict[str, Any]:
             "status_reason": str(exc),
         }
 
-
 def dag_run_rows_for_job(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
     """Fallback run list used only when Control DB and JSONL registry have no matching rows."""
     quoted_dag = urllib.parse.quote(dag_id, safe="")
@@ -242,6 +247,7 @@ def dag_run_rows_for_job(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
         dag_run_id = str(run.get("dag_run_id") or "")
         started_at = run.get("start_date")
         ended_at = run.get("end_date")
+
         result.append(
             {
                 "run_id": None,
@@ -256,6 +262,12 @@ def dag_run_rows_for_job(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
                 "records_updated": None,
                 "records_deleted": None,
                 "runtime_source": "airflow",
+                "runtime_source_rank": 3,
+                "is_fallback": True,
+                "fallback_reason": (
+                    "Control DB and job_run_registry had no matching runtime rows; "
+                    "using Airflow DAG runs as executor fallback."
+                ),
             }
         )
 

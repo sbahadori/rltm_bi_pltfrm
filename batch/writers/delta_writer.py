@@ -120,3 +120,48 @@ def validate_partition_columns(df: DataFrame, partition_by: list[str]) -> None:
             f"Target partition columns are missing from Gold DataFrame: {missing}. "
             f"Available columns: {df.columns}"
         )
+    
+def write_delta_with_policy(
+    *,
+    spark: SparkSession,
+    df: DataFrame,
+    write_policy: dict[str, Any],
+) -> dict[str, Any]:
+    target_path = write_policy["target_path"]
+    mode = write_policy.get("mode", "merge")
+    fmt = write_policy.get("format", "delta")
+    partition_by = write_policy.get("partition_by", [])
+    merge_keys = write_policy.get("merge_keys", [])
+
+    if mode == "merge":
+        return merge_to_target(
+            spark=spark,
+            target_path=target_path,
+            df=df,
+            merge_keys=merge_keys,
+            partition_by=partition_by,
+        )
+
+    writer = df.write.format(fmt).mode(mode)
+
+    if fmt == "delta":
+        if mode == "overwrite":
+            writer = writer.option("overwriteSchema", "true")
+        else:
+            writer = writer.option("mergeSchema", "true")
+
+    if partition_by:
+        writer = writer.partitionBy(*partition_by)
+
+    writer.save(target_path)
+
+    count = df.count()
+
+    return {
+        "records_written": count,
+        "records_inserted": count if mode in {"append", "overwrite"} else 0,
+        "records_updated": 0,
+        "records_deleted": 0,
+        "delta_operation": mode,
+        "delta_operation_metrics": {},
+    }

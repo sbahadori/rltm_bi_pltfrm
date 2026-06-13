@@ -5,6 +5,10 @@ from typing import Any
 
 from batch.specs.batch_catalog_utils import resolve_repo_path
 
+from batch.specs.io_policy import (
+    normalize_jdbc_table_read_policy,
+    normalize_jdbc_table_write_policy,
+)
 
 VALID_LOAD_TYPES = {"full", "incremental", "cdc"}
 
@@ -214,6 +218,9 @@ def build_effective_table_config(
             source_id=manifest["source_id"],
             table_id=table["table_id"],
         )
+
+    effective["read_policy"] = normalize_jdbc_table_read_policy(effective)
+    effective["write_policy"] = normalize_jdbc_table_write_policy(effective)
 
     return effective
 

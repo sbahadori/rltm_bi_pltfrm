@@ -27,32 +27,26 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from auth import get_current_user, require_role
-
+try:
+    from apps.dashboard.auth import get_current_user, require_role
+    from apps.dashboard.settings import get_settings
+except ImportError:  # pragma: no cover
+    from .auth import get_current_user, require_role
+    from .settings import get_settings
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
-PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
-BATCH_CATALOG_PATH = Path(
-    os.getenv(
-        "BATCH_CATALOG_PATH",
-        str(PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"),
-    )
-)
-CATALOG_BACKUP_DIR = Path(
-    os.getenv(
-        "CATALOG_BACKUP_DIR",
-        str(PIPELINE_REPO_ROOT / "runtime" / "catalog_backups"),
-    )
-)
+settings = get_settings()
 
-ONBOARDING_DAG_ID = os.getenv("CONTROL_ONBOARDING_DAG_ID", "control_plane_onboarding")
-
+PIPELINE_REPO_ROOT = settings.pipeline_repo_root
+BATCH_CATALOG_PATH = settings.batch_catalog_path
+CATALOG_BACKUP_DIR = settings.catalog_backup_dir
+ONBOARDING_DAG_ID = settings.control_onboarding_dag_id
 
 KNOWN_JOB_TYPES = {
     "generic_api_to_bronze",
@@ -69,9 +63,13 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class CatalogPipelineInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     name: str
     description: str | None = None
     enabled: bool = True
+    domain: str | None = None
+    source_type: str | None = None
     dag: dict[str, Any] | None = None
     tags: list[str] | None = None
 
@@ -82,9 +80,10 @@ class CatalogJobApplyRequest(BaseModel):
 
     create_pipeline_if_missing: bool = True
     pipeline: CatalogPipelineInput | None = None
-
     overwrite_existing_job: bool = True
     dry_run: bool = False
+
+    base_job_hash: str | None = None
 
 
 class CatalogOnboardRequest(CatalogJobApplyRequest):
@@ -100,6 +99,7 @@ class CatalogPipelineApplyRequest(BaseModel):
     overwrite_existing_jobs: bool = True
     dry_run: bool = False
 
+    base_job_hashes: dict[str, str] | None = None
 
 class CatalogPipelineOnboardRequest(CatalogPipelineApplyRequest):
     onboarding_dry_run: bool = False
@@ -112,6 +112,21 @@ def _utc_stamp() -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _sha256_json(value: Any) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _catalog_hash(catalog: dict[str, Any]) -> str:
+    return _sha256_json(catalog)
+
+
+def _job_hash(job: dict[str, Any]) -> str:
+    return _sha256_json(job)
 
 
 def _load_catalog() -> dict[str, Any]:
@@ -219,6 +234,42 @@ def _target_from_job_spec(job: dict[str, Any]) -> str:
         or ""
     )
 
+def _views_from_spec(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    views = spec.get("views") or spec.get("sources") or []
+
+    if isinstance(views, list):
+        return [v for v in views if isinstance(v, dict)]
+
+    return []
+
+
+def _first_view_path(spec: dict[str, Any]) -> str:
+    for view in _views_from_spec(spec):
+        path = view.get("path")
+        if path:
+            return str(path)
+
+    return ""
+
+
+def _source_path_from_job_spec(job: dict[str, Any]) -> str:
+    spec = job.get("spec") or {}
+
+    if not isinstance(spec, dict):
+        return ""
+
+    return (
+        (spec.get("source") or {}).get("path")
+        or _first_view_path(spec)
+        or ""
+    )
+
+
+def _has_sql_query(spec: dict[str, Any]) -> bool:
+    sql_spec = spec.get("sql") or {}
+
+    return isinstance(sql_spec, dict) and bool(str(sql_spec.get("query") or "").strip())
+
 
 def validate_catalog_job_payload(pipeline_name: str, job: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
@@ -261,14 +312,34 @@ def validate_catalog_job_payload(pipeline_name: str, job: dict[str, Any]) -> dic
             errors.append("spec.bronze_write.target_path is required for generic_api_to_bronze.")
 
     elif job_type in {"generic_bronze_to_silver", "generic_silver_to_gold", "generic_delta_to_gold"}:
-        if not spec.get("source", {}).get("path"):
-            errors.append("spec.source.path is required.")
+        # SQL-first contract:
+        # - Legacy mode may use spec.source.path
+        # - New generic mode may use spec.views[] + spec.sql.query
+        source_path = _source_path_from_job_spec(job)
+        views = _views_from_spec(spec)
+
+        if not source_path:
+            errors.append("Either spec.source.path or at least one spec.views[].path is required.")
+
+        if views:
+            for idx, view in enumerate(views):
+                if not view.get("alias"):
+                    errors.append(f"spec.views[{idx}].alias is required.")
+                if not view.get("path"):
+                    errors.append(f"spec.views[{idx}].path is required.")
+                view.setdefault("format", "delta")
+
+        if views and not _has_sql_query(spec):
+            errors.append("spec.sql.query is required when spec.views is used.")
+
         if not spec.get("target", {}).get("path"):
             errors.append("spec.target.path is required.")
+
         if spec.get("target", {}).get("mode") == "merge":
             merge_keys = spec.get("target", {}).get("merge_keys") or []
             if not merge_keys:
                 errors.append("spec.target.merge_keys is required when target.mode = merge.")
+
 
     elif job_type == "generic_jdbc_manifest_to_bronze":
         if not job.get("manifest_ref") and not spec.get("manifest_ref"):
@@ -351,7 +422,6 @@ def _normalize_pipeline_for_catalog(
 
     return normalized
 
-
 def _normalize_job_for_catalog(job: dict[str, Any], pipeline: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = copy.deepcopy(job)
 
@@ -386,6 +456,27 @@ def _normalize_job_for_catalog(job: dict[str, Any], pipeline: dict[str, Any] | N
         spec.setdefault("spark", {"master": None, "packages": [], "conf": {}})
         return normalized
 
+    if normalized.get("job_type") in {
+        "generic_bronze_to_silver",
+        "generic_silver_to_gold",
+        "generic_delta_to_gold",
+    }:
+        spec.setdefault("filters", spec.get("filters", []))
+        spec.setdefault("quality_rules", spec.get("quality_rules", []))
+        spec.setdefault("dedupe", spec.get("dedupe", {"key_columns": [], "order_by": []}))
+        spec.setdefault("spark", {"master": None, "packages": [], "conf": {}})
+
+        if not (spec.get("source") or {}).get("path"):
+            first_path = _first_view_path(spec)
+            if first_path:
+                spec["source"] = {
+                    "path": first_path,
+                    "format": "delta",
+                }
+
+        return normalized
+
+    return normalized
 
 def _find_pipeline(catalog: dict[str, Any], pipeline_name: str) -> tuple[int | None, dict[str, Any] | None]:
     for idx, pipeline in enumerate(catalog.get("pipelines", [])):
@@ -463,6 +554,22 @@ def _merge_job_into_catalog(req: CatalogJobApplyRequest) -> dict[str, Any]:
                 status_code=409,
                 detail=f"Job already exists in catalog: {req.pipeline_name}.{job.get('name')}",
             )
+
+        if req.base_job_hash:
+            current_job_hash = _job_hash(pipeline["jobs"][existing_idx])
+
+            if current_job_hash != req.base_job_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Stale catalog payload. The job was changed after this payload was loaded.",
+                        "pipeline_name": req.pipeline_name,
+                        "job_name": job.get("name"),
+                        "expected_hash": req.base_job_hash,
+                        "current_hash": current_job_hash,
+                        "hint": "Reload the current job from catalog, re-apply your changes, then submit again.",
+                    },
+                )
 
         pipeline["jobs"][existing_idx] = job
         change_type = "updated_job"
@@ -554,6 +661,25 @@ def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[
                     status_code=409,
                     detail=f"Job already exists in catalog: {req.pipeline_name}.{job_name}",
                 )
+            
+            expected_hash = (req.base_job_hashes or {}).get(str(job_name))
+
+            if expected_hash:
+                current_job_hash = _job_hash(pipeline["jobs"][existing_idx])
+
+                if current_job_hash != expected_hash:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "message": "Stale catalog payload. One or more jobs changed after this payload was loaded.",
+                            "pipeline_name": req.pipeline_name,
+                            "job_name": job_name,
+                            "expected_hash": expected_hash,
+                            "current_hash": current_job_hash,
+                            "hint": "Reload the current pipeline from catalog, re-apply your changes, then submit again.",
+                        },
+                    )
+                        
             pipeline["jobs"][existing_idx] = job
             job_change_type = "updated_job"
 
@@ -665,6 +791,65 @@ async def catalog_backups(user: dict = Depends(get_current_user)) -> dict[str, A
 
     return {"items": items, "count": len(items)}
 
+@router.get("/pipelines/{pipeline_name}")
+async def get_catalog_pipeline(
+    pipeline_name: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    catalog = _load_catalog()
+    _, pipeline = _find_pipeline(catalog, pipeline_name)
+
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail=f"Pipeline not found: {pipeline_name}")
+
+    pipeline_meta = copy.deepcopy(pipeline)
+    jobs = pipeline_meta.pop("jobs", [])
+
+    return {
+        "pipeline_name": pipeline_name,
+        "create_pipeline_if_missing": False,
+        "overwrite_existing_jobs": True,
+        "pipeline": pipeline_meta,
+        "jobs": jobs,
+        "base_job_hashes": {
+            str(job.get("name")): _job_hash(job)
+            for job in jobs
+            if job.get("name")
+        },
+        "catalog_hash": _catalog_hash(catalog),
+    }
+
+@router.get("/jobs/{pipeline_name}/{job_name}")
+async def get_catalog_job(
+    pipeline_name: str,
+    job_name: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    catalog = _load_catalog()
+    _, pipeline = _find_pipeline(catalog, pipeline_name)
+
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail=f"Pipeline not found: {pipeline_name}")
+
+    for job in pipeline.get("jobs", []):
+        if job.get("name") == job_name:
+            pipeline_meta = copy.deepcopy(pipeline)
+            pipeline_meta.pop("jobs", None)
+
+            return {
+                "pipeline_name": pipeline_name,
+                "create_pipeline_if_missing": False,
+                "overwrite_existing_job": True,
+                "pipeline": pipeline_meta,
+                "job": job,
+                "base_job_hash": _job_hash(job),
+                "catalog_hash": _catalog_hash(catalog),
+            }
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Job not found: {pipeline_name}.{job_name}",
+    )
 
 @router.post("/jobs/validate")
 async def validate_catalog_job(

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import base64
 import json
@@ -13,8 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.types import StringType, TimestampType
-
 from pyspark.sql.functions import (
     col,
     current_timestamp,
@@ -38,10 +37,16 @@ REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).r
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from shared.core.spark import create_spark  # noqa: E402
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
-from shared.control.job_spec_store import load_current_job_metadata, load_current_job_spec  # noqa: E402
-from shared.runtime.control_run_context import build_runtime_context, control_run  # noqa: E402
+from shared.control.job_spec_store import (  # noqa: E402
+    load_current_job_metadata,
+    load_current_job_spec,
+)
+from shared.core.spark import create_spark  # noqa: E402
+from shared.runtime.control_run_context import (  # noqa: E402
+    build_runtime_context,
+    control_run,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -139,6 +144,7 @@ def deep_get(payload: Any, path: str | None, default: Any = None) -> Any:
 
     return current
 
+
 def extract_payload_by_path(payload: Any, path: str | None, default: Any = None) -> Any:
     if not path or path == "$":
         return payload
@@ -152,6 +158,35 @@ def extract_payload_by_path(payload: Any, path: str | None, default: Any = None)
         return payload
 
     return deep_get(payload, normalized, default=default)
+
+
+def normalize_records(data: Any) -> list[dict[str, Any]]:
+    """
+    Converts API response into a list of dictionaries.
+
+    Supported:
+      - list[dict]
+      - dict
+      - scalar payloads wrapped as {"value": scalar}
+    """
+    if data is None:
+        return []
+
+    if isinstance(data, list):
+        records: list[dict[str, Any]] = []
+
+        for item in data:
+            if isinstance(item, dict):
+                records.append(item)
+            else:
+                records.append({"value": item})
+
+        return records
+
+    if isinstance(data, dict):
+        return [data]
+
+    return [{"value": data}]
 
 
 def records_from_response(
@@ -182,10 +217,18 @@ def records_from_response(
             return records_payload, [records_payload]
         return records_payload, [{"value": records_payload}]
 
-    if record_mode in {"array", "list", "records"}:
+    if record_mode in {"array", "list", "records", "records_array"}:
+        if records_payload is None:
+            return records_payload, []
+        if not isinstance(records_payload, list):
+            raise ValueError(
+                f"record_mode={record_mode} expects a list at path={records_path}, "
+                f"but got {type(records_payload).__name__}"
+            )
         return records_payload, normalize_records(records_payload)
 
     return records_payload, normalize_records(records_payload)
+
 
 def render_template(value: Any) -> Any:
     """
@@ -213,35 +256,6 @@ def render_dict(data: dict[str, Any] | None) -> dict[str, Any]:
         for k, v in data.items()
         if v is not None
     }
-
-
-def normalize_records(data: Any) -> list[dict[str, Any]]:
-    """
-    Converts API response into a list of dictionaries.
-
-    Supported:
-      - list[dict]
-      - dict
-      - scalar payloads wrapped as {"value": scalar}
-    """
-    if data is None:
-        return []
-
-    if isinstance(data, list):
-        records: list[dict[str, Any]] = []
-
-        for item in data:
-            if isinstance(item, dict):
-                records.append(item)
-            else:
-                records.append({"value": item})
-
-        return records
-
-    if isinstance(data, dict):
-        return [data]
-
-    return [{"value": data}]
 
 
 def sanitize_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -275,51 +289,6 @@ def ensure_non_empty_schema(records: list[dict[str, Any]]) -> list[dict[str, Any
         }
     ]
 
-def _json_path_get(payload, path: str):
-    """
-    Minimal JSONPath support for catalog paths:
-    - "$" returns the full payload
-    - "$.a.b.c" returns nested fields
-    """
-    if path in (None, "", "$"):
-        return payload
-
-    if not isinstance(path, str) or not path.startswith("$."):
-        raise ValueError(f"Unsupported JSON path: {path}")
-
-    cur = payload
-    for part in path[2:].split("."):
-        if isinstance(cur, dict):
-            cur = cur.get(part)
-        else:
-            return None
-    return cur
-
-
-def _extract_records_from_response(payload, response_spec: dict) -> list:
-    root_path = response_spec.get("root_path") or "$"
-    record_mode = response_spec.get("record_mode") or "single_object"
-
-    selected = _json_path_get(payload, root_path)
-
-    if record_mode == "single_object":
-        if selected is None:
-            return []
-        if isinstance(selected, dict) and not selected:
-            return []
-        return [selected]
-
-    if record_mode in {"array", "records_array", "list"}:
-        if selected is None:
-            return []
-        if not isinstance(selected, list):
-            raise ValueError(
-                f"record_mode={record_mode} expects a list at root_path={root_path}, "
-                f"but got {type(selected).__name__}"
-            )
-        return selected
-
-    raise ValueError(f"Unsupported response.record_mode: {record_mode}")
 
 # -----------------------------------------------------------------------------
 # API request handling
@@ -366,6 +335,7 @@ def build_url(source: dict[str, Any]) -> str:
 
     return url
 
+
 def build_headers(source: dict[str, Any]) -> dict[str, str]:
     headers = {
         str(k): str(v)
@@ -387,18 +357,12 @@ def build_headers(source: dict[str, Any]) -> dict[str, str]:
 
         if location == "header":
             prefix = auth.get("prefix")
-
-            if prefix:
-                headers[name] = f"{prefix} {key_value}"
-            else:
-                headers[name] = key_value
+            headers[name] = f"{prefix} {key_value}" if prefix else key_value
 
         elif location == "query":
-            # Query auth is handled in build_url only if explicitly placed in params.
-            # This branch protects against silent misconfiguration.
             raise ValueError(
                 "auth.location='query' is not automatically injected. "
-                "Put the API key in source.params using ${ENV_VAR}."
+                "Use auth.type='query_param' or put the API key in source.params."
             )
 
         else:
@@ -478,10 +442,7 @@ def execute_api_request(source: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
             raw_body = response.read().decode("utf-8")
             elapsed = round(time.time() - started, 3)
 
-            if raw_body:
-                parsed = json.loads(raw_body)
-            else:
-                parsed = None
+            parsed = json.loads(raw_body) if raw_body else None
 
             meta = {
                 "url": url,
@@ -581,6 +542,7 @@ def records_to_dataframe(
 
     return df.select(*selected_cols)
 
+
 def write_bronze(df: DataFrame, write_spec: dict[str, Any]) -> None:
     target_path = write_spec.get("target_path") or write_spec.get("path")
 
@@ -612,6 +574,7 @@ def write_bronze(df: DataFrame, write_spec: dict[str, Any]) -> None:
 
     writer.save(target_path)
 
+
 # -----------------------------------------------------------------------------
 # Spec normalization
 # -----------------------------------------------------------------------------
@@ -623,6 +586,7 @@ def get_source_spec(spec: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("spec.source must be a JSON object")
 
     return source
+
 
 def build_effective_source_spec(spec: dict[str, Any]) -> dict[str, Any]:
     """
@@ -663,6 +627,7 @@ def build_effective_source_spec(spec: dict[str, Any]) -> dict[str, Any]:
         source["auth"] = auth
 
     return source
+
 
 def get_response_spec(spec: dict[str, Any]) -> dict[str, Any]:
     response = spec.get("response") or {}
@@ -752,7 +717,7 @@ def main() -> None:
 
             request_payload, request_meta = execute_api_request(source)
 
-            records_payload, records = records_from_response(
+            _records_payload, records = records_from_response(
                 request_payload=request_payload,
                 response_spec=response,
                 source_spec=source,
@@ -787,7 +752,7 @@ def main() -> None:
 
                 runtime_policy = (
                     context.get("runtime_policy")
-                    or (locals().get("spec") or {}).get("runtime_policy")
+                    or spec.get("runtime_policy")
                     or {}
                 )
 
@@ -822,7 +787,7 @@ def main() -> None:
             )
 
             records_read = len(records)
-            records_written = df.count()
+            records_written = int(df.count())
 
             write_bronze(df, write_spec)
 

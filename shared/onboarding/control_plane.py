@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from shared.control.postgres import get_conn
+import copy
 
+from batch.specs.io_policy import (
+    normalize_read_policy,
+    normalize_write_policy,
+    legacy_target_from_write_policy,
+    legacy_bronze_write_from_write_policy,
+)
 
 REPO_ROOT = Path(
     os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")
@@ -102,21 +109,108 @@ def call_proc(
     cur.execute(f"CALL ctl.{proc_name}({placeholders})", params)
 
 
-def infer_layer(job: dict[str, Any]) -> str:
-    job_type = str(job.get("job_type", "")).lower()
-    job_name = str(job.get("name", "")).lower()
+def _target_path_from_job(job: dict[str, Any]) -> str:
+    spec = job.get("spec") or {}
 
-    if job_type == "generic_api_to_bronze" or "bronze" in job_type or "bronze" in job_name:
+    return (
+        (spec.get("bronze_write") or {}).get("target_path")
+        or (spec.get("target") or {}).get("path")
+        or (spec.get("silver_write") or {}).get("target_path")
+        or (spec.get("gold_write") or {}).get("target_path")
+        or job.get("target_path")
+        or ""
+    )
+
+def sync_io_policies_for_onboarding(job: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ensure the job spec persisted into meta.job.config contains the unified
+    read_policy/write_policy contract.
+
+    This must run before usp_onboard_job is called.
+    """
+    job = copy.deepcopy(job)
+    spec = job.setdefault("spec", {})
+
+    layer = infer_layer(job)
+    job_type = str(job.get("job_type") or "")
+
+    read_policy = normalize_read_policy(
+        spec=spec,
+        layer=layer,
+        job_type=job_type,
+    )
+
+    write_policy = normalize_write_policy(
+        spec=spec,
+        layer=layer,
+        job_type=job_type,
+    )
+
+    spec["read_policy"] = read_policy
+    spec["write_policy"] = write_policy
+
+    # Backward compatibility for existing runners/tools.
+    if layer == "bronze":
+        spec.setdefault("bronze_write", legacy_bronze_write_from_write_policy(write_policy))
+    else:
+        spec.setdefault("target", legacy_target_from_write_policy(write_policy))
+
+        if not (spec.get("source") or {}).get("path"):
+            views = spec.get("views") or spec.get("sources") or []
+            if isinstance(views, list) and views:
+                first_view = views[0]
+                if isinstance(first_view, dict) and first_view.get("path"):
+                    spec["source"] = {
+                        "path": first_view["path"],
+                        "format": first_view.get("format", "delta"),
+                    }
+
+    print(
+        f"[ONBOARD_IO_POLICY] job={job.get('name')} "
+        f"layer={layer} read_policy={read_policy} write_policy={write_policy}",
+        flush=True,
+    )
+
+    return job
+
+def infer_layer(job: dict[str, Any]) -> str:
+    """
+    Infer the OUTPUT layer of a job.
+
+    Important:
+    - layer means the layer produced by the job, not the layer read by the job.
+    - generic_bronze_to_silver reads Bronze but produces Silver.
+    - generic_silver_to_gold reads Silver but produces Gold.
+    """
+
+    explicit = str(job.get("layer") or "").strip().lower()
+
+    if explicit in {"bronze", "silver", "gold", "stream"}:
+        return explicit
+
+    job_type = str(job.get("job_type") or "").strip().lower()
+
+    by_job_type = {
+        "generic_api_to_bronze": "bronze",
+        "generic_jdbc_manifest_to_bronze": "bronze",
+        "generic_bronze_to_silver": "silver",
+        "generic_silver_to_gold": "gold",
+        "generic_delta_to_gold": "gold",
+    }
+
+    if job_type in by_job_type:
+        return by_job_type[job_type]
+
+    target_path = _target_path_from_job(job).lower()
+
+    if "/gold/" in target_path:
+        return "gold"
+    if "/silver/" in target_path:
+        return "silver"
+    if "/bronze/" in target_path:
         return "bronze"
 
-    if "silver" in job_type or "silver" in job_name:
-        return "silver"
-
-    if "gold" in job_type or "gold" in job_name:
-        return "gold"
-
     return "batch"
-
 
 def target_path_from_spec(spec: dict[str, Any]) -> str:
     return (
@@ -224,7 +318,6 @@ def select_jobs(
 def regular_job_code(pipeline_name: str, job: dict[str, Any]) -> str:
     layer = infer_layer(job)
     return f"{layer}.{pipeline_name}.{job['name']}"
-
 
 def load_manifest(manifest_ref: str) -> dict[str, Any]:
     return load_json(manifest_ref)
@@ -397,6 +490,7 @@ def onboard_manifest_jobs(
 
     if strategy == "one_task_per_manifest":
         job_code = f"bronze.{source_id}.manifest"
+        job = sync_io_policies_for_onboarding(job)
 
         call_proc(
             cur,

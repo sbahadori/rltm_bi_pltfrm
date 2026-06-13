@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-
+from batch.specs.io_policy import normalize_read_policy, normalize_write_policy
 
 SUPPORTED_JOB_TYPES = {
     "spark_batch",
@@ -15,6 +15,41 @@ SUPPORTED_JOB_TYPES = {
     
 }
 
+def _views_from_spec(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    views = spec.get("views") or spec.get("sources") or []
+    if isinstance(views, list):
+        return [v for v in views if isinstance(v, dict)]
+    return []
+
+
+def _has_sql_query(spec: dict[str, Any]) -> bool:
+    sql = spec.get("sql") or {}
+    return isinstance(sql, dict) and bool(str(sql.get("query") or "").strip())
+
+
+def _sync_legacy_io_sections(spec: dict[str, Any], *, layer: str, job_type: str) -> None:
+    read_policy = normalize_read_policy(spec=spec, layer=layer, job_type=job_type)
+    write_policy = normalize_write_policy(spec=spec, layer=layer, job_type=job_type)
+
+    spec["read_policy"] = read_policy
+    spec["write_policy"] = write_policy
+
+    if "target" not in spec:
+        spec["target"] = {
+            "path": write_policy["target_path"],
+            "format": write_policy.get("format", "delta"),
+            "mode": write_policy.get("mode", "merge"),
+            "merge_keys": write_policy.get("merge_keys", []),
+            "partition_by": write_policy.get("partition_by", []),
+        }
+
+    if "source" not in spec:
+        views = _views_from_spec(spec)
+        if views:
+            spec["source"] = {
+                "path": views[0]["path"],
+                "format": views[0].get("format", "delta"),
+            }
 
 def get_repo_root() -> Path:
     return Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).resolve()
@@ -258,117 +293,90 @@ def validate_generic_api_to_bronze_spec(pipeline_name: str, job: dict[str, Any])
 
 def validate_generic_bronze_to_silver_spec(pipeline_name: str, job: dict[str, Any]) -> None:
     spec = job["spec"]
-    required = [
-        "source",
-        "target",
-        "select_map",
-        "filters",
-        "derived_fields",
-        "quality_rules",
-        "dedupe",
-        "spark",
-    ]
-    missing = [k for k in required if k not in spec]
-    if missing:
-        raise ValueError(
-            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
-        )
 
-    _require_object_sections(
-        pipeline_name,
-        job["name"],
+    spec.setdefault("filters", [])
+    spec.setdefault("quality_rules", [])
+    spec.setdefault("dedupe", {"key_columns": [], "order_by": []})
+    spec.setdefault("spark", {"master": None, "packages": [], "conf": {}})
+    spec.setdefault("select_map", {})
+    spec.setdefault("derived_fields", {})
+
+    _sync_legacy_io_sections(
         spec,
-        ["source", "target", "select_map", "derived_fields", "dedupe", "spark"],
+        layer="silver",
         job_type="generic_bronze_to_silver",
     )
 
-    _require_list_sections(
-        pipeline_name,
-        job["name"],
-        spec,
-        ["filters", "quality_rules"],
-        job_type="generic_bronze_to_silver",
-    )
+    views = _views_from_spec(spec)
 
-    source_required = ["path", "format"]
-    missing_source = [k for k in source_required if k not in spec["source"]]
-    if missing_source:
+    if views:
+        for idx, view in enumerate(views):
+            if not view.get("alias"):
+                raise ValueError(
+                    f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+                    f"missing views[{idx}].alias"
+                )
+            if not view.get("path"):
+                raise ValueError(
+                    f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+                    f"missing views[{idx}].path"
+                )
+
+        if not _has_sql_query(spec):
+            raise ValueError(
+                f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
+                "must define spec.sql.query when spec.views is used"
+            )
+
+    elif not spec.get("source", {}).get("path"):
         raise ValueError(
             f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"missing source keys: {missing_source}"
+            "requires either spec.source.path or spec.views[].path"
         )
-
-    target_required = ["path", "format", "mode", "merge_keys", "partition_by"]
-    missing_target = [k for k in target_required if k not in spec["target"]]
-    if missing_target:
-        raise ValueError(
-            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"missing target keys: {missing_target}"
-        )
-
-    if spec["target"]["mode"] == "merge" and not spec["target"]["merge_keys"]:
-        raise ValueError(
-            f"generic_bronze_to_silver job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"requires non-empty target.merge_keys when mode is 'merge'"
-        )
-
+    
 
 def validate_generic_silver_to_gold_spec(pipeline_name: str, job: dict[str, Any]) -> None:
     spec = job["spec"]
-    required = [
-        "source",
-        "target",
-        "select_map",
-        "filters",
-        "derived_fields",
-        "quality_rules",
-        "dedupe",
-        "spark",
-    ]
-    missing = [k for k in required if k not in spec]
-    if missing:
-        raise ValueError(
-            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' missing spec keys: {missing}"
-        )
 
-    _require_object_sections(
-        pipeline_name,
-        job["name"],
+    spec.setdefault("filters", [])
+    spec.setdefault("quality_rules", [])
+    spec.setdefault("dedupe", {"key_columns": [], "order_by": []})
+    spec.setdefault("spark", {"master": None, "packages": [], "conf": {}})
+    spec.setdefault("select_map", {})
+    spec.setdefault("derived_fields", {})
+
+    _sync_legacy_io_sections(
         spec,
-        ["source", "target", "select_map", "derived_fields", "dedupe", "spark"],
+        layer="gold",
         job_type="generic_silver_to_gold",
     )
 
-    _require_list_sections(
-        pipeline_name,
-        job["name"],
-        spec,
-        ["filters", "quality_rules"],
-        job_type="generic_silver_to_gold",
-    )
+    views = _views_from_spec(spec)
 
-    source_required = ["path", "format"]
-    missing_source = [k for k in source_required if k not in spec["source"]]
-    if missing_source:
+    if views:
+        for idx, view in enumerate(views):
+            if not view.get("alias"):
+                raise ValueError(
+                    f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+                    f"missing views[{idx}].alias"
+                )
+            if not view.get("path"):
+                raise ValueError(
+                    f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+                    f"missing views[{idx}].path"
+                )
+
+        if not _has_sql_query(spec):
+            raise ValueError(
+                f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
+                "must define spec.sql.query when spec.views is used"
+            )
+
+    elif not spec.get("source", {}).get("path"):
         raise ValueError(
             f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"missing source keys: {missing_source}"
+            "requires either spec.source.path or spec.views[].path"
         )
-
-    target_required = ["path", "format", "mode", "merge_keys", "partition_by"]
-    missing_target = [k for k in target_required if k not in spec["target"]]
-    if missing_target:
-        raise ValueError(
-            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"missing target keys: {missing_target}"
-        )
-
-    if spec["target"]["mode"] == "merge" and not spec["target"]["merge_keys"]:
-        raise ValueError(
-            f"generic_silver_to_gold job '{job['name']}' in pipeline '{pipeline_name}' "
-            f"requires non-empty target.merge_keys when mode is 'merge'"
-        )
-
 
 def _require_object_sections(
     pipeline_name: str,

@@ -895,6 +895,44 @@ function statusTag(s){
 }
 function typeTag(t){ return `<span class="tag ${t}">${esc(t)}</span>` }
 
+function runtimeSourceTag(obj){
+  const source = obj?.runtime_source || obj?.source || 'unknown';
+  const isFallback = obj?.is_fallback === true;
+
+  let cls = '';
+  let label = source;
+
+  if(source === 'control_db'){
+    cls = 'success';
+    label = 'control db';
+  }else if(source === 'job_run_registry'){
+    cls = 'warning';
+    label = 'registry fallback';
+  }else if(source === 'airflow'){
+    cls = 'warning';
+    label = 'airflow fallback';
+  }else if(source === 'stream_runtime_db'){
+    cls = 'success';
+    label = 'stream db';
+  }else if(source === 'stream_supervisor_file'){
+    cls = 'warning';
+    label = 'stream file';
+  }else if(source === 'catalog_metadata'){
+    cls = '';
+    label = 'metadata only';
+  }else if(source === 'catalog_defined'){
+    cls = '';
+    label = 'catalog defined';
+  }else if(source === 'catalog'){
+    cls = '';
+    label = 'catalog';
+  }
+
+  const suffix = isFallback ? ' · fallback' : '';
+
+  return `<span class="tag ${cls}" title="${esc(obj?.fallback_reason || '')}">${esc(label + suffix)}</span>`;
+}
+
 function numOrDash(v){
   if(v === null || v === undefined || v === '') return '-';
   const n = Number(v);
@@ -1068,7 +1106,10 @@ function renderJobs(){
         <div class="mono" style="color:var(--muted)">${esc(j.id||'')}</div>
       </td>
       <td>${typeTag(j.type)}</td>
-      <td>${statusTag(j.current_status||'defined')}</td>
+      <td>
+        ${statusTag(j.current_status||'defined')}
+        <div style="margin-top:4px">${runtimeSourceTag(j)}</div>
+      </td>
       <td class="mono">${esc(j.latest_run_id||'-')}</td>
       <td>${counterHtml(j)}</td>
       <td class="mono" style="color:var(--muted)">${esc((j.stream_target_path||j.target_path||'').slice(0,60))||'-'}</td>
@@ -1134,7 +1175,10 @@ function renderPipelineDetail(name){
         <div class="mono" style="color:var(--muted)">${esc(j.id||'')}</div>
       </td>
       <td>${typeTag(j.type)}</td>
-      <td>${statusTag(j.current_status||'defined')}</td>
+      <td>
+        ${statusTag(j.current_status||'defined')}
+        <div style="margin-top:4px">${runtimeSourceTag(j)}</div>
+      </td>
       <td class="mono">${esc(j.latest_run_id||'-')}</td>
       <td>${counterHtml(j)}</td>
       <td class="mono">${esc(j.target_path||j.stream_target_path||'-')}</td>
@@ -1169,7 +1213,10 @@ function renderStreamDetail(name){
     return `<tr>
       <td>${esc(j.name)}<div class="mono" style="color:var(--muted)">${esc(unit)}</div></td>
       <td class="mono">${esc(j.job_type||'-')}</td>
-      <td>${statusTag(j.current_status||'unknown')}</td>
+      <td>
+        ${statusTag(j.current_status||'unknown')}
+        <div style="margin-top:4px">${runtimeSourceTag(j)}</div>
+      </td>
       <td class="mono">${j.last_batch_id??'-'}</td>
       <td class="mono">${j.last_input_rows??'-'} / valid: ${j.last_valid_rows??'N/A'}</td>
       <td>${j.last_write_ok===true?'<span class="tag success">OK</span>':j.last_write_ok===false?'<span class="tag failed">FAIL</span>':'<span class="tag">-</span>'}</td>
@@ -1207,7 +1254,7 @@ function updateDrawerSnapshot(job){
     typeTag(job.type),
     statusTag(job.current_status||'defined'),
     `<span class="tag">${esc(job.job_type||'-')}</span>`,
-    `<span class="tag">${esc(job.runtime_source||'catalog')}</span>`,
+    runtimeSourceTag(job),
   ].join('');
 
   document.getElementById('drawerMeta').innerHTML = [
@@ -1282,7 +1329,10 @@ async function loadRunsForCurrentJob(showLoading=true){
                 ? `<div style="color:var(--muted);font-size:11px">dag: ${esc(r.dag_run_id)}</div>`
                 : ''}
             </td>
-            <td>${statusTag(r.state||r.task_state||r.dag_run_state||'unknown')}</td>
+            <td>
+              ${statusTag(r.state||r.task_state||r.dag_run_state||'unknown')}
+              <div style="margin-top:4px">${runtimeSourceTag(r)}</div>
+            </td>
             <td>${counterHtml(r)}</td>
             <td class="mono">${fmtDate(r.started_at)}</td>
             <td class="mono">${fmtDate(r.ended_at)}</td>
@@ -2158,6 +2208,7 @@ async function previewCatalogJob(){
 async function applyCatalogJob(withOnboarding){
   try{
     const payload = readCatalogPayload();
+    
 
     const isPipelinePayload = Array.isArray(payload.jobs);
 

@@ -27,8 +27,18 @@ except ImportError:  # pragma: no cover
     from .db import call_usp_rows, insert_action_log
     from .stream_runtime import restart_stream, stop_stream
 
+try:
+    from apps.dashboard.config_loader import job_from_config
+    from apps.dashboard.execution_resolver import execute_job
+except ImportError:  # pragma: no cover
+    from .config_loader import job_from_config
+    from .execution_resolver import execute_job
+
 router = APIRouter()
 
+class JobRunRequest(BaseModel):
+    conf: dict[str, Any] | None = None
+    logical_date: str | None = None
 
 class DagTriggerRequest(BaseModel):
     dag_id: str
@@ -317,4 +327,51 @@ async def action_history(
     try:
         return {"items": call_usp_rows("usp_list_action_logs", (limit,))}
     except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/api/actions/jobs/{job_id}/run")
+async def action_job_run(
+    job_id: str,
+    req: JobRunRequest,
+    user: dict = Depends(require_role("admin", "operator")),
+) -> dict:
+    started = time.time()
+    payload = _model_dump(req)
+
+    job = job_from_config(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    try:
+        result = execute_job(
+            job,
+            conf=req.conf,
+            logical_date=req.logical_date,
+        )
+
+        insert_action_log(
+            user=user,
+            action_type="job_run",
+            target_type="job",
+            target_id=job_id,
+            request_payload=payload,
+            result_status="success",
+            result_payload=result,
+            duration_ms=int((time.time() - started) * 1000),
+        )
+
+        return result
+
+    except Exception as exc:
+        insert_action_log(
+            user=user,
+            action_type="job_run",
+            target_type="job",
+            target_id=job_id,
+            request_payload=payload,
+            result_status="failed",
+            error_message=str(exc),
+            duration_ms=int((time.time() - started) * 1000),
+        )
         raise HTTPException(status_code=500, detail=str(exc))

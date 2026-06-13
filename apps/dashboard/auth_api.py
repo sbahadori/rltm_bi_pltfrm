@@ -48,9 +48,15 @@ async def login(req: LoginRequest) -> dict:
     )
     return {
         "access_token": token,
+        "token": token,
         "token_type": "bearer",
         "username": row["username"],
         "role": row["role"],
+        "user": {
+            "user_id": row["user_id"],
+            "username": row["username"],
+            "role": row["role"],
+        },
     }
 
 

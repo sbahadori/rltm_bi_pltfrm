@@ -131,7 +131,7 @@ def state_rank(state: Any) -> int:
         return 3
     if normalized in {"running", "restarting"}:
         return 2
-    if normalized in {"queued", "scheduled"}:
+    if normalized in {"submitted", "queued", "scheduled"}:
         return 1
     return 0
 

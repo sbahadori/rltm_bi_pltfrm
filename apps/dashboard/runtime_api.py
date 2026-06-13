@@ -46,14 +46,8 @@ except ImportError:  # pragma: no cover
     from .stream_runtime import load_stream_status
 
 
-def dag_id_for_job(job: dict) -> str | None:
-    return (
-        job.get("metadata_airflow_dag_id")
-        or job.get("airflow_dag_id")
-        or job.get("dag_id")
-        or job.get("pipeline_airflow_dag_id")
-        or job.get("pipeline")
-    )
+from apps.dashboard.execution_resolver import executor_id_for_job
+
 
 router = APIRouter()
 
@@ -145,7 +139,7 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
 
     if job.get("type") == "batch":
         try:
-            dag_id = dag_id_for_job(job)
+            dag_id = executor_id_for_job(job)
             if not dag_id:
                 return JSONResponse(
                     {

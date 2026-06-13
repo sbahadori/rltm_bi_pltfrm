@@ -363,6 +363,19 @@ async def action_job_run(
 
         return result
 
+    except ValueError as exc:
+        insert_action_log(
+            user=user,
+            action_type="job_run",
+            target_type="job",
+            target_id=job_id,
+            request_payload=payload,
+            result_status="rejected",
+            error_message=str(exc),
+            duration_ms=int((time.time() - started) * 1000),
+        )
+        raise HTTPException(status_code=400, detail=str(exc))
+
     except Exception as exc:
         insert_action_log(
             user=user,

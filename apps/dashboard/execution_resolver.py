@@ -49,13 +49,21 @@ def execute_job(
 
     result = trigger_dag(dag_id, conf=executor_conf, logical_date=logical_date)
 
+    executor_run_id = (
+        result.get("dag_run_id")
+        or result.get("run_id")
+        or result.get("id")
+    )
+
     return {
         "ok": True,
+        "status": "submitted",
         "job_id": job_id_of(job),
         "job_name": job_name_of(job),
         "pipeline_id": pipeline_id_of(job),
         "runner_id": job.get("runner_id"),
         "executor_type": "airflow",
         "executor_id": dag_id,
+        "executor_run_id": executor_run_id,
         "executor_result": result,
     }

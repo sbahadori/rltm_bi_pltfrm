@@ -34,6 +34,11 @@ except ImportError:  # pragma: no cover
     from .config_loader import job_from_config
     from .execution_resolver import execute_job
 
+try:
+    from apps.dashboard.runtime_event_writer import write_job_run_event
+except ImportError:  # pragma: no cover
+    from .runtime_event_writer import write_job_run_event
+
 router = APIRouter()
 
 class JobRunRequest(BaseModel):
@@ -350,6 +355,18 @@ async def action_job_run(
             logical_date=req.logical_date,
         )
 
+        runtime_event = write_job_run_event(
+            job=job,
+            execution_result=result,
+            submitted_by=user.get("sub") or user.get("username"),
+            request_payload=payload,
+        )
+
+        response = {
+            **result,
+            "runtime_event": runtime_event,
+        }
+
         insert_action_log(
             user=user,
             action_type="job_run",
@@ -357,11 +374,11 @@ async def action_job_run(
             target_id=job_id,
             request_payload=payload,
             result_status="success",
-            result_payload=result,
+            result_payload=response,
             duration_ms=int((time.time() - started) * 1000),
         )
 
-        return result
+        return response
 
     except ValueError as exc:
         insert_action_log(

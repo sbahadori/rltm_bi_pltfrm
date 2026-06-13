@@ -31,28 +31,22 @@ import hashlib
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from auth import get_current_user, require_role
-
+try:
+    from apps.dashboard.auth import get_current_user, require_role
+    from apps.dashboard.settings import get_settings
+except ImportError:  # pragma: no cover
+    from .auth import get_current_user, require_role
+    from .settings import get_settings
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
-PIPELINE_REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm"))
-BATCH_CATALOG_PATH = Path(
-    os.getenv(
-        "BATCH_CATALOG_PATH",
-        str(PIPELINE_REPO_ROOT / "configs" / "batch" / "pipeline_catalog.json"),
-    )
-)
-CATALOG_BACKUP_DIR = Path(
-    os.getenv(
-        "CATALOG_BACKUP_DIR",
-        str(PIPELINE_REPO_ROOT / "runtime" / "catalog_backups"),
-    )
-)
+settings = get_settings()
 
-ONBOARDING_DAG_ID = os.getenv("CONTROL_ONBOARDING_DAG_ID", "control_plane_onboarding")
-
+PIPELINE_REPO_ROOT = settings.pipeline_repo_root
+BATCH_CATALOG_PATH = settings.batch_catalog_path
+CATALOG_BACKUP_DIR = settings.catalog_backup_dir
+ONBOARDING_DAG_ID = settings.control_onboarding_dag_id
 
 KNOWN_JOB_TYPES = {
     "generic_api_to_bronze",

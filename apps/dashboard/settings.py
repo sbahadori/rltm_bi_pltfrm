@@ -56,6 +56,9 @@ class DashboardSettings:
     dashboard_secret_key: str
     dashboard_token_expire_minutes: int
     app_env: str
+    
+    catalog_backup_dir: Path
+    control_onboarding_dag_id: str
 
     @classmethod
     def from_env(cls) -> "DashboardSettings":
@@ -103,10 +106,20 @@ class DashboardSettings:
             airflow_api_base=env_str("AIRFLOW_API_BASE", "http://airflow-api-server:8080").rstrip("/"),
             airflow_user=env_str("AIRFLOW_USER", "admin"),
             airflow_password=env_str("AIRFLOW_PASSWORD", "admin"),
-
+            control_onboarding_dag_id=env_str(
+                "CONTROL_ONBOARDING_DAG_ID",
+                "control_plane_onboarding",
+            ),
             dashboard_secret_key=env_str("DASHBOARD_SECRET_KEY", ""),
             dashboard_token_expire_minutes=env_int("DASHBOARD_TOKEN_EXPIRE_MINUTES", 480),
             app_env=env_str("APP_ENV", env_str("ENV", "dev")).lower(),
+
+            catalog_backup_dir=Path(
+                env_str(
+                    "CATALOG_BACKUP_DIR",
+                    str(repo_root / "runtime" / "catalog_backups"),
+                )
+            ),
         )
 
 

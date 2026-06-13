@@ -20,3 +20,8 @@ $compose = @(
 )
 
 docker compose @compose down --remove-orphans
+
+
+After dashboard-api rebuild/recreate, restart dashboard nginx container if 9090 returns 502.
+Command:
+docker restart dashboard

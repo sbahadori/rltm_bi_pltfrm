@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +26,41 @@ def env_bool(name: str, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
+def validate_production_safety(settings: DashboardSettings) -> None:
+    app_env = settings.app_env.strip().lower()
 
+    if app_env not in {"prod", "production"}:
+        return
+
+    weak_secret_values = {
+        "",
+        "dev",
+        "secret",
+        "change-me",
+        "change_me",
+        "dev-secret",
+        "dev-secret-change-me",
+        "local-dev-secret",
+    }
+
+    if settings.dashboard_secret_key.strip().lower() in weak_secret_values:
+        raise RuntimeError(
+            "Unsafe DASHBOARD_SECRET_KEY for production. "
+            "Set a strong DASHBOARD_SECRET_KEY before starting the dashboard API."
+        )
+
+    if settings.airflow_password.strip().lower() in {"admin", "password", "airflow"}:
+        raise RuntimeError(
+            "Unsafe AIRFLOW_PASSWORD for production. "
+            "Set a secure Airflow password/secret before starting the dashboard API."
+        )
+
+    if settings.control_db_password.strip().lower() in {"warehouse", "postgres", "password", "admin"}:
+        raise RuntimeError(
+            "Unsafe CONTROL_DB_PASSWORD for production. "
+            "Set a secure database password before starting the dashboard API."
+        )
+    
 @dataclass(frozen=True)
 class DashboardSettings:
     pipeline_repo_root: Path
@@ -126,8 +161,8 @@ class DashboardSettings:
 _SETTINGS: DashboardSettings | None = None
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> DashboardSettings:
-    global _SETTINGS
-    if _SETTINGS is None:
-        _SETTINGS = DashboardSettings.from_env()
-    return _SETTINGS
+    settings = DashboardSettings.from_env()
+    validate_production_safety(settings)
+    return settings

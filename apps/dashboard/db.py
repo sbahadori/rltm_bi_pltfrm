@@ -171,3 +171,193 @@ def catalog_metadata_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
         return None
     finally:
         conn.close()
+
+
+def insert_runtime_event(event: dict[str, Any]) -> bool:
+    """
+    Best-effort durable runtime event persistence.
+
+    JSONL remains the primary local fallback in Phase 1.
+    A DB write failure must not break job execution or reconciliation.
+    """
+    sql = """
+        INSERT INTO runtime.job_run_event (
+            event_id,
+            event_type,
+            observed_at,
+            ts_epoch,
+            run_id,
+            executor_run_id,
+            job_id,
+            job,
+            job_name,
+            pipeline,
+            pipeline_id,
+            job_code,
+            runner_id,
+            state,
+            status,
+            executor_type,
+            executor_id,
+            executor_state,
+            started_at,
+            ended_at,
+            duration_seconds,
+            records_read,
+            records_written,
+            records_inserted,
+            records_updated,
+            records_deleted,
+            runtime_source,
+            status_reason,
+            payload
+        )
+        VALUES (
+            %(event_id)s,
+            %(event_type)s,
+            %(observed_at)s,
+            %(ts_epoch)s,
+            %(run_id)s,
+            %(executor_run_id)s,
+            %(job_id)s,
+            %(job)s,
+            %(job_name)s,
+            %(pipeline)s,
+            %(pipeline_id)s,
+            %(job_code)s,
+            %(runner_id)s,
+            %(state)s,
+            %(status)s,
+            %(executor_type)s,
+            %(executor_id)s,
+            %(executor_state)s,
+            %(started_at)s,
+            %(ended_at)s,
+            %(duration_seconds)s,
+            %(records_read)s,
+            %(records_written)s,
+            %(records_inserted)s,
+            %(records_updated)s,
+            %(records_deleted)s,
+            %(runtime_source)s,
+            %(status_reason)s,
+            %(payload)s
+        )
+        ON CONFLICT (event_id) DO NOTHING
+    """
+
+    params = {
+        "event_id": event.get("event_id"),
+        "event_type": event.get("event_type"),
+        "observed_at": event.get("observed_at"),
+        "ts_epoch": event.get("ts_epoch"),
+        "run_id": event.get("run_id"),
+        "executor_run_id": event.get("executor_run_id"),
+        "job_id": event.get("job_id"),
+        "job": event.get("job"),
+        "job_name": event.get("job_name"),
+        "pipeline": event.get("pipeline"),
+        "pipeline_id": event.get("pipeline_id"),
+        "job_code": event.get("job_code"),
+        "runner_id": event.get("runner_id"),
+        "state": event.get("state"),
+        "status": event.get("status"),
+        "executor_type": event.get("executor_type"),
+        "executor_id": event.get("executor_id"),
+        "executor_state": event.get("executor_state"),
+        "started_at": event.get("started_at"),
+        "ended_at": event.get("ended_at"),
+        "duration_seconds": event.get("duration_seconds"),
+        "records_read": event.get("records_read"),
+        "records_written": event.get("records_written"),
+        "records_inserted": event.get("records_inserted"),
+        "records_updated": event.get("records_updated"),
+        "records_deleted": event.get("records_deleted"),
+        "runtime_source": event.get("runtime_source"),
+        "status_reason": event.get("status_reason"),
+        "payload": psycopg2.extras.Json(_json_safe(event)),
+    }
+
+    try:
+        conn = psycopg2.connect(**_db_config())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[WARN] Failed to write runtime event to DB: {exc}", flush=True)
+        return False
+    
+
+def list_runtime_events(limit: int = 2000) -> list[dict[str, Any]]:
+    """
+    Read runtime events from PostgreSQL.
+
+    If the runtime schema/table does not exist yet, return [] so JSONL fallback
+    can continue to work during migration.
+    """
+    sql = """
+        SELECT
+            event_id,
+            event_type,
+            observed_at,
+            ts_epoch,
+            run_id,
+            executor_run_id,
+            job_id,
+            job,
+            job_name,
+            pipeline,
+            pipeline_id,
+            job_code,
+            runner_id,
+            state,
+            status,
+            executor_type,
+            executor_id,
+            executor_state,
+            started_at,
+            ended_at,
+            duration_seconds,
+            records_read,
+            records_written,
+            records_inserted,
+            records_updated,
+            records_deleted,
+            runtime_source,
+            status_reason,
+            payload
+        FROM runtime.job_run_event
+        ORDER BY observed_at DESC
+        LIMIT %s
+    """
+
+    try:
+        conn = psycopg2.connect(**_db_config())
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, (limit,))
+                rows = [dict(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+        flattened: list[dict[str, Any]] = []
+        for row in rows:
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            merged = {
+                **payload,
+                **{key: value for key, value in row.items() if key != "payload"},
+            }
+            flattened.append(merged)
+
+        return sorted(
+            _json_safe(flattened),
+            key=lambda item: int(item.get("ts_epoch") or 0),
+        )
+
+    except Exception as exc:
+        print(f"[WARN] Could not read runtime events from DB: {exc}", flush=True)
+        return []

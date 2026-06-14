@@ -7,10 +7,12 @@ from typing import Any
 
 try:
     from apps.dashboard.config_loader import JOB_RUN_REGISTRY_FILE
+    from apps.dashboard.db import insert_runtime_event
     from apps.dashboard.domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from apps.dashboard.runtime_models import now_iso
 except ImportError:  # pragma: no cover
     from .config_loader import JOB_RUN_REGISTRY_FILE
+    from .db import insert_runtime_event
     from .domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from .runtime_models import now_iso
 
@@ -27,6 +29,8 @@ def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
 
     with JOB_RUN_REGISTRY_FILE.open("a", encoding="utf-8") as file:
         file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    insert_runtime_event(event)
 
     return event
 

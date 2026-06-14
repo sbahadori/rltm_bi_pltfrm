@@ -77,6 +77,11 @@ class DashboardSettings:
     stream_status_stale_seconds: int
     stream_heartbeat_stale_seconds: int
 
+    runtime_reconciler_enabled: bool
+    runtime_reconciler_interval_seconds: int
+    runtime_reconciler_failure_cooldown_seconds: int
+    runtime_reconciler_limit: int
+
     control_db_host: str
     control_db_port: int
     control_db_name: str
@@ -94,6 +99,8 @@ class DashboardSettings:
     
     catalog_backup_dir: Path
     control_onboarding_dag_id: str
+
+
 
     @classmethod
     def from_env(cls) -> "DashboardSettings":
@@ -155,6 +162,10 @@ class DashboardSettings:
                     str(repo_root / "runtime" / "catalog_backups"),
                 )
             ),
+            runtime_reconciler_enabled=env_bool("RUNTIME_RECONCILER_ENABLED", True),
+            runtime_reconciler_interval_seconds=env_int("RUNTIME_RECONCILER_INTERVAL_SECONDS", 10),
+            runtime_reconciler_failure_cooldown_seconds=env_int("RUNTIME_RECONCILER_FAILURE_COOLDOWN_SECONDS", 300),
+            runtime_reconciler_limit=env_int("RUNTIME_RECONCILER_LIMIT", 2000),
         )
 
 

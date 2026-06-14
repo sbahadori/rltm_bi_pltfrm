@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import time
 from typing import Any
 
 try:
@@ -17,6 +17,43 @@ except ImportError:  # pragma: no cover
 OPEN_STATES = {"submitted", "queued", "scheduled", "running", "restarting", "unknown"}
 TERMINAL_STATES = {"success", "failed", "error", "skipped", "upstream_failed", "cancelled", "canceled"}
 
+def _latest_failure_by_executor_run(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        if row.get("event_type") != "job_reconciliation_failed":
+            continue
+
+        key = _run_key(row)
+        if not key:
+            continue
+
+        current = latest.get(key)
+        if not current or int(row.get("ts_epoch") or 0) >= int(current.get("ts_epoch") or 0):
+            latest[key] = row
+
+    return latest
+
+
+def _should_write_failure_event(
+    *,
+    row: dict[str, Any],
+    latest_failures: dict[str, dict[str, Any]],
+    cooldown_seconds: int,
+) -> bool:
+    key = _run_key(row)
+    if not key:
+        return True
+
+    last_failure = latest_failures.get(key)
+    if not last_failure:
+        return True
+
+    last_ts = int(last_failure.get("ts_epoch") or 0)
+    if last_ts <= 0:
+        return True
+
+    return int(time.time()) - last_ts >= cooldown_seconds
 
 def platform_state_from_airflow(airflow_state: str | None) -> str:
     state = normalize_state(airflow_state)
@@ -68,7 +105,7 @@ def _latest_by_executor_run(rows: list[dict[str, Any]]) -> dict[str, dict[str, A
     return latest
 
 
-def reconcile_runtime_once(limit: int = 2000) -> dict[str, Any]:
+def reconcile_runtime_once(limit: int = 2000, failure_cooldown_seconds: int = 300,) -> dict[str, Any]:
     """
     Reconcile submitted/running platform runs with their real Airflow DAG run state.
 
@@ -79,6 +116,9 @@ def reconcile_runtime_once(limit: int = 2000) -> dict[str, Any]:
     """
     rows = read_registry(limit=limit)
     latest = _latest_by_executor_run(rows)
+
+    latest_failures = _latest_failure_by_executor_run(rows)
+    throttled_failures = 0
 
     checked = 0
     updated = 0
@@ -162,6 +202,14 @@ def reconcile_runtime_once(limit: int = 2000) -> dict[str, Any]:
 
         except Exception as exc:
             failed += 1
+            if not _should_write_failure_event(
+                row=row,
+                latest_failures=latest_failures,
+                cooldown_seconds=failure_cooldown_seconds,
+            ):
+                throttled_failures += 1
+                continue
+        
             event = append_runtime_event(
                 {
                     "event_type": "job_reconciliation_failed",
@@ -188,5 +236,7 @@ def reconcile_runtime_once(limit: int = 2000) -> dict[str, Any]:
         "updated": updated,
         "skipped": skipped,
         "failed": failed,
+        "throttled_failures": throttled_failures,
         "events": events,
     }
+

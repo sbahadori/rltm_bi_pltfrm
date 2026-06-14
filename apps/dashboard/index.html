@@ -852,6 +852,7 @@ const S = {
   jobs: [],
   pipelines: [],
   alerts: [],
+  streamStatus: null,
   selectedPipeline: null,
   selectedStream: null,
   currentJob: null,
@@ -1014,6 +1015,7 @@ async function refresh(){
     ]);
     S.jobs = runtime.jobs || [];
     S.pipelines = cfg.pipelines || [];
+    S.streamStatus = runtime.stream_status || null;
     S.alerts = buildAlerts(runtime);
     renderAll();
     syncOpenDrawerAfterRefresh();
@@ -1026,6 +1028,17 @@ async function refresh(){
 
 function buildAlerts(runtime){
   const alerts=[];
+  const streamStatus = runtime.stream_status || {};
+
+  if(streamStatus.status_file_error){
+    const cached = streamStatus.using_cached_status ? 'Showing last valid stream snapshot. ' : '';
+    alerts.push({
+      level:'ERROR',
+      title:'Stream supervisor status file error',
+      msg:`${cached}${streamStatus.reason || 'Invalid stream status JSON'} · first seen: ${fmtDate(streamStatus.status_file_error_first_seen_at)} · last seen: ${fmtDate(streamStatus.status_file_error_last_seen_at)} · last good: ${fmtDate(streamStatus.last_successful_read_at)}`,
+    });
+  }
+
   for(const j of S.jobs){
     const s=String(j.current_status||'').toLowerCase();
     if(['failed','error','airflow_unavailable'].includes(s))

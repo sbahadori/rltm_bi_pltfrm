@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import Any
 
 try:
-    from apps.dashboard.db import insert_runtime_event
+    from shared.runtime.job_event_writer import append_job_event
     from apps.dashboard.domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from apps.dashboard.runtime_models import now_iso
 except ImportError:  # pragma: no cover
-    from .db import insert_runtime_event
+    from shared.runtime.job_event_writer import append_job_event
     from .domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from .runtime_models import now_iso
 
@@ -22,7 +21,7 @@ def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
         "observed_at": event.get("observed_at") or now_iso(),
         "ts_epoch": event.get("ts_epoch") or int(time.time()),
     }
-    insert_runtime_event(event)
+    append_job_event(**event)
     return event
 
 

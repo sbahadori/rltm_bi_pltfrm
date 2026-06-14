@@ -549,10 +549,9 @@ class StreamSupervisor:
             },
         }
 
-        self.status_file.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        tmp_file = self.status_file.with_name(f".{self.status_file.name}.{os.getpid()}.tmp")
+        tmp_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_file.replace(self.status_file)
 
     def run(self) -> None:
         while not self.stop_requested:

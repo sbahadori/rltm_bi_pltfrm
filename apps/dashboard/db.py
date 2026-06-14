@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import psycopg2
 import psycopg2.extras
@@ -173,63 +173,3 @@ def catalog_metadata_for_job(job: dict[str, Any]) -> dict[str, Any] | None:
     finally:
         conn.close()
 
-
-
-def _as_bigint_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        text = str(value).strip()
-        return int(text) if text.isdigit() else None
-    except Exception:
-        return None
-
-
-def _guid_or_new(value: Any) -> str:
-    if value in (None, ""):
-        return str(uuid4())
-
-    try:
-        return str(UUID(str(value)))
-    except Exception:
-        return str(uuid4())
-
-
-def insert_runtime_event(event: dict[str, Any]) -> bool:
-    """
-    Best-effort insert into runtime.job_event through the existing DB contract.
-    """
-    run_id = _guid_or_new(event.get("run_id"))
-    event = {**event, "run_id": run_id}
-    job_id = _as_bigint_or_none(event.get("job_id"))
-    job_key = (
-        event.get("job_key")
-        or event.get("job_code")
-        or event.get("entity_name")
-        or event.get("job_name")
-        or event.get("job")
-    )
-    event_type = event.get("event_type") or "runtime_event"
-    event_message = (
-        event.get("status")
-        or event.get("state")
-        or event.get("status_reason")
-        or event.get("error_message")
-    )
-
-    try:
-        call_usp_void(
-            "usp_insert_job_event",
-            (
-                run_id,
-                job_id,
-                job_key,
-                event_type,
-                event_message,
-                json.dumps(_json_safe(event)),
-            ),
-        )
-        return True
-    except Exception as exc:
-        print(f"[WARN] Failed to write runtime job_event: {exc}", flush=True)
-        return False

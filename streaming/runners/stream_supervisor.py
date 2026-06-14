@@ -22,6 +22,7 @@ def _bootstrap_repo_path() -> Path:
 REPO_ROOT = _bootstrap_repo_path()
 
 from shared.runtime.job_event_writer import append_job_event, new_run_id  # noqa: E402
+from shared.runtime.stream_runtime_db import upsert_stream_unit_current  # noqa: E402
 from streaming.specs.stream_spec_utils import (  # noqa: E402
     load_stream_registry,
     resolve_repo_path,
@@ -103,6 +104,45 @@ class StreamSupervisor:
             append_job_event(**payload)
         except Exception as exc:
             print(f"[supervisor][WARN] runtime event write failed: {exc}", flush=True)
+
+    def _upsert_current_state(
+        self,
+        state: UnitState,
+        *,
+        computed_status: str,
+        status_reason: str | None = None,
+        pid: int | None = None,
+        returncode: int | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            upsert_stream_unit_current(
+                unit_name=state.unit_name,
+                stream_name=state.stream_name,
+                layer=state.layer,
+                run_id=state.run_id,
+                computed_status=computed_status,
+                status_reason=status_reason,
+                pid=pid if pid is not None else state.pid,
+                returncode=returncode,
+                retries=state.retries,
+                max_retries=state.max_retries,
+                checkpoint_path=state.checkpoint_dir,
+                payload={
+                    "source": "stream_supervisor",
+                    "unit_name": state.unit_name,
+                    "stream_name": state.stream_name,
+                    "layer": state.layer,
+                    "run_id": state.run_id,
+                    "pid": pid if pid is not None else state.pid,
+                    "returncode": returncode,
+                    "retries": state.retries,
+                    "max_retries": state.max_retries,
+                    **(payload or {}),
+                },
+            )
+        except Exception as exc:
+            print(f"[supervisor][WARN] stream current state write failed: {exc}", flush=True)
 
     def _load_units(self) -> None:
         registry = load_stream_registry(self.registry_path)
@@ -226,6 +266,17 @@ class StreamSupervisor:
             records_deleted=None,
         )
 
+        self._upsert_current_state(
+            state,
+            computed_status="running",
+            status_reason="Stream process started by supervisor.",
+            pid=proc.pid,
+            payload={
+                "event_type": "stream_started",
+                "started_at_epoch": started_epoch,
+            },
+        )
+
     def _terminate_all(self) -> None:
         for unit_name, proc in list(self.processes.items()):
             try:
@@ -290,6 +341,12 @@ class StreamSupervisor:
                         status="stopping",
                         status_reason="Stop requested from dashboard.",
                     )
+                    self._upsert_current_state(
+                        state,
+                        computed_status="stopping",
+                        status_reason="Stop requested from dashboard.",
+                        payload={"event_type": "stream_stop_requested"},
+                    )
 
                 if proc and proc.poll() is None:
                     print(f"[supervisor] stop requested for '{unit_name}'", flush=True)
@@ -311,6 +368,12 @@ class StreamSupervisor:
                         **self._runtime_identity(state, unit_name),
                         status="restarting",
                         status_reason="Restart requested from dashboard.",
+                    )
+                    self._upsert_current_state(
+                        state,
+                        computed_status="restarting",
+                        status_reason="Restart requested from dashboard.",
+                        payload={"event_type": "stream_restart_requested"},
                     )
 
                 if proc and proc.poll() is None:
@@ -382,6 +445,20 @@ class StreamSupervisor:
                     records_deleted=None,
                 )
 
+                self._upsert_current_state(
+                    state,
+                    computed_status=status,
+                    status_reason=reason,
+                    pid=proc.pid,
+                    returncode=rc,
+                    payload={
+                        "event_type": "stream_exited",
+                        "started_at_epoch": started_epoch,
+                        "ended_at_epoch": ended_epoch,
+                        "duration_seconds": round(ended_epoch - started_epoch, 3),
+                    },
+                )
+
                 state.pid = None
                 state.returncode = rc
 
@@ -445,6 +522,7 @@ class StreamSupervisor:
 
         return {
             "enabled": state.enabled,
+            "run_id": state.run_id,
             "pid": state.pid,
             "returncode": state.returncode,
             "retries": state.retries,

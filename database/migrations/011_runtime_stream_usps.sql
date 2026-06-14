@@ -140,7 +140,17 @@ BEGIN
         computed_status = COALESCE(EXCLUDED.computed_status, runtime.stream_unit_current.computed_status),
         status_reason = COALESCE(EXCLUDED.status_reason, runtime.stream_unit_current.status_reason),
         pid = COALESCE(EXCLUDED.pid, runtime.stream_unit_current.pid),
-        returncode = COALESCE(EXCLUDED.returncode, runtime.stream_unit_current.returncode),
+        returncode =
+            CASE
+                WHEN EXCLUDED.computed_status IN (
+                    'running',
+                    'starting',
+                    'waiting_for_topic',
+                    'stopping',
+                    'restarting'
+                ) THEN EXCLUDED.returncode
+                ELSE COALESCE(EXCLUDED.returncode, runtime.stream_unit_current.returncode)
+            END,
         retries = COALESCE(EXCLUDED.retries, runtime.stream_unit_current.retries),
         max_retries = COALESCE(EXCLUDED.max_retries, runtime.stream_unit_current.max_retries),
         heartbeat_status = COALESCE(EXCLUDED.heartbeat_status, runtime.stream_unit_current.heartbeat_status),

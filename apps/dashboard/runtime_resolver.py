@@ -9,11 +9,12 @@ Single responsibility:
 - Collapse event-level rows into job-run-level rows.
 
 Source precedence:
-1. Control DB
-2. job_run_registry JSONL
-3. Airflow
-4. Catalog/onboarded metadata
-5. Unknown/unavailable
+1. Control DB / legacy runtime USP
+2. runtime.job_run_event
+3. job_run_registry JSONL
+4. Airflow
+5. Catalog/onboarded metadata
+6. Unknown/unavailable
 """
 
 import json
@@ -74,6 +75,13 @@ except ImportError:  # pragma: no cover
         job_mode_of,
         pipeline_id_of,
     )
+
+from apps.dashboard.db import (
+    call_usp_rows,
+    catalog_metadata_for_job,
+    list_runtime_events,
+    list_runtime_job_run_states,
+)
 
 def read_registry(limit: int = 2000) -> list[dict[str, Any]]:
     if not JOB_RUN_REGISTRY_FILE.exists():
@@ -353,6 +361,20 @@ def runtime_db_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[di
 
     return collapsed
 
+def runtime_state_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+    job = canonical_job(job)
+    rows = list_runtime_job_run_states(limit=max(2000, limit * 100))
+
+    matched = [normalize_registry_run_row(row) for row in rows if registry_row_matches_job(row, job)]
+
+    for row in matched:
+        row["runtime_source"] = "runtime_state_db"
+        row["runtime_source_rank"] = 1
+        row["is_fallback"] = False
+        row["fallback_reason"] = None
+
+    return matched[:limit]
+
 def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
     stream_status = load_stream_status()
     enriched: list[dict[str, Any]] = []
@@ -405,111 +427,137 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                 runtime_job["records_deleted"] = 0
 
         else:
-            runtime_db_runs = runtime_db_run_rows_for_job(job, limit=1)
-            if runtime_db_runs:
-                runtime_db = runtime_db_runs[0]
+            runtime_state_runs = runtime_state_run_rows_for_job(job, limit=1)
+            if runtime_state_runs:
+                runtime_state = runtime_state_runs[0]
                 runtime_job.update(
                     {
-                        "current_status": runtime_db.get("state", "unknown"),
-                        "latest_run_id": runtime_db.get("run_id"),
-                        "latest_dag_run_id": runtime_db.get("dag_run_id"),
-                        "started_at": runtime_db.get("started_at"),
-                        "ended_at": runtime_db.get("ended_at"),
-                        "duration_seconds": runtime_db.get("duration_seconds"),
-                        "target_path": runtime_db.get("target_path") or runtime_job.get("target_path"),
-                        "status_reason": runtime_db.get("status_reason"),
-                        "runtime_source": "runtime_db",
+                        "current_status": runtime_state.get("state", "unknown"),
+                        "latest_run_id": runtime_state.get("run_id"),
+                        "latest_dag_run_id": runtime_state.get("dag_run_id"),
+                        "started_at": runtime_state.get("started_at"),
+                        "ended_at": runtime_state.get("ended_at"),
+                        "duration_seconds": runtime_state.get("duration_seconds"),
+                        "target_path": runtime_state.get("target_path") or runtime_job.get("target_path"),
+                        "status_reason": runtime_state.get("status_reason"),
+                        "runtime_source": "runtime_state_db",
                         "runtime_source_rank": 1,
                         "is_fallback": False,
                         "fallback_reason": None,
                         "runtime_available": True,
-                        "records_read": runtime_db.get("records_read"),
-                        "records_written": runtime_db.get("records_written"),
-                        "records_inserted": runtime_db.get("records_inserted"),
-                        "records_updated": runtime_db.get("records_updated"),
-                        "records_deleted": runtime_db.get("records_deleted"),
+                        "records_read": runtime_state.get("records_read"),
+                        "records_written": runtime_state.get("records_written"),
+                        "records_inserted": runtime_state.get("records_inserted"),
+                        "records_updated": runtime_state.get("records_updated"),
+                        "records_deleted": runtime_state.get("records_deleted"),
                     }
                 )
-
             else:
-                registry_runs = registry_run_rows_for_job(job, limit=1)
-                if registry_runs:
-                    registry = registry_runs[0]
+                runtime_db_runs = runtime_db_run_rows_for_job(job, limit=1)
+                if runtime_db_runs:
+                    runtime_db = runtime_db_runs[0]
                     runtime_job.update(
                         {
-                            "current_status": registry.get("state", "unknown"),
-                            "latest_run_id": registry.get("run_id"),
-                            "started_at": registry.get("started_at"),
-                            "ended_at": registry.get("ended_at"),
-                            "duration_seconds": registry.get("duration_seconds"),
-                            "target_path": registry.get("target_path") or runtime_job.get("target_path"),
-                            "status_reason": registry.get("status_reason"),
-                            "runtime_source": "job_run_registry",
-                            "runtime_source_rank": 2,
-                            "is_fallback": True,
-                            "fallback_reason": (
-                                "Runtime DB had no matching rows; "
-                                "using local job_run_registry JSONL as debug fallback."
-                            ),
+                            "current_status": runtime_db.get("state", "unknown"),
+                            "latest_run_id": runtime_db.get("run_id"),
+                            "latest_dag_run_id": runtime_db.get("dag_run_id"),
+                            "started_at": runtime_db.get("started_at"),
+                            "ended_at": runtime_db.get("ended_at"),
+                            "duration_seconds": runtime_db.get("duration_seconds"),
+                            "target_path": runtime_db.get("target_path") or runtime_job.get("target_path"),
+                            "status_reason": runtime_db.get("status_reason"),
+                            "runtime_source": "runtime_db",
+                            "runtime_source_rank": 1,
+                            "is_fallback": False,
+                            "fallback_reason": None,
                             "runtime_available": True,
-                            "latest_dag_run_id": registry.get("dag_run_id"),
-                            "records_read": registry.get("records_read"),
-                            "records_written": registry.get("records_written"),
-                            "records_inserted": registry.get("records_inserted"),
-                            "records_updated": registry.get("records_updated"),
-                            "records_deleted": registry.get("records_deleted"),
+                            "records_read": runtime_db.get("records_read"),
+                            "records_written": runtime_db.get("records_written"),
+                            "records_inserted": runtime_db.get("records_inserted"),
+                            "records_updated": runtime_db.get("records_updated"),
+                            "records_deleted": runtime_db.get("records_deleted"),
                         }
                     )
 
-                elif job_mode_of(job) == "batch":
-                    airflow = latest_airflow_task(pipeline_id_of(job), job_name_of(job))
-                    runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
-                    runtime_job.update(
-                        {
-                            **airflow,
-                            "runtime_source": runtime_source,
-                            "runtime_available": airflow.get("airflow_available", False),
-                        }
-                    )
+                else:
+                    registry_runs = registry_run_rows_for_job(job, limit=1)
+                    if registry_runs:
+                        registry = registry_runs[0]
+                        runtime_job.update(
+                            {
+                                "current_status": registry.get("state", "unknown"),
+                                "latest_run_id": registry.get("run_id"),
+                                "started_at": registry.get("started_at"),
+                                "ended_at": registry.get("ended_at"),
+                                "duration_seconds": registry.get("duration_seconds"),
+                                "target_path": registry.get("target_path") or runtime_job.get("target_path"),
+                                "status_reason": registry.get("status_reason"),
+                                "runtime_source": "job_run_registry",
+                                "runtime_source_rank": 2,
+                                "is_fallback": True,
+                                "fallback_reason": (
+                                    "Runtime DB had no matching rows; "
+                                    "using local job_run_registry JSONL as debug fallback."
+                                ),
+                                "runtime_available": True,
+                                "latest_dag_run_id": registry.get("dag_run_id"),
+                                "records_read": registry.get("records_read"),
+                                "records_written": registry.get("records_written"),
+                                "records_inserted": registry.get("records_inserted"),
+                                "records_updated": registry.get("records_updated"),
+                                "records_deleted": registry.get("records_deleted"),
+                            }
+                        )
 
-                    if airflow.get("missing_airflow_dag"):
-                        metadata = catalog_metadata_for_job(job)
-                        if metadata:
-                            runtime_job.update(
-                                {
-                                    "current_status": "onboarded",
-                                    "runtime_source": "catalog_metadata",
-                                    "runtime_available": False,
-                                    "metadata_available": True,
-                                    "metadata_job_id": metadata.get("job_id"),
-                                    "metadata_job_code": metadata.get("job_code"),
-                                    "metadata_pipeline_id": metadata.get("pipeline_id"),
-                                    "metadata_airflow_dag_id": metadata.get("airflow_dag_id"),
-                                    "source_type": metadata.get("source_type") or runtime_job.get("source_type"),
-                                    "target_path": metadata.get("target_path") or runtime_job.get("target_path"),
-                                    "status_reason": (
-                                        "Job is onboarded in the control DB, but no executable Airflow DAG exists yet. "
-                                        "Create a dispatcher DAG or bind this pipeline to an existing DAG to execute it."
-                                    ),
-                                }
-                            )
+                    elif job_mode_of(job) == "batch":
+                        airflow = latest_airflow_task(pipeline_id_of(job), job_name_of(job))
+                        runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
+                        runtime_job.update(
+                            {
+                                **airflow,
+                                "runtime_source": runtime_source,
+                                "runtime_available": airflow.get("airflow_available", False),
+                            }
+                        )
 
-                elif job_mode_of(job) == "dynamic":
-                    runtime_job.update(
-                        {
-                            "current_status": "defined",
-                            "latest_run_id": None,
-                            "started_at": None,
-                            "ended_at": None,
-                            "duration_seconds": None,
-                            "status_reason": (
-                                "Defined in catalog/config layer; no Airflow executor DAG configured yet. "
-                                "Executable jobs must be materialized through pipeline_catalog.json and onboarding."
-                            ),
-                            "runtime_source": "catalog_defined",
-                            "runtime_available": False,
-                        }
-                    )
+                        if airflow.get("missing_airflow_dag"):
+                            metadata = catalog_metadata_for_job(job)
+                            if metadata:
+                                runtime_job.update(
+                                    {
+                                        "current_status": "onboarded",
+                                        "runtime_source": "catalog_metadata",
+                                        "runtime_available": False,
+                                        "metadata_available": True,
+                                        "metadata_job_id": metadata.get("job_id"),
+                                        "metadata_job_code": metadata.get("job_code"),
+                                        "metadata_pipeline_id": metadata.get("pipeline_id"),
+                                        "metadata_airflow_dag_id": metadata.get("airflow_dag_id"),
+                                        "source_type": metadata.get("source_type") or runtime_job.get("source_type"),
+                                        "target_path": metadata.get("target_path") or runtime_job.get("target_path"),
+                                        "status_reason": (
+                                            "Job is onboarded in the control DB, but no executable Airflow DAG exists yet. "
+                                            "Create a dispatcher DAG or bind this pipeline to an existing DAG to execute it."
+                                        ),
+                                    }
+                                )
+
+                    elif job_mode_of(job) == "dynamic":
+                        runtime_job.update(
+                            {
+                                "current_status": "defined",
+                                "latest_run_id": None,
+                                "started_at": None,
+                                "ended_at": None,
+                                "duration_seconds": None,
+                                "status_reason": (
+                                    "Defined in catalog/config layer; no Airflow executor DAG configured yet. "
+                                    "Executable jobs must be materialized through pipeline_catalog.json and onboarding."
+                                ),
+                                "runtime_source": "catalog_defined",
+                                "runtime_available": False,
+                            }
+                        )
 
         if job_mode_of(runtime_job) == "stream":
             db_unit = stream_current_from_db(runtime_job)

@@ -64,3 +64,6 @@ CREATE INDEX IF NOT EXISTS ix_job_run_event_observed_at
 
 CREATE INDEX IF NOT EXISTS ix_job_run_event_state
     ON runtime.job_run_event (state);
+
+
+-- Get-Content .\database\migrations\030_runtime_persistence.sql -Raw | docker exec -i postgres-warehouse `  sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'

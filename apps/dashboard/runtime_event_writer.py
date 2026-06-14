@@ -7,20 +7,15 @@ from typing import Any
 
 try:
     from apps.dashboard.config_loader import JOB_RUN_REGISTRY_FILE
-    from apps.dashboard.db import insert_runtime_event, upsert_runtime_job_run_state
+    from apps.dashboard.db import insert_runtime_event
     from apps.dashboard.domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from apps.dashboard.runtime_models import now_iso
 except ImportError:  # pragma: no cover
     from .config_loader import JOB_RUN_REGISTRY_FILE
-    from .db import insert_runtime_event, upsert_runtime_job_run_state
+    from .db import insert_runtime_event
     from .domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from .runtime_models import now_iso
 
-from apps.dashboard.db import (
-    insert_runtime_event,
-    upsert_runtime_job_run,
-    upsert_runtime_job_run_state,
-)
 
 def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
     JOB_RUN_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -36,10 +31,9 @@ def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
         file.write(json.dumps(event, ensure_ascii=False) + "\n")
 
     insert_runtime_event(event)
-    upsert_runtime_job_run(event)
-    upsert_runtime_job_run_state(event)
 
     return event
+
 
 def write_job_run_event(
     *,
@@ -60,13 +54,11 @@ def write_job_run_event(
         "event_id": str(uuid.uuid4()),
         "event_type": "job_submitted",
 
-        # Runtime state
         "state": "submitted",
         "status": "submitted",
         "run_id": run_id,
         "executor_run_id": executor_run_id,
 
-        # Canonical job identity
         "job_id": job_id_of(job),
         "job": job_name_of(job),
         "job_name": job_name_of(job),
@@ -75,27 +67,22 @@ def write_job_run_event(
         "job_code": job.get("job_code"),
         "runner_id": job.get("runner_id"),
 
-        # Executor identity
         "executor_type": execution_result.get("executor_type"),
         "executor_id": execution_result.get("executor_id"),
 
-        # Time
         "observed_at": observed_at,
         "started_at": observed_at,
         "ts_epoch": ts_epoch,
 
-        # Actor / request
         "submitted_by": submitted_by,
         "request_payload": request_payload or {},
 
-        # Metrics placeholders
         "records_read": None,
         "records_written": None,
         "records_inserted": None,
         "records_updated": 0,
         "records_deleted": 0,
 
-        # Source
         "runtime_source": "runtime_event_writer",
     }
 

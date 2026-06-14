@@ -78,6 +78,7 @@ class StreamSupervisor:
 
     def _runtime_identity(self, state: UnitState, unit_name: str | None = None) -> dict[str, Any]:
         unit = unit_name or state.unit_name
+        job_code = f"{state.stream_name}__{state.layer}"
         job_name = f"{state.layer}_{state.stream_name}"
 
         return {
@@ -86,10 +87,10 @@ class StreamSupervisor:
             "stream_name": state.stream_name,
             "layer": state.layer,
 
-            # Canonical job identity for Control DB resolution
+            # Must match meta.job
             "job_id": None,
-            "job_key": f"stream.{state.stream_name}.{state.layer}",
-            "job_code": f"stream.{state.stream_name}.{state.layer}",
+            "job_key": job_code,
+            "job_code": job_code,
             "job": job_name,
             "job_name": job_name,
             "pipeline": state.stream_name,

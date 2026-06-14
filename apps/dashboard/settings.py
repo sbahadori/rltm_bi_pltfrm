@@ -67,8 +67,7 @@ class DashboardSettings:
 
     batch_catalog_path: Path
     stream_registry_path: Path
-    job_run_registry_file: Path
-
+    
     stream_status_file: Path
     stream_log_dir: Path
     airflow_log_dir: Path
@@ -76,11 +75,6 @@ class DashboardSettings:
 
     stream_status_stale_seconds: int
     stream_heartbeat_stale_seconds: int
-
-    runtime_reconciler_enabled: bool
-    runtime_reconciler_interval_seconds: int
-    runtime_reconciler_failure_cooldown_seconds: int
-    runtime_reconciler_limit: int
 
     control_db_host: str
     control_db_port: int
@@ -121,13 +115,7 @@ class DashboardSettings:
                     str(repo_root / "configs" / "streaming" / "stream_registry.json"),
                 )
             ),
-            job_run_registry_file=Path(
-                env_str(
-                    "JOB_RUN_REGISTRY_FILE",
-                    str(repo_root / "runtime" / "job_runs" / "job_runs.jsonl"),
-                )
-            ),
-
+            
             stream_status_file=Path(
                 env_str("STREAM_STATUS_FILE", "/runtime/spark_health/stream_supervisor_status.json")
             ),
@@ -162,10 +150,6 @@ class DashboardSettings:
                     str(repo_root / "runtime" / "catalog_backups"),
                 )
             ),
-            runtime_reconciler_enabled=env_bool("RUNTIME_RECONCILER_ENABLED", True),
-            runtime_reconciler_interval_seconds=env_int("RUNTIME_RECONCILER_INTERVAL_SECONDS", 10),
-            runtime_reconciler_failure_cooldown_seconds=env_int("RUNTIME_RECONCILER_FAILURE_COOLDOWN_SECONDS", 300),
-            runtime_reconciler_limit=env_int("RUNTIME_RECONCILER_LIMIT", 2000),
         )
 
 

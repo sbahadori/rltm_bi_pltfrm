@@ -25,10 +25,9 @@ apps/dashboard/
 ## Runtime source precedence
 
 1. Control DB
-2. `job_run_registry` JSONL
-3. Airflow
-4. Catalog/onboarded metadata
-5. Unknown/unavailable
+2. Airflow
+3. Catalog/onboarded metadata
+4. Unknown/unavailable
 
 ## Important guardrail
 

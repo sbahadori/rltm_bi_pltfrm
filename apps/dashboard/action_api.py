@@ -39,11 +39,6 @@ try:
 except ImportError:  # pragma: no cover
     from .runtime_event_writer import write_job_run_event
 
-try:
-    from apps.dashboard.runtime_reconciler import reconcile_runtime_once
-except ImportError:  # pragma: no cover
-    from .runtime_reconciler import reconcile_runtime_once
-
 router = APIRouter()
 
 class JobRunRequest(BaseModel):
@@ -405,41 +400,6 @@ async def action_job_run(
             target_type="job",
             target_id=job_id,
             request_payload=payload,
-            result_status="failed",
-            error_message=str(exc),
-            duration_ms=int((time.time() - started) * 1000),
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
-    
-
-@router.post("/api/actions/runtime/reconcile")
-async def action_runtime_reconcile(
-    user: dict = Depends(require_role("admin", "operator")),
-) -> dict:
-    started = time.time()
-    try:
-        result = reconcile_runtime_once()
-
-        insert_action_log(
-            user=user,
-            action_type="runtime_reconcile",
-            target_type="runtime",
-            target_id="job_run_registry",
-            request_payload={},
-            result_status="success",
-            result_payload=result,
-            duration_ms=int((time.time() - started) * 1000),
-        )
-
-        return result
-
-    except Exception as exc:
-        insert_action_log(
-            user=user,
-            action_type="runtime_reconcile",
-            target_type="runtime",
-            target_id="job_run_registry",
-            request_payload={},
             result_status="failed",
             error_message=str(exc),
             duration_ms=int((time.time() - started) * 1000),

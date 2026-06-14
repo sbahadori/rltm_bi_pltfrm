@@ -5,7 +5,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from shared.runtime.job_run_registry import (
+from shared.runtime.job_event_writer import (
     append_job_event,
     exception_to_text,
     new_run_id,

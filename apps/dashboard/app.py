@@ -20,10 +20,7 @@ try:
     from apps.dashboard.runtime_api import router as runtime_router
     from apps.dashboard.runtime_models import now_iso
     from apps.dashboard.websocket_api import router as websocket_router
-    from apps.dashboard.runtime_reconciler_worker import (
-        start_runtime_reconciler_worker,
-        stop_runtime_reconciler_worker,
-    )
+
 except ImportError:  # pragma: no cover - package import fallback
     from .action_api import router as action_router
     from .auth_api import router as auth_router
@@ -33,10 +30,7 @@ except ImportError:  # pragma: no cover - package import fallback
     from .runtime_api import router as runtime_router
     from .runtime_models import now_iso
     from .websocket_api import router as websocket_router
-    from .runtime_reconciler_worker import (
-        start_runtime_reconciler_worker,
-        stop_runtime_reconciler_worker,
-    )
+
 
 
 def create_app() -> FastAPI:
@@ -57,13 +51,6 @@ def create_app() -> FastAPI:
     app.include_router(log_router)
     app.include_router(websocket_router)
 
-    @app.on_event("startup")
-    async def startup_runtime_workers() -> None:
-        start_runtime_reconciler_worker()
-
-    @app.on_event("shutdown")
-    async def shutdown_runtime_workers() -> None:
-        await stop_runtime_reconciler_worker()
         
     @app.get("/health")
     async def health() -> dict[str, str]:

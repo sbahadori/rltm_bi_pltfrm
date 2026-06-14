@@ -40,7 +40,6 @@ STREAM_REGISTRY_PATH = settings.stream_registry_path
 STREAM_STATUS_FILE = settings.stream_status_file
 STREAM_LOG_DIR = settings.stream_log_dir
 AIRFLOW_LOG_DIR = settings.airflow_log_dir
-JOB_RUN_REGISTRY_FILE = settings.job_run_registry_file
 
 AIRFLOW_API_BASE = settings.airflow_api_base
 AIRFLOW_USER = settings.airflow_user

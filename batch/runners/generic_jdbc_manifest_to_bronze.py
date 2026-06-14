@@ -43,7 +43,7 @@ from shared.control.watermark_store import (  # noqa: E402
     write_watermark_to_control_db,
 )
 from shared.core.spark import create_spark  # noqa: E402
-from shared.runtime.job_run_registry import (  # noqa: E402
+from shared.runtime.job_event_writer import (  # noqa: E402
     append_job_event,
     exception_to_text,
     new_run_id,

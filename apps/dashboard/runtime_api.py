@@ -18,7 +18,7 @@ try:
     from apps.dashboard.airflow_client import dag_run_rows_for_job
     from apps.dashboard.config_loader import (
         AIRFLOW_LOG_DIR,
-        JOB_RUN_REGISTRY_FILE,
+        
         STREAM_LOG_DIR,
         STREAM_STATUS_FILE,
         config_bundle,
@@ -27,13 +27,13 @@ try:
         path_state,
     )
     from apps.dashboard.runtime_models import now_iso
-    from apps.dashboard.runtime_resolver import control_run_rows_for_job, enrich_jobs, registry_run_rows_for_job
+    from apps.dashboard.runtime_resolver import control_run_rows_for_job, enrich_jobs
     from apps.dashboard.stream_runtime import load_stream_status
 except ImportError:  # pragma: no cover
     from .airflow_client import dag_run_rows_for_job
     from .config_loader import (
         AIRFLOW_LOG_DIR,
-        JOB_RUN_REGISTRY_FILE,
+        
         STREAM_LOG_DIR,
         STREAM_STATUS_FILE,
         config_bundle,
@@ -42,7 +42,7 @@ except ImportError:  # pragma: no cover
         path_state,
     )
     from .runtime_models import now_iso
-    from .runtime_resolver import control_run_rows_for_job, enrich_jobs, registry_run_rows_for_job
+    from .runtime_resolver import control_run_rows_for_job, enrich_jobs
     from .stream_runtime import load_stream_status
 
 from apps.dashboard.execution_resolver import executor_id_for_job
@@ -77,7 +77,6 @@ async def get_mounts() -> JSONResponse:
             "stream_status_file": path_state(STREAM_STATUS_FILE),
             "stream_log_dir": path_state(STREAM_LOG_DIR),
             "airflow_log_dir": path_state(AIRFLOW_LOG_DIR),
-            "job_run_registry_file": path_state(JOB_RUN_REGISTRY_FILE),
             "checked_at": now_iso(),
         }
     )
@@ -119,23 +118,6 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
             }
         )
 
-    registry_runs = registry_run_rows_for_job(job, limit=limit)
-    if registry_runs:
-        return JSONResponse(
-            {
-                "available": True,
-                "source": "job_run_registry",
-                "source_rank": 2,
-                "is_fallback": True,
-                "fallback_reason": (
-                    "Control DB had no matching runtime rows; "
-                    "using local job_run_registry JSONL as debug fallback."
-                ),
-                "job_id": job_id,
-                "runs": registry_runs,
-                "count": len(registry_runs),
-            }
-        )
 
     if job.get("type") == "batch":
         try:
@@ -161,7 +143,7 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
                     "source": "airflow",
                     "source_rank": 3,
                     "is_fallback": True,
-                    "fallback_reason": "Control DB and job_run_registry had no matching runtime rows; using Airflow DAG runs as executor fallback.",
+                    "fallback_reason": "Control DB had no matching runtime rows; using Airflow DAG runs as executor fallback.; using Airflow DAG runs as executor fallback.",
                     "job_id": job_id,
                     "dag_id": dag_id,
                     "runs": runs,

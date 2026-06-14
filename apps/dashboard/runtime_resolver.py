@@ -10,10 +10,9 @@ Single responsibility:
 
 Source precedence:
 1. Control DB / runtime.job_run via ctl.usp_list_runtime_job_runs
-2. job_run_registry JSONL fallback
-3. Airflow
-4. Catalog/onboarded metadata
-5. Unknown/unavailable
+2. Airflow fallback
+3. Catalog metadata
+4. Unknown
 """
 
 import json
@@ -21,7 +20,6 @@ from typing import Any
 
 try:
     from apps.dashboard.airflow_client import latest_airflow_task
-    from apps.dashboard.config_loader import JOB_RUN_REGISTRY_FILE
     from apps.dashboard.db import call_usp_rows, catalog_metadata_for_job
     from apps.dashboard.runtime_models import (
         TERMINAL_STATES,
@@ -40,7 +38,6 @@ try:
     from apps.dashboard.stream_runtime import find_stream_unit, load_stream_status, stream_current_from_db
 except ImportError:  # pragma: no cover
     from .airflow_client import latest_airflow_task
-    from .config_loader import JOB_RUN_REGISTRY_FILE
     from .db import call_usp_rows, catalog_metadata_for_job
     from .runtime_models import (
         TERMINAL_STATES,
@@ -74,27 +71,6 @@ except ImportError:  # pragma: no cover
         job_mode_of,
         pipeline_id_of,
     )
-
-
-def read_registry(limit: int = 2000) -> list[dict[str, Any]]:
-    if not JOB_RUN_REGISTRY_FILE.exists():
-        return []
-
-    records: list[dict[str, Any]] = []
-    try:
-        with JOB_RUN_REGISTRY_FILE.open("r", encoding="utf-8") as file:
-            for line in file:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    except Exception:
-        return []
-
-    return sorted(records, key=lambda row: int(row.get("ts_epoch") or 0))[-limit:]
 
 
 def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
@@ -133,47 +109,6 @@ def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
         or any(code.endswith(expected_code_suffix) for code in row_codes if code)
         or any(code.endswith(f".{job_name}") for code in row_codes if code)
     )
-
-
-def registry_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
-    job = canonical_job(job)
-    pipeline = pipeline_id_of(job)
-    job_name = job_name_of(job)
-    job_id = job_id_of(job)
-    job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
-
-    row_pipeline = str(first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or "")
-    if row_pipeline and pipeline and row_pipeline != pipeline:
-        return False
-
-    row_names = {
-        str(first_present(row, "job", default="") or ""),
-        str(first_present(row, "job_name", default="") or ""),
-        str(first_present(row, "base_job_name", default="") or ""),
-        str(first_present(row, "airflow_task_id", default="") or ""),
-        str(first_present(row, "task_id", default="") or ""),
-        str(first_present(row, "entity_name", default="") or ""),
-        str(first_present(row, "job_id", default="") or ""),
-    }
-    row_codes = {
-        str(first_present(row, "job_code", default="") or ""),
-        str(first_present(row, "job_key", default="") or ""),
-        str(first_present(row, "resolved_job_code", default="") or ""),
-        str(first_present(row, "resolved_job_key", default="") or ""),
-    }
-
-    expected_entity = f"{pipeline}.{job_name}"
-    expected_code_suffix = f".{pipeline}.{job_name}"
-
-    return (
-        job_name in row_names
-        or job_id in row_names
-        or expected_entity in row_names
-        or bool(job_code and job_code in row_codes)
-        or any(code.endswith(expected_code_suffix) for code in row_codes if code)
-        or any(code.endswith(f".{job_name}") for code in row_codes if code)
-    )
-
 
 def normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
     started_at = first_present(row, "started_at", "start_time", "start_date", "observed_at")
@@ -217,54 +152,6 @@ def normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
         "runtime_source_rank": 1,
         "is_fallback": False,
         "fallback_reason": None,
-    }
-
-
-def normalize_registry_run_row(row: dict[str, Any]) -> dict[str, Any]:
-    records_read = as_int_or_none(metric_value(row, "records_read", "input_rows", "last_input_rows"))
-    records_written = as_int_or_none(metric_value(row, "records_written", "output_rows", "last_valid_rows"))
-    records_inserted = as_int_or_none(metric_value(row, "records_inserted", "inserted_rows"))
-    records_updated = as_int_or_none(metric_value(row, "records_updated", "updated_rows"))
-    records_deleted = as_int_or_none(metric_value(row, "records_deleted", "deleted_rows"))
-
-    if records_inserted is None and records_written is not None:
-        records_inserted = records_written
-    if records_updated is None:
-        records_updated = 0
-    if records_deleted is None:
-        records_deleted = 0
-
-    started_at = first_present(row, "started_at", "start_time", "start_date")
-    if not started_at:
-        started_at = epoch_to_iso(first_present(row, "started_at_epoch", "ts_epoch"))
-
-    ended_at = first_present(row, "ended_at", "end_time", "end_date")
-    if not ended_at:
-        ended_at = epoch_to_iso(first_present(row, "ended_at_epoch", "ts_epoch"))
-
-    dag_run_id = first_present(row, "dag_run_id", "airflow_dag_run_id", "airflow_run_id", default=None)
-
-    return {
-        "run_id": str(first_present(row, "run_id", "event_id", default="-")),
-        "dag_run_id": str(dag_run_id) if dag_run_id else None,
-        "state": normalize_state(first_present(row, "state", "status", default="unknown")),
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "duration_seconds": first_present(row, "duration_seconds", "duration_sec"),
-        "records_read": records_read,
-        "records_written": records_written,
-        "records_inserted": records_inserted,
-        "records_updated": records_updated,
-        "records_deleted": records_deleted,
-        "target_path": first_present(row, "target_path", "output_path"),
-        "status_reason": first_present(row, "status_reason", "error", "error_message", "last_error"),
-        "runtime_source": "job_run_registry",
-        "runtime_source_rank": 2,
-        "is_fallback": True,
-        "fallback_reason": (
-            "Control DB had no matching runtime rows; "
-            "using local job_run_registry JSONL as debug fallback."
-),
     }
 
 
@@ -324,21 +211,25 @@ def collapse_run_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
     job = canonical_job(job)
+
     try:
         rows = call_usp_rows("usp_list_runtime_job_runs", (max(200, limit * 30),))
     except Exception as exc:
         print(f"[WARN] Could not load runtime job runs from control DB: {exc}", flush=True)
         return []
 
-    matched = [normalize_runtime_run_row(row) for row in rows if control_row_matches_job(row, job)]
-    return collapse_run_events(matched)[:limit]
+    matched = [
+        normalize_runtime_run_row(row)
+        for row in rows
+        if control_row_matches_job(row, job)
+    ]
 
+    return sorted(
+        matched,
+        key=lambda row: str(row.get("ended_at") or row.get("started_at") or ""),
+        reverse=True,
+    )[:limit]
 
-def registry_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
-    job = canonical_job(job)
-    rows = read_registry(limit=max(2000, limit * 100))
-    matched = [normalize_registry_run_row(row) for row in rows if registry_row_matches_job(row, job)]
-    return collapse_run_events(matched)[:limit]
 
 def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
     stream_status = load_stream_status()
@@ -392,36 +283,7 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                 runtime_job["records_deleted"] = 0
 
         else:
-            registry_runs = registry_run_rows_for_job(job, limit=1)
-            if registry_runs:
-                registry = registry_runs[0]
-                runtime_job.update(
-                    {
-                        "current_status": registry.get("state", "unknown"),
-                        "latest_run_id": registry.get("run_id"),
-                        "started_at": registry.get("started_at"),
-                        "ended_at": registry.get("ended_at"),
-                        "duration_seconds": registry.get("duration_seconds"),
-                        "target_path": registry.get("target_path") or runtime_job.get("target_path"),
-                        "status_reason": registry.get("status_reason"),
-                        "runtime_source": "job_run_registry",
-                        "runtime_source_rank": 2,
-                        "is_fallback": True,
-                        "fallback_reason": (
-                            "Control DB had no matching runtime rows; "
-                            "using local job_run_registry JSONL as debug fallback."
-                        ),
-                        "runtime_available": True,
-                        "latest_dag_run_id": registry.get("dag_run_id"),
-                        "records_read": registry.get("records_read"),
-                        "records_written": registry.get("records_written"),
-                        "records_inserted": registry.get("records_inserted"),
-                        "records_updated": registry.get("records_updated"),
-                        "records_deleted": registry.get("records_deleted"),
-                    }
-                )
-
-            elif job_mode_of(job) == "batch":
+            if job_mode_of(job) == "batch":
                 airflow = latest_airflow_task(pipeline_id_of(job), job_name_of(job))
                 runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
                 runtime_job.update(

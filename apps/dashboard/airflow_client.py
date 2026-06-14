@@ -265,7 +265,7 @@ def dag_run_rows_for_job(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
                 "runtime_source_rank": 3,
                 "is_fallback": True,
                 "fallback_reason": (
-                    "Control DB and job_run_registry had no matching runtime rows; "
+                    "Control DB had no matching runtime rows; using Airflow DAG runs as executor fallback.; "
                     "using Airflow DAG runs as executor fallback."
                 ),
             }

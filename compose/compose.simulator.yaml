@@ -27,7 +27,6 @@ services:
     env_file:
       - ${PROJECT_ROOT}/.env
     environment:
-      JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
       STREAM_CONTROL_DIR: /runtime/spark_health/control
       STREAM_STATUS_FILE: /runtime/spark_health/stream_supervisor_status.json

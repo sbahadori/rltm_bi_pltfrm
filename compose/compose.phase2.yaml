@@ -212,7 +212,6 @@ services:
     environment:
       STREAM_LOG_DIR: /tmp/health/logs
       PYTHONPATH: /workspace/rltm_bi_pltfrm
-      JOB_RUN_REGISTRY_FILE: /workspace/rltm_bi_pltfrm/runtime/job_runs/job_runs.jsonl
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
       SPARK_SUBMIT: /opt/spark/bin/spark-submit
       SPARK_MASTER_URL: ${SPARK_MASTER_URL}

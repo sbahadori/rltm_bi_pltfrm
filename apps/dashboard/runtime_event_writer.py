@@ -6,32 +6,23 @@ import uuid
 from typing import Any
 
 try:
-    from apps.dashboard.config_loader import JOB_RUN_REGISTRY_FILE
     from apps.dashboard.db import insert_runtime_event
     from apps.dashboard.domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from apps.dashboard.runtime_models import now_iso
 except ImportError:  # pragma: no cover
-    from .config_loader import JOB_RUN_REGISTRY_FILE
     from .db import insert_runtime_event
     from .domain_contracts import canonical_job, job_id_of, job_name_of, pipeline_id_of
     from .runtime_models import now_iso
 
 
 def append_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
-    JOB_RUN_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-
     event = {
         **event,
         "event_id": event.get("event_id") or str(uuid.uuid4()),
         "observed_at": event.get("observed_at") or now_iso(),
         "ts_epoch": event.get("ts_epoch") or int(time.time()),
     }
-
-    with JOB_RUN_REGISTRY_FILE.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(event, ensure_ascii=False) + "\n")
-
     insert_runtime_event(event)
-
     return event
 
 

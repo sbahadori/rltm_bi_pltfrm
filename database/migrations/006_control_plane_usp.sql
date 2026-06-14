@@ -174,7 +174,7 @@ CREATE OR REPLACE PROCEDURE ctl.usp_upsert_watermark_state(
     p_table_id TEXT,
     p_watermark_column TEXT,
     p_value TEXT,
-    p_run_id UUID DEFAULT NULL
+    p_run_id TEXT DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
@@ -217,7 +217,7 @@ $$;
 -- =========================================================
 
 CREATE OR REPLACE PROCEDURE ctl.usp_upsert_job_run(
-    p_run_id UUID,
+    p_run_id TEXT,
     p_job_id BIGINT,
     p_job_code TEXT,
     p_job_name TEXT,
@@ -235,23 +235,36 @@ CREATE OR REPLACE PROCEDURE ctl.usp_upsert_job_run(
     p_status TEXT,
     p_status_reason TEXT,
     p_error_message TEXT,
-    p_effective_start_date TIMESTAMP,
-    p_effective_end_date TIMESTAMP,
-    p_started_at TIMESTAMP,
-    p_ended_at TIMESTAMP,
+    p_effective_start_date TIMESTAMPTZ,
+    p_effective_end_date TIMESTAMPTZ,
+    p_started_at TIMESTAMPTZ,
+    p_ended_at TIMESTAMPTZ,
     p_duration_seconds DOUBLE PRECISION,
     p_records_read BIGINT,
     p_records_written BIGINT,
     p_source_path TEXT,
     p_target_path TEXT,
-    p_payload JSONB
+    p_payload TEXT
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_payload JSONB;
+    v_job_key TEXT;
 BEGIN
+    v_payload := COALESCE(NULLIF(p_payload, '')::jsonb, '{}'::jsonb);
+
+    SELECT j.job_key
+    INTO v_job_key
+    FROM meta.job j
+    WHERE j.job_id = p_job_id;
+
+    v_job_key := COALESCE(v_job_key, p_job_code);
+
     INSERT INTO runtime.job_run (
         run_id,
         job_id,
+        job_key,
         job_code,
         job_name,
         pipeline_name,
@@ -282,6 +295,7 @@ BEGIN
     VALUES (
         p_run_id,
         p_job_id,
+        v_job_key,
         p_job_code,
         p_job_name,
         p_pipeline_name,
@@ -307,19 +321,35 @@ BEGIN
         p_records_written,
         p_source_path,
         p_target_path,
-        p_payload
+        v_payload
     )
     ON CONFLICT (run_id)
     DO UPDATE SET
-        status = EXCLUDED.status,
+        job_id = COALESCE(EXCLUDED.job_id, runtime.job_run.job_id),
+        job_key = COALESCE(EXCLUDED.job_key, runtime.job_run.job_key),
+        job_code = COALESCE(EXCLUDED.job_code, runtime.job_run.job_code),
+        job_name = COALESCE(EXCLUDED.job_name, runtime.job_run.job_name),
+        pipeline_name = COALESCE(EXCLUDED.pipeline_name, runtime.job_run.pipeline_name),
+        base_job_name = COALESCE(EXCLUDED.base_job_name, runtime.job_run.base_job_name),
+        source_id = COALESCE(EXCLUDED.source_id, runtime.job_run.source_id),
+        table_id = COALESCE(EXCLUDED.table_id, runtime.job_run.table_id),
+        entity_name = COALESCE(EXCLUDED.entity_name, runtime.job_run.entity_name),
+        layer = COALESCE(EXCLUDED.layer, runtime.job_run.layer),
+        runner = COALESCE(EXCLUDED.runner, runtime.job_run.runner),
+        airflow_dag_id = COALESCE(EXCLUDED.airflow_dag_id, runtime.job_run.airflow_dag_id),
+        airflow_dag_run_id = COALESCE(EXCLUDED.airflow_dag_run_id, runtime.job_run.airflow_dag_run_id),
+        airflow_task_id = COALESCE(EXCLUDED.airflow_task_id, runtime.job_run.airflow_task_id),
+        airflow_try_number = COALESCE(EXCLUDED.airflow_try_number, runtime.job_run.airflow_try_number),
+        status = COALESCE(EXCLUDED.status, runtime.job_run.status),
+        status_reason = COALESCE(EXCLUDED.status_reason, runtime.job_run.status_reason),
+        error_message = COALESCE(EXCLUDED.error_message, runtime.job_run.error_message),
         ended_at = COALESCE(EXCLUDED.ended_at, runtime.job_run.ended_at),
         duration_seconds = COALESCE(EXCLUDED.duration_seconds, runtime.job_run.duration_seconds),
         records_read = COALESCE(EXCLUDED.records_read, runtime.job_run.records_read),
         records_written = COALESCE(EXCLUDED.records_written, runtime.job_run.records_written),
-        error_message = COALESCE(EXCLUDED.error_message, runtime.job_run.error_message),
-        status_reason = COALESCE(EXCLUDED.status_reason, runtime.job_run.status_reason),
         effective_start_date = COALESCE(EXCLUDED.effective_start_date, runtime.job_run.effective_start_date),
         effective_end_date = COALESCE(EXCLUDED.effective_end_date, runtime.job_run.effective_end_date),
+        started_at = COALESCE(runtime.job_run.started_at, EXCLUDED.started_at),
         source_path = COALESCE(EXCLUDED.source_path, runtime.job_run.source_path),
         target_path = COALESCE(EXCLUDED.target_path, runtime.job_run.target_path),
         payload = EXCLUDED.payload;
@@ -328,16 +358,20 @@ $$;
 
 
 CREATE OR REPLACE PROCEDURE ctl.usp_insert_job_event(
-    p_run_id UUID,
+    p_run_id TEXT,
     p_job_id BIGINT,
     p_job_key TEXT,
     p_event_type TEXT,
     p_event_message TEXT,
-    p_event_payload JSONB
+    p_event_payload TEXT
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_payload JSONB;
 BEGIN
+    v_payload := COALESCE(NULLIF(p_event_payload, '')::jsonb, '{}'::jsonb);
+
     INSERT INTO runtime.job_event (
         run_id,
         job_id,
@@ -352,7 +386,7 @@ BEGIN
         p_job_key,
         p_event_type,
         p_event_message,
-        p_event_payload
+        v_payload
     );
 END;
 $$;
@@ -363,18 +397,22 @@ $$;
 -- =========================================================
 
 CREATE OR REPLACE PROCEDURE ctl.usp_insert_quality_result(
-    p_run_id UUID,
+    p_run_id TEXT,
     p_job_id BIGINT,
     p_job_key TEXT,
     p_dataset_key TEXT,
     p_status TEXT,
     p_observed_value TEXT,
     p_expected_value TEXT,
-    p_details JSONB
+    p_details TEXT
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_details JSONB;
 BEGIN
+    v_details := COALESCE(NULLIF(p_details, '')::jsonb, '{}'::jsonb);
+
     INSERT INTO dq.quality_result (
         run_id,
         job_id,
@@ -393,7 +431,7 @@ BEGIN
         p_status,
         p_observed_value,
         p_expected_value,
-        p_details
+        v_details
     );
 END;
 $$;
@@ -404,18 +442,22 @@ $$;
 -- =========================================================
 
 CREATE OR REPLACE PROCEDURE ctl.usp_insert_dataset_lineage(
-    p_run_id UUID,
+    p_run_id TEXT,
     p_job_id BIGINT,
     p_job_key TEXT,
     p_source_dataset_key TEXT,
     p_target_dataset_key TEXT,
     p_transformation_type TEXT,
     p_transformation_ref TEXT,
-    p_details JSONB
+    p_details TEXT
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_details JSONB;
 BEGIN
+    v_details := COALESCE(NULLIF(p_details, '')::jsonb, '{}'::jsonb);
+
     INSERT INTO lineage.dataset_lineage (
         run_id,
         job_id,
@@ -434,7 +476,7 @@ BEGIN
         p_target_dataset_key,
         p_transformation_type,
         p_transformation_ref,
-        p_details
+        v_details
     );
 END;
 $$;

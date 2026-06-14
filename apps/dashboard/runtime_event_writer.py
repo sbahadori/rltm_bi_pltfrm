@@ -39,7 +39,7 @@ def write_job_run_event(
     observed_at = now_iso()
 
     executor_run_id = execution_result.get("executor_run_id")
-    run_id = executor_run_id or f"run_{ts_epoch}_{job_name_of(job)}"
+    run_id = str(uuid.uuid4())
 
     event = {
         "event_id": str(uuid.uuid4()),

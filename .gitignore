@@ -47,11 +47,11 @@ shared/spark-dist/**
 shared/spark-jars/**
 
 # job runs for dashboard
-runtime/
-runtime/**
-!runtime/.gitkeep
-!runtime/job_runs/
-!runtime/job_runs/.gitkeep
+/runtime/
+/runtime/**
+!/runtime/.gitkeep
+!/runtime/job_runs/
+!/runtime/job_runs/.gitkeep
 
 
 # airflow local db volume if created locally

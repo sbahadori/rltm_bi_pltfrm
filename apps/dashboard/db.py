@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg2
 import psycopg2.extras
@@ -184,11 +184,22 @@ def _as_bigint_or_none(value: Any) -> int | None:
         return None
 
 
+def _guid_or_new(value: Any) -> str:
+    if value in (None, ""):
+        return str(uuid4())
+
+    try:
+        return str(UUID(str(value)))
+    except Exception:
+        return str(uuid4())
+
+
 def insert_runtime_event(event: dict[str, Any]) -> bool:
     """
     Best-effort insert into runtime.job_event through the existing DB contract.
     """
-    run_id = event.get("run_id") or event.get("executor_run_id")
+    run_id = _guid_or_new(event.get("run_id"))
+    event = {**event, "run_id": run_id}
     job_id = _as_bigint_or_none(event.get("job_id"))
     job_key = (
         event.get("job_key")

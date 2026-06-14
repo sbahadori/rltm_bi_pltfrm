@@ -46,7 +46,12 @@ CREATE TABLE IF NOT EXISTS dq.quality_result (
 
     details JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_quality_result_run_id_guid CHECK (
+        run_id IS NULL
+        OR run_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS ix_quality_result_rule_id
@@ -86,7 +91,12 @@ CREATE TABLE IF NOT EXISTS lineage.dataset_lineage (
 
     details JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_dataset_lineage_run_id_guid CHECK (
+        run_id IS NULL
+        OR run_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS ix_dataset_lineage_run_id

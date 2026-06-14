@@ -40,7 +40,11 @@ CREATE TABLE IF NOT EXISTS runtime.job_run (
 
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_job_run_run_id_guid CHECK (
+        run_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS ix_job_run_job_id
@@ -76,7 +80,12 @@ CREATE TABLE IF NOT EXISTS runtime.job_event (
     event_message TEXT,
     event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_job_event_run_id_guid CHECK (
+        run_id IS NULL
+        OR run_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    )
 );
 
 CREATE INDEX IF NOT EXISTS ix_job_event_run_id
@@ -118,6 +127,11 @@ CREATE TABLE IF NOT EXISTS runtime.watermark_state (
         source_id,
         table_id,
         watermark_column
+    ),
+
+    CONSTRAINT ck_watermark_state_last_run_id_guid CHECK (
+        last_run_id IS NULL
+        OR last_run_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     )
 );
 

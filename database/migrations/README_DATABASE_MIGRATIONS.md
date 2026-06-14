@@ -39,11 +39,21 @@ database/migrations/
   003_runtime_batch_tables.sql
   004_dq_lineage_tables.sql
   005_ctl_core_usps.sql
-  006_ctl_onboarding_usps.sql
-  007_ctl_watermark_usps.sql
+  006_control_plane_usp.sql
+  007_ctl_onboarding_usps.sql
+  008_ctl_watermark_usps.sql
+  009_ctl_quality_usps.sql
   010_runtime_stream_tables.sql
   011_runtime_stream_usps.sql
   012_runtime_dashboard_views.sql
+  013_auth_and_actions.sql
+  014_dynamic_job_registry.sql
+  015_catalog_change_log.sql
+  016_drop_ui_job_registry.sql
+  017_dashboard_auth_schema.sql
+  018_ctl_batch_run_dashboard_usps.sql
+  019_ctl_lineage_usps.sql
+  020_enforce_guid_run_ids.sql
 ```
 
 Run the files in ascending order.
@@ -115,7 +125,15 @@ ctl.usp_list_quality_results
 ctl.usp_list_dataset_lineage
 ```
 
-### `006_ctl_onboarding_usps.sql`
+### `006_control_plane_usp.sql`
+
+Legacy no-op placeholder.
+
+The active control-plane stored procedure contract is split across focused
+migrations. This file remains only to keep numeric execution order stable for
+older runbooks.
+
+### `007_ctl_onboarding_usps.sql`
 
 Creates onboarding procedures/functions:
 
@@ -130,7 +148,7 @@ ctl.usp_onboard_job_dependency
 
 These are used by the onboarding workflow to populate `meta.pipeline`, `meta.job`, `meta.dataset`, `meta.source_system`, and `meta.job_dependency`.
 
-### `007_ctl_watermark_usps.sql`
+### `008_ctl_watermark_usps.sql`
 
 Creates watermark read/write functions:
 
@@ -142,6 +160,14 @@ ctl.usp_list_runtime_watermarks
 ```
 
 These are required by incremental jobs that track high-watermarks.
+
+### `009_ctl_quality_usps.sql`
+
+Creates the data-quality write procedure:
+
+```text
+ctl.usp_insert_quality_result
+```
 
 ### `010_runtime_stream_tables.sql`
 
@@ -155,6 +181,9 @@ runtime.stream_batch_metric
 `runtime.stream_unit_current` stores the latest state per stream unit.
 
 `runtime.stream_batch_metric` stores one metric row per Spark micro-batch.
+
+Both stream runtime tables include `run_id` so stream micro-batches and current
+state can be correlated back to the lifecycle row in `runtime.job_run`.
 
 ### `011_runtime_stream_usps.sql`
 
@@ -178,6 +207,81 @@ runtime.v_stream_unit_current
 runtime.v_stream_dashboard_summary
 runtime.v_job_run_latest
 runtime.v_job_run_dashboard
+```
+
+### `013_auth_and_actions.sql`
+
+Creates dashboard action audit logging:
+
+```text
+runtime.action_log
+ctl.usp_insert_action_log
+ctl.usp_list_action_logs
+```
+
+### `014_dynamic_job_registry.sql`
+
+Creates the legacy UI dynamic job registry tables and procedures. This is kept
+for migration continuity; active executable job definitions come from catalog
+onboarding into `meta.pipeline` and `meta.job`.
+
+### `015_catalog_change_log.sql`
+
+Creates dashboard catalog edit audit logging:
+
+```text
+meta.catalog_change_log
+ctl.usp_insert_catalog_change_log
+ctl.usp_list_catalog_change_logs
+```
+
+### `016_drop_ui_job_registry.sql`
+
+Archives the legacy UI dynamic job registry tables and drops their procedures.
+
+### `017_dashboard_auth_schema.sql`
+
+Creates dashboard user/auth schema and procedures:
+
+```text
+meta.dashboard_user
+ctl.usp_get_dashboard_user
+ctl.usp_update_last_login
+ctl.usp_upsert_dashboard_user
+```
+
+Development admin users are seeded outside migrations with
+`scripts/seed_dashboard_admin_dev.py`. Do not put fixed dashboard credentials in
+database migrations.
+
+### `018_ctl_batch_run_dashboard_usps.sql`
+
+Creates dashboard-friendly batch runtime history:
+
+```text
+ctl.usp_list_batch_runs_for_job
+```
+
+### `019_ctl_lineage_usps.sql`
+
+Creates the dataset lineage write procedure:
+
+```text
+ctl.usp_insert_dataset_lineage
+```
+
+### `020_enforce_guid_run_ids.sql`
+
+Adds `NOT VALID` GUID-only CHECK constraints for existing databases on:
+
+```text
+runtime.job_run.run_id
+runtime.job_event.run_id
+runtime.watermark_state.last_run_id
+runtime.stream_unit_current.run_id
+runtime.stream_batch_metric.run_id
+dq.quality_result.run_id
+lineage.dataset_lineage.run_id
 ```
 
 ## Execution prerequisites
@@ -213,11 +317,21 @@ $files = @(
   "003_runtime_batch_tables.sql",
   "004_dq_lineage_tables.sql",
   "005_ctl_core_usps.sql",
-  "006_ctl_onboarding_usps.sql",
-  "007_ctl_watermark_usps.sql",
+  "006_control_plane_usp.sql",
+  "007_ctl_onboarding_usps.sql",
+  "008_ctl_watermark_usps.sql",
+  "009_ctl_quality_usps.sql",
   "010_runtime_stream_tables.sql",
   "011_runtime_stream_usps.sql",
-  "012_runtime_dashboard_views.sql"
+  "012_runtime_dashboard_views.sql",
+  "013_auth_and_actions.sql",
+  "014_dynamic_job_registry.sql",
+  "015_catalog_change_log.sql",
+  "016_drop_ui_job_registry.sql",
+  "017_dashboard_auth_schema.sql",
+  "018_ctl_batch_run_dashboard_usps.sql",
+  "019_ctl_lineage_usps.sql",
+  "020_enforce_guid_run_ids.sql"
 )
 
 foreach ($f in $files) {
@@ -236,13 +350,13 @@ foreach ($f in $files) {
 Example:
 
 ```powershell
-docker cp .\database\migrations\006_ctl_onboarding_usps.sql postgres-warehouse:/tmp/006_ctl_onboarding_usps.sql
+docker cp .\database\migrations\007_ctl_onboarding_usps.sql postgres-warehouse:/tmp/007_ctl_onboarding_usps.sql
 
 docker exec postgres-warehouse psql `
   -U warehouse `
   -d warehouse `
   -v ON_ERROR_STOP=1 `
-  -f /tmp/006_ctl_onboarding_usps.sql
+  -f /tmp/007_ctl_onboarding_usps.sql
 ```
 
 ## Validate schemas
@@ -346,6 +460,10 @@ usp_upsert_watermark_state
 usp_upsert_stream_unit_current
 usp_insert_stream_batch_metric
 usp_get_stream_unit_current
+usp_insert_action_log
+usp_get_dashboard_user
+usp_insert_quality_result
+usp_insert_dataset_lineage
 ```
 
 ## Validate dashboard views
@@ -436,7 +554,7 @@ Do not store Kafka events, large API payloads, or full Delta data in PostgreSQL 
 Run:
 
 ```text
-database/migrations/006_ctl_onboarding_usps.sql
+database/migrations/007_ctl_onboarding_usps.sql
 ```
 
 ### `ctl.usp_get_watermark_state(...)` does not exist
@@ -444,7 +562,7 @@ database/migrations/006_ctl_onboarding_usps.sql
 Run:
 
 ```text
-database/migrations/007_ctl_watermark_usps.sql
+database/migrations/008_ctl_watermark_usps.sql
 ```
 
 ### Runner cannot resolve active job

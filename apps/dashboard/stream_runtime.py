@@ -168,6 +168,7 @@ def stream_pseudo_runs_for_job(job: dict[str, Any], limit: int = 10) -> list[dic
     heartbeat = unit.get("heartbeat") or unit
     state = normalize_state(unit.get("computed_status") or unit.get("status") or heartbeat.get("status") or "unknown")
     last_batch_id = first_present(heartbeat, "last_batch_id", "batch_id", default=None)
+    run_id = first_present(heartbeat, "run_id", unit.get("run_id"), default=None)
 
     records_read = as_int_or_none(first_present(heartbeat, "records_read", "last_input_rows", "input_rows"))
     records_written = as_int_or_none(first_present(heartbeat, "records_written", "last_valid_rows", "valid_rows"))
@@ -180,7 +181,7 @@ def stream_pseudo_runs_for_job(job: dict[str, Any], limit: int = 10) -> list[dic
 
     return [
         {
-            "run_id": str(last_batch_id if last_batch_id is not None else unit.get("unit_name") or job.get("name")),
+            "run_id": str(run_id or last_batch_id or unit.get("unit_name") or job.get("name")),
             "dag_run_id": None,
             "state": state,
             "started_at": first_present(heartbeat, "started_at", "start_time"),

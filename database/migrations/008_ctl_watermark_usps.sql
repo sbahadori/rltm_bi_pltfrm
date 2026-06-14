@@ -1,5 +1,5 @@
 -- -----------------------------------------------------------------------------
--- 007_ctl_watermark_usps.sql
+-- 008_ctl_watermark_usps.sql
 -- Purpose:
 --   Watermark state read/write functions for incremental batch jobs.
 --
@@ -10,6 +10,8 @@
 --   watermark_id, job_id, job_key, source_id, table_id, watermark_column,
 --   last_successful_value, current_value, last_run_id, updated_at
 -- -----------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS ctl.usp_get_watermark_state(TEXT, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION ctl.usp_get_watermark_state(
     p_job_key TEXT,
@@ -51,6 +53,27 @@ AS $$
     LIMIT 1;
 $$;
 
+
+DROP PROCEDURE IF EXISTS ctl.usp_upsert_watermark_state(
+    BIGINT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT
+);
+
+DROP PROCEDURE IF EXISTS ctl.usp_upsert_watermark_state(
+    BIGINT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT
+);
 
 CREATE OR REPLACE PROCEDURE ctl.usp_upsert_watermark_state(
     p_job_id BIGINT,

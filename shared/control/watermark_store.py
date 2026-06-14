@@ -54,6 +54,7 @@ def write_watermark_to_control_db(
             table_id,
             watermark_column,
             str(value),
+            str(value),
             run_id,
         ),
     )

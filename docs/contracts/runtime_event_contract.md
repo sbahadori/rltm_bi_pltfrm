@@ -52,3 +52,14 @@ The dashboard must resolve runtime state in this order:
 4. Airflow fallback
 
 Airflow is an orchestration fallback, not the source of truth for job-level record counters.
+
+## Stream Runtime Correlation
+
+Streaming jobs emit `runtime.job_run` and `runtime.job_event` rows only for
+process lifecycle events such as start, stop, restart, and exit.
+
+Spark micro-batches are stored in `runtime.stream_batch_metric`, and the latest
+stream state is stored in `runtime.stream_unit_current`. Both tables carry the
+same `run_id` as the active `runtime.job_run` row so stream metrics can be
+joined to the process-level run without updating `job_run` for every
+micro-batch.

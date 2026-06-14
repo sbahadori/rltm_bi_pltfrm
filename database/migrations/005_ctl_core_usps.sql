@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS ctl.usp_get_active_job_metadata(BIGINT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION ctl.usp_get_active_job_metadata(
     p_job_id BIGINT DEFAULT NULL,
     p_job_key TEXT DEFAULT NULL,
@@ -69,6 +71,8 @@ AS $$
     LIMIT 1;
 $$;
 
+
+DROP FUNCTION IF EXISTS ctl.usp_get_active_job_identity(BIGINT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION ctl.usp_get_active_job_identity(
     p_job_id BIGINT DEFAULT NULL,

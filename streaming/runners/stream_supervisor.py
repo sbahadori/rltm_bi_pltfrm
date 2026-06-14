@@ -184,16 +184,20 @@ class StreamSupervisor:
             flush=True,
         )
 
+        started_epoch = int(time.time())
+        run_id = new_run_id(state.unit_name)
+
+        child_env = os.environ.copy()
+        child_env["STREAM_RUN_ID"] = run_id
+        child_env["STREAM_UNIT_NAME"] = state.unit_name
+
         proc = subprocess.Popen(
             cmd,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             text=True,
-            env=os.environ.copy(),
+            env=child_env,
         )
-
-        started_epoch = int(time.time())
-        run_id = new_run_id(state.unit_name)
 
         state.run_id = run_id
         state.pid = proc.pid

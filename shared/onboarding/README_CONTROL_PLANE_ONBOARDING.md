@@ -68,7 +68,7 @@ airflow/
 
 database/
   migrations/
-    006_ctl_onboarding_usps.sql
+    007_ctl_onboarding_usps.sql
 ```
 
 ### `shared/onboarding/control_plane.py`
@@ -79,7 +79,7 @@ Reusable onboarding module. It reads catalog/manifest files and calls `ctl.usp_o
 
 Static/manual Airflow DAG. It is not generated from `meta.pipeline`, so it is available even when the control database is empty.
 
-### `database/migrations/006_ctl_onboarding_usps.sql`
+### `database/migrations/007_ctl_onboarding_usps.sql`
 
 Creates:
 
@@ -583,7 +583,7 @@ Add it before the `if [ "$SELECTIONS_JSON" != "[]" ]; then` block.
 Run:
 
 ```text
-database/migrations/006_ctl_onboarding_usps.sql
+database/migrations/007_ctl_onboarding_usps.sql
 ```
 
 ### Airflow loads JSON instead of Control DB

@@ -43,6 +43,8 @@ ALTER TABLE meta.dashboard_user
 CREATE UNIQUE INDEX IF NOT EXISTS ux_dashboard_user_username
     ON meta.dashboard_user(username);
 
+DROP FUNCTION IF EXISTS ctl.usp_get_dashboard_user(TEXT);
+
 CREATE OR REPLACE FUNCTION ctl.usp_get_dashboard_user(p_username TEXT)
 RETURNS TABLE (
     user_id TEXT,
@@ -69,6 +71,8 @@ AS $$
     LIMIT 1;
 $$;
 
+DROP PROCEDURE IF EXISTS ctl.usp_update_last_login(TEXT);
+
 CREATE OR REPLACE PROCEDURE ctl.usp_update_last_login(p_username TEXT)
 LANGUAGE plpgsql
 AS $$
@@ -79,6 +83,8 @@ BEGIN
     WHERE username = p_username;
 END;
 $$;
+
+DROP PROCEDURE IF EXISTS ctl.usp_upsert_dashboard_user(TEXT, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE PROCEDURE ctl.usp_upsert_dashboard_user(
     p_username TEXT,

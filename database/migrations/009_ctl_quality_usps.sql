@@ -1,5 +1,5 @@
 -- -----------------------------------------------------------------------------
--- 008_ctl_quality_usps.sql
+-- 009_ctl_quality_usps.sql
 -- Purpose:
 --   Stored procedure for writing data-quality results.
 --
@@ -9,6 +9,29 @@
 -- Python caller:
 --   shared.runtime.quality_store.write_quality_result(...)
 -- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS ctl.usp_insert_quality_result(
+    TEXT,
+    BIGINT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT
+);
+
+DROP PROCEDURE IF EXISTS ctl.usp_insert_quality_result(
+    TEXT,
+    BIGINT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    BIGINT
+);
 
 CREATE OR REPLACE PROCEDURE ctl.usp_insert_quality_result(
     p_run_id TEXT,

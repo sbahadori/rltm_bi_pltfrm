@@ -78,6 +78,7 @@ def write_heartbeat(status: str = "running", extra: Optional[dict] = None) -> No
     payload = {
         "app": _runtime["app_name"],
         "stream_name": _runtime["stream_name"],
+        "run_id": _runtime.get("run_id"),
         "status": status,
         "ts_epoch": int(time.time()),
         "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -606,6 +607,7 @@ def main() -> None:
         "transform_plugin": silver.get("transform_plugin"),
         "layer": "silver",
         "unit_name": f"{spec['name']}_silver",
+        "run_id": os.getenv("STREAM_RUN_ID"),
         "db_current_interval_seconds": int(os.getenv("STREAM_DB_CURRENT_INTERVAL_SECONDS", "30")),
     }
 

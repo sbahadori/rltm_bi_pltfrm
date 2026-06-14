@@ -102,12 +102,13 @@ def insert_action_log(
     duration_ms: int | None = None,
 ) -> None:
     """Best-effort action audit logging. Runtime actions must not fail only because logging fails."""
+    user_id = user.get("user_id")
     try:
         call_usp_void(
             "usp_insert_action_log",
             (
                 user.get("sub", "unknown"),
-                user.get("user_id"),
+                str(user_id) if user_id is not None else None,
                 action_type,
                 target_type,
                 target_id,
@@ -232,4 +233,3 @@ def insert_runtime_event(event: dict[str, Any]) -> bool:
     except Exception as exc:
         print(f"[WARN] Failed to write runtime job_event: {exc}", flush=True)
         return False
-    

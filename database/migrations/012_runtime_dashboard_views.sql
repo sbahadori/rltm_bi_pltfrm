@@ -3,6 +3,7 @@ SELECT
     c.unit_name,
     c.stream_name,
     c.layer,
+    c.run_id,
     c.computed_status,
     c.status_reason,
     c.pid,
@@ -48,6 +49,7 @@ SELECT
     u.unit_name,
     u.stream_name,
     u.layer,
+    u.run_id,
     u.dashboard_status,
     u.computed_status,
     u.status_reason,
@@ -71,6 +73,7 @@ SELECT
     u.last_message,
     u.last_error,
     latest.batch_id AS latest_metric_batch_id,
+    latest.run_id AS latest_metric_run_id,
     latest.input_rows AS latest_metric_input_rows,
     latest.batch_rows AS latest_metric_batch_rows,
     latest.valid_rows AS latest_metric_valid_rows,
@@ -89,6 +92,7 @@ FROM runtime.v_stream_unit_current u
 LEFT JOIN LATERAL (
     SELECT
         m.batch_id,
+        m.run_id,
         m.input_rows,
         m.batch_rows,
         m.valid_rows,

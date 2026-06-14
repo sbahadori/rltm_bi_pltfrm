@@ -68,6 +68,14 @@ x-spark-stream-base: &spark-stream-base
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     AWS_REGION: ${AWS_REGION}
+
+    CONTROL_DB_ENABLED: ${CONTROL_DB_ENABLED:-true}
+    CONTROL_DB_HOST: ${CONTROL_DB_HOST:-postgres-warehouse}
+    CONTROL_DB_PORT: ${CONTROL_DB_PORT:-5432}
+    CONTROL_DB_NAME: ${CONTROL_DB_NAME:-${POSTGRES_DB}}
+    CONTROL_DB_USER: ${CONTROL_DB_USER:-${POSTGRES_USER}}
+    CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+    CONTROL_DB_SSLMODE: ${CONTROL_DB_SSLMODE:-disable}
   volumes:
     - ${PROJECT_ROOT}:/workspace/rltm_bi_pltfrm
     - ${PROJECT_ROOT}/spark_ivy:/tmp/.ivy2
@@ -210,6 +218,7 @@ services:
       - kafka-init-topics
     user: "0:0"
     environment:
+      STREAM_CONTROL_DIR: /tmp/health/control
       STREAM_LOG_DIR: /tmp/health/logs
       PYTHONPATH: /workspace/rltm_bi_pltfrm
       PIPELINE_REPO_ROOT: /workspace/rltm_bi_pltfrm
@@ -219,6 +228,13 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION}
+      CONTROL_DB_ENABLED: ${CONTROL_DB_ENABLED:-true}
+      CONTROL_DB_HOST: ${CONTROL_DB_HOST:-postgres-warehouse}
+      CONTROL_DB_PORT: ${CONTROL_DB_PORT:-5432}
+      CONTROL_DB_NAME: ${CONTROL_DB_NAME:-${POSTGRES_DB}}
+      CONTROL_DB_USER: ${CONTROL_DB_USER:-${POSTGRES_USER}}
+      CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      CONTROL_DB_SSLMODE: ${CONTROL_DB_SSLMODE:-disable}
     command: >
       bash -lc "
       mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars /tmp/checkpoints /tmp/health &&

@@ -46,6 +46,13 @@ def _json_payload(payload: dict[str, Any] | None) -> str:
     return json.dumps(payload or {}, ensure_ascii=False, default=str)
 
 
+def _current_run_id(value: Any = None) -> str | None:
+    run_id = value or os.getenv("STREAM_RUN_ID")
+    if run_id in (None, ""):
+        return None
+    return str(run_id)
+
+
 def _db_strict() -> bool:
     return os.getenv("CONTROL_DB_STRICT", "false").lower() in {"1", "true", "yes"}
 
@@ -73,6 +80,7 @@ def upsert_stream_unit_current(
     stream_name: str,
     layer: str,
     computed_status: str | None,
+    run_id: str | None = None,
     status_reason: str | None = None,
     pid: int | None = None,
     returncode: int | None = None,
@@ -102,6 +110,7 @@ def upsert_stream_unit_current(
             unit_name,
             stream_name,
             layer,
+            _current_run_id(run_id),
             computed_status,
             status_reason,
             _safe_int(pid),
@@ -142,11 +151,13 @@ def upsert_stream_unit_current_from_heartbeat(
         or heartbeat.get("bronze_path")
         or heartbeat.get("target_path")
     )
+    run_id = _current_run_id(heartbeat.get("run_id"))
 
     upsert_stream_unit_current(
         unit_name=unit_name,
         stream_name=stream_name,
         layer=layer,
+        run_id=run_id,
         computed_status=heartbeat.get("status"),
         status_reason=status_reason or heartbeat.get("last_message"),
         heartbeat_status=heartbeat.get("status"),
@@ -175,6 +186,7 @@ def insert_stream_batch_metric(
     stream_name: str,
     layer: str,
     batch_id: int,
+    run_id: str | None = None,
     input_rows: int | None = None,
     batch_rows: int | None = None,
     valid_rows: int | None = None,
@@ -196,6 +208,7 @@ def insert_stream_batch_metric(
             unit_name,
             stream_name,
             layer,
+            _current_run_id(run_id),
             _safe_int(batch_id),
             _safe_int(input_rows),
             _safe_int(batch_rows),

@@ -1,5 +1,5 @@
 -- -----------------------------------------------------------------------------
--- 009_ctl_onboarding_usps.sql
+-- 007_ctl_onboarding_usps.sql
 -- Purpose:
 --   Onboard pipelines, jobs, datasets, source systems, and dependencies
 --   into the PostgreSQL control plane.
@@ -16,6 +16,8 @@
 --   - meta.job.config stores the executable job spec.
 --   - meta.job.job_code and meta.job.job_key must match CONTROL_JOB_CODE/KEY.
 -- -----------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS ctl.usp_list_active_pipeline_specs();
 
 CREATE OR REPLACE FUNCTION ctl.usp_list_active_pipeline_specs()
 RETURNS TABLE (

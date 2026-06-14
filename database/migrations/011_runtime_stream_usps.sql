@@ -1,7 +1,37 @@
+DROP PROCEDURE IF EXISTS ctl.usp_upsert_stream_unit_current(
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    INTEGER,
+    INTEGER,
+    INTEGER,
+    INTEGER,
+    TEXT,
+    TIMESTAMPTZ,
+    INTEGER,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BOOLEAN,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT
+);
+
 CREATE OR REPLACE PROCEDURE ctl.usp_upsert_stream_unit_current(
     p_unit_name TEXT,
     p_stream_name TEXT,
     p_layer TEXT,
+    p_run_id TEXT,
 
     p_computed_status TEXT,
     p_status_reason TEXT,
@@ -46,6 +76,7 @@ BEGIN
         unit_name,
         stream_name,
         layer,
+        run_id,
         computed_status,
         status_reason,
         pid,
@@ -75,6 +106,7 @@ BEGIN
         p_unit_name,
         p_stream_name,
         p_layer,
+        p_run_id,
         p_computed_status,
         p_status_reason,
         p_pid,
@@ -104,6 +136,7 @@ BEGIN
     DO UPDATE SET
         stream_name = EXCLUDED.stream_name,
         layer = EXCLUDED.layer,
+        run_id = COALESCE(EXCLUDED.run_id, runtime.stream_unit_current.run_id),
         computed_status = COALESCE(EXCLUDED.computed_status, runtime.stream_unit_current.computed_status),
         status_reason = COALESCE(EXCLUDED.status_reason, runtime.stream_unit_current.status_reason),
         pid = COALESCE(EXCLUDED.pid, runtime.stream_unit_current.pid),
@@ -137,10 +170,32 @@ END;
 $$;
 
 
+DROP PROCEDURE IF EXISTS ctl.usp_insert_stream_batch_metric(
+    TEXT,
+    TEXT,
+    TEXT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BIGINT,
+    BOOLEAN,
+    TEXT,
+    TEXT,
+    TEXT,
+    TEXT,
+    TIMESTAMPTZ,
+    TEXT
+);
+
 CREATE OR REPLACE PROCEDURE ctl.usp_insert_stream_batch_metric(
     p_unit_name TEXT,
     p_stream_name TEXT,
     p_layer TEXT,
+    p_run_id TEXT,
 
     p_batch_id BIGINT,
 
@@ -175,6 +230,7 @@ BEGIN
         unit_name,
         stream_name,
         layer,
+        run_id,
         batch_id,
         input_rows,
         batch_rows,
@@ -197,6 +253,7 @@ BEGIN
         p_unit_name,
         p_stream_name,
         p_layer,
+        p_run_id,
         p_batch_id,
         p_input_rows,
         p_batch_rows,
@@ -215,10 +272,11 @@ BEGIN
         now(),
         now()
     )
-    ON CONFLICT (unit_name, batch_id)
+    ON CONFLICT (unit_name, run_id, batch_id)
     DO UPDATE SET
         stream_name = EXCLUDED.stream_name,
         layer = EXCLUDED.layer,
+        run_id = COALESCE(EXCLUDED.run_id, runtime.stream_batch_metric.run_id),
         input_rows = COALESCE(EXCLUDED.input_rows, runtime.stream_batch_metric.input_rows),
         batch_rows = COALESCE(EXCLUDED.batch_rows, runtime.stream_batch_metric.batch_rows),
         valid_rows = COALESCE(EXCLUDED.valid_rows, runtime.stream_batch_metric.valid_rows),
@@ -243,6 +301,8 @@ END;
 $$;
 
 
+DROP FUNCTION IF EXISTS ctl.usp_get_stream_unit_current(TEXT);
+
 CREATE OR REPLACE FUNCTION ctl.usp_get_stream_unit_current(
     p_unit_name TEXT
 )
@@ -250,6 +310,7 @@ RETURNS TABLE (
     unit_name TEXT,
     stream_name TEXT,
     layer TEXT,
+    run_id TEXT,
     computed_status TEXT,
     status_reason TEXT,
     pid INTEGER,
@@ -280,6 +341,7 @@ AS $$
         c.unit_name,
         c.stream_name,
         c.layer,
+        c.run_id,
         c.computed_status,
         c.status_reason,
         c.pid,
@@ -311,6 +373,8 @@ AS $$
 $$;
 
 
+DROP FUNCTION IF EXISTS ctl.usp_list_stream_batch_metrics(TEXT, INTEGER);
+
 CREATE OR REPLACE FUNCTION ctl.usp_list_stream_batch_metrics(
     p_unit_name TEXT DEFAULT NULL,
     p_limit INTEGER DEFAULT 50
@@ -319,6 +383,7 @@ RETURNS TABLE (
     unit_name TEXT,
     stream_name TEXT,
     layer TEXT,
+    run_id TEXT,
     batch_id BIGINT,
     input_rows BIGINT,
     batch_rows BIGINT,
@@ -341,6 +406,7 @@ AS $$
         m.unit_name,
         m.stream_name,
         m.layer,
+        m.run_id,
         m.batch_id,
         m.input_rows,
         m.batch_rows,

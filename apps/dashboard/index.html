@@ -869,6 +869,7 @@ let lastDrawerRunsRefreshAt = 0;
 function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 function fmtDur(v){ if(v==null||v==='')return'-'; const n=Number(v); if(isNaN(n))return'-'; return n<60?`${n.toFixed(1)}s`:`${(n/60).toFixed(1)}m` }
 function fmtDate(v){ if(!v)return'-'; try{return new Date(v).toLocaleString()}catch{return v} }
+function fmtStatusTime(v){ if(!v)return'-'; const n=Number(v); if(Number.isFinite(n)) return new Date(n < 100000000000 ? n * 1000 : n).toLocaleString(); return fmtDate(v) }
 function layerFromPath(p){ const s=String(p||'').toLowerCase(); if(s.includes('/bronze'))return'Bronze'; if(s.includes('/silver'))return'Silver'; if(s.includes('/gold'))return'Gold'; return'-' }
 
 async function api(method, path, body){
@@ -1055,7 +1056,7 @@ function buildAlerts(runtime){
     alerts.push({
       level:'ERROR',
       title:'Stream supervisor status file error',
-      msg:`${cached}${streamStatus.reason || 'Invalid stream status JSON'} · first seen: ${fmtDate(streamStatus.status_file_error_first_seen_at)} · last seen: ${fmtDate(streamStatus.status_file_error_last_seen_at)} · last good: ${fmtDate(streamStatus.last_successful_read_at)}`,
+      msg:`${cached}${streamStatus.reason || 'Invalid stream status JSON'} · first seen: ${fmtStatusTime(streamStatus.status_file_error_first_seen || streamStatus.status_file_error_first_seen_at || streamStatus.error_at)} · last seen: ${fmtStatusTime(streamStatus.status_file_error_last_seen || streamStatus.status_file_error_last_seen_at || streamStatus.error_at)} · last good: ${fmtStatusTime(streamStatus.last_successful_read || streamStatus.last_successful_read_at)}`,
     });
   }
 

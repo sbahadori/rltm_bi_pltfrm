@@ -38,7 +38,8 @@ except ImportError:  # pragma: no cover
 
 _LAST_GOOD_STATUS_DATA: dict[str, Any] | None = None
 _LAST_GOOD_STATUS_READ_AT: str | None = None
-_STATUS_FILE_ERROR: dict[str, str] | None = None
+_LAST_GOOD_STATUS_READ_EPOCH: int | None = None
+_STATUS_FILE_ERROR: dict[str, Any] | None = None
 
 
 def unit_aliases(name: str) -> list[str]:
@@ -91,15 +92,16 @@ def compute_unit_status(unit: dict[str, Any], now_epoch: int) -> dict[str, Any]:
     }
 
 
-def _remember_status_success(data: dict[str, Any], observed_at: str) -> None:
-    global _LAST_GOOD_STATUS_DATA, _LAST_GOOD_STATUS_READ_AT, _STATUS_FILE_ERROR
+def _remember_status_success(data: dict[str, Any], observed_at: str, checked_at: int) -> None:
+    global _LAST_GOOD_STATUS_DATA, _LAST_GOOD_STATUS_READ_AT, _LAST_GOOD_STATUS_READ_EPOCH, _STATUS_FILE_ERROR
 
     _LAST_GOOD_STATUS_DATA = data
     _LAST_GOOD_STATUS_READ_AT = observed_at
+    _LAST_GOOD_STATUS_READ_EPOCH = checked_at
     _STATUS_FILE_ERROR = None
 
 
-def _remember_status_error(exc: Exception, observed_at: str) -> dict[str, str]:
+def _remember_status_error(exc: Exception, observed_at: str, checked_at: int) -> dict[str, Any]:
     global _STATUS_FILE_ERROR
 
     reason = str(exc)
@@ -107,9 +109,11 @@ def _remember_status_error(exc: Exception, observed_at: str) -> dict[str, str]:
         _STATUS_FILE_ERROR = {
             "reason": reason,
             "first_seen_at": observed_at,
+            "first_seen": checked_at,
         }
 
     _STATUS_FILE_ERROR["last_seen_at"] = observed_at
+    _STATUS_FILE_ERROR["last_seen"] = checked_at
     return dict(_STATUS_FILE_ERROR)
 
 
@@ -119,6 +123,7 @@ def _build_stream_status(
     now_epoch: int,
     observed_at: str,
     last_successful_read_at: str | None,
+    last_successful_read: int | None,
     raw: bool,
 ) -> dict[str, Any]:
     supervisor_ts = safe_int(data.get("ts_epoch"))
@@ -147,7 +152,9 @@ def _build_stream_status(
         "supervisor_stale": supervisor_stale,
         "supervisor_age_seconds": supervisor_age,
         "units": units,
+        "checked_at": now_epoch,
         "observed_at": observed_at,
+        "last_successful_read": last_successful_read,
         "last_successful_read_at": last_successful_read_at,
     }
     if raw:
@@ -165,7 +172,9 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
             "available": False,
             "status": "unavailable",
             "units": {},
+            "checked_at": now_epoch,
             "observed_at": observed_at,
+            "last_successful_read": _LAST_GOOD_STATUS_READ_EPOCH,
             "last_successful_read_at": _LAST_GOOD_STATUS_READ_AT,
         }
 
@@ -174,7 +183,7 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise ValueError("stream status file must contain a JSON object")
     except Exception as exc:
-        error = _remember_status_error(exc, observed_at)
+        error = _remember_status_error(exc, observed_at, now_epoch)
 
         if _LAST_GOOD_STATUS_DATA is None:
             return {
@@ -182,10 +191,15 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
                 "status": "error",
                 "reason": error["reason"],
                 "units": {},
+                "checked_at": now_epoch,
+                "error_at": now_epoch,
                 "observed_at": observed_at,
+                "last_successful_read": _LAST_GOOD_STATUS_READ_EPOCH,
                 "last_successful_read_at": None,
                 "status_file_error": True,
+                "status_file_error_first_seen": error["first_seen"],
                 "status_file_error_first_seen_at": error["first_seen_at"],
+                "status_file_error_last_seen": error["last_seen"],
                 "status_file_error_last_seen_at": error["last_seen_at"],
             }
 
@@ -194,14 +208,19 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
             now_epoch=now_epoch,
             observed_at=observed_at,
             last_successful_read_at=_LAST_GOOD_STATUS_READ_AT,
+            last_successful_read=_LAST_GOOD_STATUS_READ_EPOCH,
             raw=raw,
         )
         result.update(
             {
+                "available": False,
                 "status": "error",
                 "reason": error["reason"],
+                "error_at": now_epoch,
                 "status_file_error": True,
+                "status_file_error_first_seen": error["first_seen"],
                 "status_file_error_first_seen_at": error["first_seen_at"],
+                "status_file_error_last_seen": error["last_seen"],
                 "status_file_error_last_seen_at": error["last_seen_at"],
                 "using_cached_status": True,
             }
@@ -210,12 +229,13 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
             result["raw_is_cached"] = True
         return result
 
-    _remember_status_success(data, observed_at)
+    _remember_status_success(data, observed_at, now_epoch)
     result = _build_stream_status(
         data,
         now_epoch=now_epoch,
         observed_at=observed_at,
         last_successful_read_at=observed_at,
+        last_successful_read=now_epoch,
         raw=raw,
     )
     result["status_file_error"] = False

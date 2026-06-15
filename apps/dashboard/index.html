@@ -941,6 +941,26 @@ function runIdText(r){
   return r.run_id || r.job_run_id || r.runtime_run_id || r.dag_run_id || '-';
 }
 
+function jobRef(j){
+  return String(j?.uid || j?.job_uid || j?.id || j?.job_id || j?.name || '');
+}
+
+function jsString(v){
+  return esc(JSON.stringify(String(v ?? '')));
+}
+
+function findJobByRef(ref){
+  const value = String(ref ?? '');
+  let matches = S.jobs.filter(j => jobRef(j) === value);
+  if(matches.length === 1) return matches[0];
+
+  matches = S.jobs.filter(j => String(j.id || '') === value || String(j.job_id || '') === value);
+  if(matches.length === 1) return matches[0];
+
+  matches = S.jobs.filter(j => String(j.name || '') === value);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function counterHtml(obj){
   return `
     <div class="mono" style="line-height:1.55;white-space:nowrap">
@@ -1094,7 +1114,7 @@ function renderRecent(){
   const jobs = [...S.jobs].sort((a,b)=>(Date.parse(b.started_at||0)||0)-(Date.parse(a.started_at||0)||0)).slice(0,8);
   document.getElementById('recentCount').textContent = `${S.jobs.length} jobs`;
   document.getElementById('recentBody').innerHTML = jobs.length
-    ? jobs.map(j=>`<tr style="cursor:pointer" onclick="openJob('${esc(j.id)}')">
+    ? jobs.map(j=>`<tr style="cursor:pointer" onclick="openJob(${jsString(jobRef(j))})">
         <td><b>${esc(j.name)}</b><div class="mono" style="color:var(--muted)">${esc(j.pipeline)}</div></td>
         <td>${typeTag(j.type)}</td>
         <td>${statusTag(j.current_status||'defined')}</td>
@@ -1124,7 +1144,7 @@ function renderJobs(){
       <td>${counterHtml(j)}</td>
       <td class="mono" style="color:var(--muted)">${esc((j.stream_target_path||j.target_path||'').slice(0,60))||'-'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn sm" onclick="openJob('${esc(j.id)}')">Open</button>
+        <button class="btn sm" onclick="openJob(${jsString(jobRef(j))})">Open</button>
         ${j.type==='batch' && !j.missing_airflow_dag
           ? `<button class="btn sm primary" onclick="openTriggerModal('${esc(j.pipeline)}')">▶</button>`
           : j.type==='batch' && j.missing_airflow_dag
@@ -1192,7 +1212,7 @@ function renderPipelineDetail(name){
       <td class="mono">${esc(j.latest_run_id||'-')}</td>
       <td>${counterHtml(j)}</td>
       <td class="mono">${esc(j.target_path||j.stream_target_path||'-')}</td>
-      <td><button class="btn sm" onclick="openJob('${esc(j.id)}')">Open</button></td>
+      <td><button class="btn sm" onclick="openJob(${jsString(jobRef(j))})">Open</button></td>
     </tr>
   `).join('') || '<tr><td colspan="7" style="color:var(--muted)">No jobs</td></tr>';
 }
@@ -1234,7 +1254,7 @@ function renderStreamDetail(name){
       <td style="display:flex;gap:6px">
         <button class="btn sm success" onclick="doStreamRestart('${esc(unit)}','${esc(j.name)}')">↺ Restart</button>
         <button class="btn sm danger" onclick="doStreamStop('${esc(unit)}','${esc(j.name)}')">■ Stop</button>
-        <button class="btn sm" onclick="openJob('${esc(j.id)}')">Logs</button>
+        <button class="btn sm" onclick="openJob(${jsString(jobRef(j))})">Logs</button>
       </td>
     </tr>`;
   }).join('');
@@ -1245,7 +1265,7 @@ function renderStreamDetail(name){
 // ═══════════════════════════════════════════════════════════
 
 async function openJob(jobId){
-  const job = S.jobs.find(j=>j.id===jobId || j.name===jobId);
+  const job = findJobByRef(jobId);
   if(!job) return;
 
   S.currentJob = job;
@@ -1327,7 +1347,7 @@ async function loadRunsForCurrentJob(showLoading=true){
   }
 
   try{
-    const data = await api('GET', `/api/runtime/runs/${encodeURIComponent(job.id)}?limit=10`);
+    const data = await api('GET', `/api/runtime/runs/${encodeURIComponent(jobRef(job))}?limit=10`);
     const runs = data.runs || [];
 
     document.getElementById('runsBody').innerHTML = runs.length
@@ -1362,10 +1382,7 @@ function syncOpenDrawerAfterRefresh(){
   const drawerOpen = document.getElementById('drawer')?.classList.contains('open');
   if(!drawerOpen || !S.currentJob) return;
 
-  const fresh = S.jobs.find(j =>
-    j.id === S.currentJob.id ||
-    j.name === S.currentJob.name
-  );
+  const fresh = findJobByRef(jobRef(S.currentJob));
 
   if(fresh){
     S.currentJob = fresh;

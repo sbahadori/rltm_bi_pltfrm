@@ -133,7 +133,7 @@ def pipeline_job_names(pipeline: dict[str, Any]) -> list[str]:
 def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
 
-    for pipeline in catalog.get("pipelines", []):
+    for pipeline_index, pipeline in enumerate(catalog.get("pipelines", [])):
         if not pipeline.get("enabled", True):
             continue
 
@@ -142,7 +142,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
         schedule = dag.get("schedule")
         dag_tags = dag.get("tags", [])
 
-        for job in pipeline.get("jobs", []):
+        for job_index, job in enumerate(pipeline.get("jobs", [])):
             if not job.get("enabled", True):
                 continue
 
@@ -154,7 +154,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
                 manifest = load_manifest(job.get("manifest_ref", ""))
                 source_id = manifest.get("source_id", "")
 
-                for table in enabled_manifest_tables(manifest):
+                for table_index, table in enumerate(enabled_manifest_tables(manifest)):
                     table_id = table.get("table_id", "")
                     if not table_id:
                         continue
@@ -162,6 +162,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
                     task_name = f"{job_name}__{table_id}"
                     jobs.append(
                         {
+                            "uid": f"batch:{pipeline_index}:{job_index}:{table_index}",
                             "id": f"{pipeline_name}__{task_name}",
                             "name": task_name,
                             "pipeline": pipeline_name,
@@ -182,6 +183,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
             spec = job.get("spec", {}) or {}
             jobs.append(
                 {
+                    "uid": f"batch:{pipeline_index}:{job_index}",
                     "id": f"{pipeline_name}__{job_name}",
                     "name": job_name,
                     "pipeline": pipeline_name,
@@ -199,7 +201,7 @@ def build_batch_jobs(catalog: dict[str, Any]) -> list[dict[str, Any]]:
 def build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
 
-    for stream in registry.get("streams", []):
+    for stream_index, stream in enumerate(registry.get("streams", [])):
         if not stream.get("enabled", True):
             continue
 
@@ -211,6 +213,7 @@ def build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
         if bronze:
             jobs.append(
                 {
+                    "uid": f"stream:{stream_index}:bronze",
                     "id": f"{name}__bronze",
                     "name": bronze.get("app_name", f"bronze_{name}"),
                     "pipeline": name,
@@ -226,6 +229,7 @@ def build_stream_jobs(registry: dict[str, Any]) -> list[dict[str, Any]]:
         if silver:
             jobs.append(
                 {
+                    "uid": f"stream:{stream_index}:silver",
                     "id": f"{name}__silver",
                     "name": silver.get("app_name", f"silver_{name}"),
                     "pipeline": name,
@@ -304,7 +308,15 @@ def config_payload() -> dict[str, Any]:
 
 
 def job_from_config(job_id: str) -> dict[str, Any] | None:
-    for job in config_payload().get("jobs", []):
-        if job.get("id") == job_id or job.get("name") == job_id:
-            return job
-    return None
+    jobs = config_payload().get("jobs", [])
+    job_ref = str(job_id)
+
+    for key in ("uid", "job_uid", "id", "job_id"):
+        matches = [job for job in jobs if str(job.get(key) or "") == job_ref]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return None
+
+    name_matches = [job for job in jobs if str(job.get("name") or "") == job_ref]
+    return name_matches[0] if len(name_matches) == 1 else None

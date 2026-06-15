@@ -49,6 +49,9 @@ STREAM_CONTROL_DIR = settings.stream_control_dir
 STREAM_STATUS_STALE_SECONDS = settings.stream_status_stale_seconds
 STREAM_HEARTBEAT_STALE_SECONDS = settings.stream_heartbeat_stale_seconds
 
+_WARNED_CONFIG_WARNINGS: set[str] = set()
+
+
 def load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -298,12 +301,48 @@ def config_bundle() -> dict[str, Any]:
     }
 
 
+def duplicate_job_id_warnings(jobs: list[dict[str, Any]]) -> list[str]:
+    warnings: list[str] = []
+    seen: dict[str, dict[str, Any]] = {}
+
+    for job in jobs:
+        job_id = str(job.get("id") or "")
+        if not job_id:
+            continue
+
+        previous = seen.get(job_id)
+        if previous:
+            warnings.append(
+                "Duplicate job id detected: "
+                f"'{job_id}' "
+                f"(pipeline='{job.get('pipeline')}', job='{job.get('name')}', type='{job.get('type')}' "
+                f"conflicts with previous pipeline='{previous.get('pipeline')}', "
+                f"job='{previous.get('name')}', type='{previous.get('type')}')"
+            )
+            continue
+
+        seen[job_id] = job
+
+    return warnings
+
+
+def _emit_config_warnings_once(warnings: list[str]) -> None:
+    for warning in warnings:
+        if warning in _WARNED_CONFIG_WARNINGS:
+            continue
+        print(f"[WARN] {warning}", flush=True)
+        _WARNED_CONFIG_WARNINGS.add(warning)
+
+
 def config_payload() -> dict[str, Any]:
     bundle = config_bundle()
+    warnings = duplicate_job_id_warnings(bundle["jobs"])
+    _emit_config_warnings_once(warnings)
+
     return {
         "pipelines": bundle["pipelines"],
         "jobs": bundle["jobs"],
-        "meta": {"loaded_at": now_iso()},
+        "meta": {"loaded_at": now_iso(), "warnings": warnings},
     }
 
 

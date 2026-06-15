@@ -361,6 +361,59 @@ def validate_catalog_job_payload(pipeline_name: str, job: dict[str, Any]) -> dic
         "normalized_job": job,
     }
 
+
+def _validate_catalog_global(catalog: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    seen_pipelines: dict[str, int] = {}
+
+    for pipeline_idx, pipeline in enumerate(catalog.get("pipelines", []) or []):
+        if not isinstance(pipeline, dict):
+            continue
+
+        pipeline_name = str(pipeline.get("name") or "")
+        if pipeline_name:
+            previous_idx = seen_pipelines.get(pipeline_name)
+            if previous_idx is not None:
+                errors.append(
+                    f"Duplicate pipeline name: '{pipeline_name}' "
+                    f"(pipeline indexes {previous_idx} and {pipeline_idx})"
+                )
+            else:
+                seen_pipelines[pipeline_name] = pipeline_idx
+
+        seen_jobs: dict[str, int] = {}
+        for job_idx, job in enumerate(pipeline.get("jobs", []) or []):
+            if not isinstance(job, dict):
+                continue
+
+            job_name = str(job.get("name") or "")
+            if not job_name:
+                continue
+
+            previous_job_idx = seen_jobs.get(job_name)
+            if previous_job_idx is not None:
+                errors.append(
+                    f"Duplicate job name '{job_name}' in pipeline '{pipeline_name}' "
+                    f"(job indexes {previous_job_idx} and {job_idx})"
+                )
+            else:
+                seen_jobs[job_name] = job_idx
+
+    return errors
+
+
+def _raise_catalog_global_errors(catalog: dict[str, Any]) -> None:
+    errors = _validate_catalog_global(catalog)
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Invalid catalog: duplicate pipeline or job names.",
+                "errors": errors,
+            },
+        )
+
+
 def _infer_source_type(job: dict[str, Any], pipeline: dict[str, Any] | None = None) -> str:
     job_type = str(job.get("job_type") or "")
 
@@ -574,6 +627,8 @@ def _merge_job_into_catalog(req: CatalogJobApplyRequest) -> dict[str, Any]:
         pipeline["jobs"][existing_idx] = job
         change_type = "updated_job"
 
+    _raise_catalog_global_errors(new_catalog)
+
     return {
         "ok": True,
         "change_type": change_type,
@@ -691,6 +746,8 @@ def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[
                 "change_type": job_change_type,
             }
         )
+
+    _raise_catalog_global_errors(new_catalog)
 
     return {
         "ok": True,

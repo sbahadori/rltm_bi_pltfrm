@@ -168,14 +168,41 @@ def load_stream_status(raw: bool = False) -> dict[str, Any]:
     observed_at = now_iso()
 
     if not STREAM_STATUS_FILE.exists():
+        if _LAST_GOOD_STATUS_DATA is not None:
+            result = _build_stream_status(
+                _LAST_GOOD_STATUS_DATA,
+                now_epoch=now_epoch,
+                observed_at=observed_at,
+                last_successful_read_at=_LAST_GOOD_STATUS_READ_AT,
+                last_successful_read=_LAST_GOOD_STATUS_READ_EPOCH,
+                raw=raw,
+            )
+            result.update(
+                {
+                    "available": False,
+                    "status": "unavailable",
+                    "reason": f"stream status file not found: {STREAM_STATUS_FILE}",
+                    "status_file_missing": True,
+                    "status_file_error": False,
+                    "using_cached_status": True,
+                }
+            )
+            if raw:
+                result["raw_is_cached"] = True
+            return result
+
         return {
             "available": False,
             "status": "unavailable",
+            "reason": f"stream status file not found: {STREAM_STATUS_FILE}",
             "units": {},
             "checked_at": now_epoch,
             "observed_at": observed_at,
             "last_successful_read": _LAST_GOOD_STATUS_READ_EPOCH,
             "last_successful_read_at": _LAST_GOOD_STATUS_READ_AT,
+            "status_file_missing": True,
+            "status_file_error": False,
+            "using_cached_status": False,
         }
 
     try:

@@ -51,6 +51,45 @@ STREAM_HEARTBEAT_STALE_SECONDS = settings.stream_heartbeat_stale_seconds
 
 _WARNED_CONFIG_WARNINGS: set[str] = set()
 
+def ensure_unique_job_ids(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ensure dashboard job id/job_id values are unique without changing normal ids.
+
+    The first occurrence keeps its original id.
+    Only later duplicates get a deterministic suffix.
+    """
+
+    seen: dict[str, int] = {}
+    unique_jobs: list[dict[str, Any]] = []
+
+    for job in jobs:
+        item = dict(job)
+
+        base_id = str(
+            item.get("id")
+            or item.get("job_id")
+            or item.get("uid")
+            or item.get("name")
+            or "job"
+        )
+
+        count = seen.get(base_id, 0)
+        seen[base_id] = count + 1
+
+        if count:
+            unique_id = f"{base_id}__dup{count + 1}"
+
+            item.setdefault("original_id", base_id)
+            item["id"] = unique_id
+            item["job_id"] = unique_id
+            item["duplicate_id_resolved"] = True
+            item["duplicate_id_index"] = count + 1
+        else:
+            item["id"] = base_id
+            item["job_id"] = str(item.get("job_id") or base_id)
+
+        unique_jobs.append(item)
+
+    return unique_jobs
 
 def load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
@@ -293,27 +332,41 @@ def build_pipelines(catalog: dict[str, Any], registry: dict[str, Any]) -> list[d
 def config_bundle() -> dict[str, Any]:
     catalog = load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = load_json(STREAM_REGISTRY_PATH) or {"streams": []}
+
+    jobs = ensure_unique_job_ids(
+        build_batch_jobs(catalog) + build_stream_jobs(registry)
+    )
+
     return {
         "catalog": catalog,
         "registry": registry,
         "pipelines": build_pipelines(catalog, registry),
-        "jobs": build_batch_jobs(catalog) + build_stream_jobs(registry),
+        "jobs": jobs,
     }
-
 
 def duplicate_job_id_warnings(jobs: list[dict[str, Any]]) -> list[str]:
     warnings: list[str] = []
     seen: dict[str, dict[str, Any]] = {}
 
     for job in jobs:
-        job_id = str(job.get("id") or "")
+        if job.get("duplicate_id_resolved"):
+            warnings.append(
+                "Duplicate job id resolved: "
+                f"original_id='{job.get('original_id')}' "
+                f"assigned_id='{job.get('id')}' "
+                f"(pipeline='{job.get('pipeline')}', "
+                f"job='{job.get('name')}', "
+                f"type='{job.get('type')}')"
+            )
+
+        job_id = str(job.get("id") or job.get("job_id") or "")
         if not job_id:
             continue
 
         previous = seen.get(job_id)
         if previous:
             warnings.append(
-                "Duplicate job id detected: "
+                "Duplicate job id still detected after resolution: "
                 f"'{job_id}' "
                 f"(pipeline='{job.get('pipeline')}', job='{job.get('name')}', type='{job.get('type')}' "
                 f"conflicts with previous pipeline='{previous.get('pipeline')}', "
@@ -324,7 +377,6 @@ def duplicate_job_id_warnings(jobs: list[dict[str, Any]]) -> list[str]:
         seen[job_id] = job
 
     return warnings
-
 
 def _emit_config_warnings_once(warnings: list[str]) -> None:
     for warning in warnings:

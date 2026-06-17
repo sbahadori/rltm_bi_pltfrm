@@ -775,9 +775,12 @@ def _log_catalog_change(
     Optional audit log. If migration is not applied yet, dashboard must not fail.
     """
     try:
-        import app as _app
+        try:
+            from apps.dashboard.db import call_usp_void
+        except ImportError:  # pragma: no cover
+            from .db import call_usp_void
 
-        _app.call_usp_void(
+        call_usp_void(
             "usp_insert_catalog_change_log",
             (
                 user.get("sub", "unknown"),

@@ -59,3 +59,7 @@ airflow_postgres_data/
 
 # logs
 *.log
+
+.env
+.env.*
+*.bak_fix_2_3_2_4

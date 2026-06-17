@@ -4,15 +4,30 @@ from __future__ import annotations
 Runtime resolver.
 
 Single responsibility:
-- Resolve job runtime state from the approved source precedence.
+- Resolve final dashboard job runtime state.
+- Apply the approved source precedence.
 - Normalize run rows into one stable API schema.
 - Collapse event-level rows into job-run-level rows.
 
-Source precedence:
-1. Control DB / runtime.job_run via ctl.usp_list_runtime_job_runs
+Ownership contract:
+- This is the only module allowed to decide final job current_status.
+- stream_runtime.py provides stream facts only.
+- airflow_client.py provides Airflow facts only.
+- config_loader.py provides catalog/config facts only.
+- runtime_api.py only exposes the resolved response.
+
+Approved source precedence for batch jobs:
+1. Control DB runtime rows
 2. Airflow fallback
 3. Catalog metadata
-4. Unknown
+4. Catalog-defined / unknown
+
+Approved source precedence for stream jobs:
+1. Stream runtime DB current row
+2. Stream supervisor status file
+3. Catalog-defined / unknown
+
+Do not split final state decision logic across modules.
 """
 
 import json
@@ -332,6 +347,11 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
                         "runtime_available": False,
                     }
                 )
+        # Stream ownership boundary:
+        # stream_runtime returns raw/computed stream facts such as computed_status,
+        # heartbeat_age_seconds, counters, and errors.
+        # The final dashboard current_status is assigned here only, after applying
+        # the stream source precedence: stream runtime DB first, supervisor file second.
 
         if job_mode_of(runtime_job) == "stream":
             db_unit = stream_current_from_db(runtime_job)

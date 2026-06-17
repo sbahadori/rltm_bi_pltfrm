@@ -5,9 +5,16 @@ Stream runtime adapter.
 
 Single responsibility:
 - Read stream-supervisor state.
-- Compute heartbeat/staleness status.
+- Compute stream-unit heartbeat/staleness facts.
 - Write stream control commands.
-- Read stream unit current status from Control DB.
+- Read stream-unit runtime facts from Control DB.
+
+Ownership contract:
+- This module is a facts provider only.
+- It may return computed_status, heartbeat_age_seconds, last_batch_id, counters, and errors.
+- It must not decide the final dashboard job current_status.
+- It must not apply source precedence between Control DB, Airflow, catalog, and supervisor file.
+- Final job state resolution belongs to runtime_resolver.enrich_jobs().
 
 No FastAPI routes and no Airflow logic belongs here.
 """

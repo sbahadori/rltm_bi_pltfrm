@@ -51,6 +51,97 @@ STREAM_HEARTBEAT_STALE_SECONDS = settings.stream_heartbeat_stale_seconds
 
 _WARNED_CONFIG_WARNINGS: set[str] = set()
 
+def validate_config_shape(catalog: dict[str, Any], registry: dict[str, Any]) -> list[str]:
+    """Return structural config errors before building dashboard jobs.
+
+    This is intentionally lightweight:
+    - no DB calls
+    - no Airflow calls
+    - no semantic execution validation
+    - only checks the JSON shape required by config_loader
+    """
+
+    errors: list[str] = []
+
+    pipelines = catalog.get("pipelines")
+    if pipelines is None:
+        errors.append("batch catalog missing required top-level key: pipelines")
+    elif not isinstance(pipelines, list):
+        errors.append("batch catalog key 'pipelines' must be a list")
+    else:
+        for pipeline_idx, pipeline in enumerate(pipelines):
+            if not isinstance(pipeline, dict):
+                errors.append(f"catalog.pipelines[{pipeline_idx}] must be an object")
+                continue
+
+            pipeline_name = pipeline.get("name")
+            if not isinstance(pipeline_name, str) or not pipeline_name.strip():
+                errors.append(f"catalog.pipelines[{pipeline_idx}].name is required")
+
+            dag = pipeline.get("dag", {})
+            if dag is not None and not isinstance(dag, dict):
+                errors.append(f"catalog.pipelines[{pipeline_idx}].dag must be an object")
+
+            jobs = pipeline.get("jobs", [])
+            if not isinstance(jobs, list):
+                errors.append(f"catalog.pipelines[{pipeline_idx}].jobs must be a list")
+                continue
+
+            for job_idx, job in enumerate(jobs):
+                if not isinstance(job, dict):
+                    errors.append(
+                        f"catalog.pipelines[{pipeline_idx}].jobs[{job_idx}] must be an object"
+                    )
+                    continue
+
+                job_name = job.get("name")
+                if not isinstance(job_name, str) or not job_name.strip():
+                    errors.append(
+                        f"catalog.pipelines[{pipeline_idx}].jobs[{job_idx}].name is required"
+                    )
+
+                job_type = job.get("job_type")
+                if not isinstance(job_type, str) or not job_type.strip():
+                    errors.append(
+                        f"catalog.pipelines[{pipeline_idx}].jobs[{job_idx}].job_type is required"
+                    )
+
+                spec = job.get("spec", {})
+                if spec is not None and not isinstance(spec, dict):
+                    errors.append(
+                        f"catalog.pipelines[{pipeline_idx}].jobs[{job_idx}].spec must be an object"
+                    )
+
+                tags = job.get("tags", [])
+                if tags is not None and not isinstance(tags, list):
+                    errors.append(
+                        f"catalog.pipelines[{pipeline_idx}].jobs[{job_idx}].tags must be a list"
+                    )
+
+    streams = registry.get("streams")
+    if streams is None:
+        errors.append("stream registry missing required top-level key: streams")
+    elif not isinstance(streams, list):
+        errors.append("stream registry key 'streams' must be a list")
+    else:
+        for stream_idx, stream in enumerate(streams):
+            if not isinstance(stream, dict):
+                errors.append(f"registry.streams[{stream_idx}] must be an object")
+                continue
+
+            stream_name = stream.get("name")
+            if not isinstance(stream_name, str) or not stream_name.strip():
+                errors.append(f"registry.streams[{stream_idx}].name is required")
+
+            for section_name in ("source", "bronze", "silver"):
+                section = stream.get(section_name, {})
+                if section is not None and not isinstance(section, dict):
+                    errors.append(
+                        f"registry.streams[{stream_idx}].{section_name} must be an object"
+                    )
+
+    return errors
+
 def ensure_unique_job_ids(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Ensure dashboard job id/job_id values are unique without changing normal ids.
 
@@ -333,6 +424,16 @@ def config_bundle() -> dict[str, Any]:
     catalog = load_json(BATCH_CATALOG_PATH) or {"pipelines": []}
     registry = load_json(STREAM_REGISTRY_PATH) or {"streams": []}
 
+    config_errors = validate_config_shape(catalog, registry)
+    if config_errors:
+        return {
+            "catalog": catalog,
+            "registry": registry,
+            "pipelines": [],
+            "jobs": [],
+            "config_errors": config_errors,
+        }
+
     jobs = ensure_unique_job_ids(
         build_batch_jobs(catalog) + build_stream_jobs(registry)
     )
@@ -342,6 +443,7 @@ def config_bundle() -> dict[str, Any]:
         "registry": registry,
         "pipelines": build_pipelines(catalog, registry),
         "jobs": jobs,
+        "config_errors": [],
     }
 
 def duplicate_job_id_warnings(jobs: list[dict[str, Any]]) -> list[str]:
@@ -389,12 +491,25 @@ def _emit_config_warnings_once(warnings: list[str]) -> None:
 def config_payload() -> dict[str, Any]:
     bundle = config_bundle()
     warnings = duplicate_job_id_warnings(bundle["jobs"])
+
+    config_errors = bundle.get("config_errors") or []
+    if config_errors:
+        warnings = [
+            *warnings,
+            *[f"Config validation error: {error}" for error in config_errors],
+        ]
+
     _emit_config_warnings_once(warnings)
 
     return {
         "pipelines": bundle["pipelines"],
         "jobs": bundle["jobs"],
-        "meta": {"loaded_at": now_iso(), "warnings": warnings},
+        "meta": {
+            "loaded_at": now_iso(),
+            "warnings": warnings,
+            "config_valid": len(config_errors) == 0,
+            "config_errors": config_errors,
+        },
     }
 
 

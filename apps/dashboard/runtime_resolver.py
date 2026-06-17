@@ -32,7 +32,7 @@ Do not split final state decision logic across modules.
 
 import json
 from typing import Any
-
+import time
 try:
     from apps.dashboard.airflow_client import latest_airflow_task
     from apps.dashboard.db import call_usp_rows, catalog_metadata_for_job
@@ -87,6 +87,55 @@ except ImportError:  # pragma: no cover
         pipeline_id_of,
     )
 
+AIRFLOW_UNAVAILABLE_GRACE_SECONDS = 180
+_AIRFLOW_UNAVAILABLE_FIRST_SEEN: dict[str, float] = {}
+
+
+def apply_airflow_unavailable_grace(
+    *,
+    airflow: dict[str, Any],
+    dag_id: str,
+    task_id: str,
+) -> dict[str, Any]:
+    """Suppress noisy Airflow-unavailable alerts during short Airflow restarts.
+
+    Airflow may briefly disappear during container restart, scheduler/webserver restart,
+    or network hiccups. During the grace window we keep the job in catalog-defined
+    state and mark the Airflow outage as suppressed. After the grace window expires,
+    the real airflow_unavailable status is allowed through.
+    """
+
+    if airflow.get("current_status") != "airflow_unavailable":
+        _AIRFLOW_UNAVAILABLE_FIRST_SEEN.pop(f"{dag_id}.{task_id}", None)
+        return airflow
+
+    key = f"{dag_id}.{task_id}"
+    now = time.time()
+    first_seen = _AIRFLOW_UNAVAILABLE_FIRST_SEEN.setdefault(key, now)
+    age_seconds = now - first_seen
+
+    if age_seconds < AIRFLOW_UNAVAILABLE_GRACE_SECONDS:
+        return {
+            **airflow,
+            "current_status": "defined",
+            "airflow_unavailable": True,
+            "airflow_unavailable_grace_active": True,
+            "airflow_unavailable_age_seconds": int(age_seconds),
+            "alert_suppressed": True,
+            "status_reason": (
+                "Airflow is temporarily unavailable, but this is still inside the "
+                f"{AIRFLOW_UNAVAILABLE_GRACE_SECONDS}s grace period. "
+                "Suppressing dashboard alert to avoid noise during Airflow restart."
+            ),
+        }
+
+    return {
+        **airflow,
+        "airflow_unavailable": True,
+        "airflow_unavailable_grace_active": False,
+        "airflow_unavailable_age_seconds": int(age_seconds),
+        "alert_suppressed": False,
+    }
 
 def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
     job = canonical_job(job)
@@ -299,8 +348,18 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
 
         else:
             if job_mode_of(job) == "batch":
-                airflow = latest_airflow_task(pipeline_id_of(job), job_name_of(job))
+                dag_id = pipeline_id_of(job)
+                task_id = job_name_of(job)
+
+                airflow = latest_airflow_task(dag_id, task_id)
+                airflow = apply_airflow_unavailable_grace(
+                    airflow=airflow,
+                    dag_id=dag_id,
+                    task_id=task_id,
+                )
+
                 runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
+
                 runtime_job.update(
                     {
                         **airflow,

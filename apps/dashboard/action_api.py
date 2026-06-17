@@ -12,7 +12,7 @@ Single responsibility:
 
 import time
 from typing import Any
-
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -99,7 +99,12 @@ async def action_dag_trigger(
     started = time.time()
     payload = _model_dump(req)
     try:
-        result = trigger_dag(req.dag_id, conf=req.conf, logical_date=req.logical_date)
+        result = await run_in_threadpool(
+            trigger_dag,
+            req.dag_id,
+            conf=req.conf,
+            logical_date=req.logical_date,
+        )
         insert_action_log(
             user=user,
             action_type="dag_trigger",
@@ -134,7 +139,11 @@ async def action_dag_pause(
     payload = _model_dump(req)
     action_type = "dag_pause" if req.paused else "dag_unpause"
     try:
-        result = pause_dag(req.dag_id, req.paused)
+        result = await run_in_threadpool(
+            pause_dag,
+            req.dag_id,
+            req.paused,
+        )
         insert_action_log(
             user=user,
             action_type=action_type,
@@ -168,7 +177,7 @@ async def action_dag_cancel(
     started = time.time()
     payload = _model_dump(req)
     try:
-        result = cancel_dag_run(req.dag_id, req.run_id)
+        result = await run_in_threadpool(cancel_dag_run, req.dag_id, req.run_id)
         insert_action_log(
             user=user,
             action_type="dag_cancel",
@@ -201,7 +210,12 @@ async def action_dag_runs(
     user: dict = Depends(get_current_user),
 ) -> dict:
     try:
-        return {"dag_id": dag_id, "runs": get_dag_runs(dag_id, limit=limit)}
+        runs = await run_in_threadpool(
+            get_dag_runs,
+            dag_id,
+            limit=limit,
+        )
+        return {"dag_id": dag_id, "runs": runs}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -209,7 +223,8 @@ async def action_dag_runs(
 @router.get("/api/actions/dags")
 async def action_list_dags(user: dict = Depends(get_current_user)) -> dict:
     try:
-        return {"dags": list_dags()}
+        dags = await run_in_threadpool(list_dags)
+        return {"dags": dags}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

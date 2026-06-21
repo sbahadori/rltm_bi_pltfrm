@@ -221,9 +221,10 @@ ctl.usp_list_action_logs
 
 ### `014_dynamic_job_registry.sql`
 
-Creates the legacy UI dynamic job registry tables and procedures. This is kept
-for migration continuity; active executable job definitions come from catalog
-onboarding into `meta.pipeline` and `meta.job`.
+Creates the legacy UI dynamic job registry tables and procedures. This migration
+is historical/deprecated and is kept only for migration continuity; active
+executable job definitions come from catalog onboarding into `meta.pipeline` and
+`meta.job`. The UI registry is not an approved source of truth.
 
 ### `015_catalog_change_log.sql`
 
@@ -238,6 +239,8 @@ ctl.usp_list_catalog_change_logs
 ### `016_drop_ui_job_registry.sql`
 
 Archives the legacy UI dynamic job registry tables and drops their procedures.
+Archived registry data is migration history only and must not be used by active
+runtime resolution or dashboard source precedence.
 
 ### `017_dashboard_auth_schema.sql`
 

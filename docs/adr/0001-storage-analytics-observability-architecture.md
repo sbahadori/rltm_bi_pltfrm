@@ -10,6 +10,10 @@ The platform requires a clear separation between operational metadata, runtime c
 
 The current platform already uses PostgreSQL as the control database for pipeline metadata, job metadata, runtime job runs, watermarks, quality results, and dashboard authentication. However, as the platform grows, high-volume runtime events, stream metrics, quality checks, and historical analytical queries should not overload the operational metadata store.
 
+The platform also needs one explicit source-of-truth contract so catalog files,
+Control DB metadata, runtime tables, Airflow, dashboard UI, and analytics sinks
+do not compete as duplicated truth.
+
 ## Decision
 
 Use the following architectural separation:
@@ -22,6 +26,10 @@ Use the following architectural separation:
 | BI exploration | Metabase | Optional analytical exploration over PostgreSQL and ClickHouse |
 | Metrics collection | Prometheus | Service metrics, API health, runner metrics, exporter metrics |
 | Monitoring and visualization | Grafana | Operational dashboards, alerts, infrastructure monitoring |
+
+The canonical source-of-truth rules for every platform concern are defined in
+`docs/architecture/final_source_of_truth.md`. This ADR defines the component
+separation; the source-of-truth document defines ownership and precedence.
 
 ## Consequences
 
@@ -45,7 +53,9 @@ Use the following architectural separation:
 
 This decision will be implemented incrementally.
 
-Phase 1 keeps PostgreSQL as the source of truth for operational metadata and runtime state.
+Phase 1 keeps PostgreSQL as the source of truth for operational metadata
+projection and runtime state. Catalog files remain the design-time source of
+truth for job definitions and are materialized into PostgreSQL by onboarding.
 
 Phase 2 introduces a standardized runtime event contract and ensures all batch and streaming runners emit consistent metrics.
 

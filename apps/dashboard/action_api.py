@@ -5,9 +5,12 @@ Execution/action API router.
 
 Single responsibility:
 - Expose authenticated dashboard actions.
-- Delegate Airflow operations to airflow_client.
+- Delegate Airflow executor/orchestrator operations to airflow_client.
 - Delegate stream-control operations to stream_runtime.
 - Write action audit logs through db.insert_action_log.
+
+Action responses may include executor metadata. They are not platform runtime
+truth; runtime state is resolved only through runtime_api.py/runtime_resolver.py.
 """
 
 import time
@@ -215,7 +218,13 @@ async def action_dag_runs(
             dag_id,
             limit=limit,
         )
-        return {"dag_id": dag_id, "runs": runs}
+        return {
+            "source": "airflow_executor",
+            "executor_type": "airflow",
+            "runtime_authoritative": False,
+            "dag_id": dag_id,
+            "runs": runs,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -224,7 +233,12 @@ async def action_dag_runs(
 async def action_list_dags(user: dict = Depends(get_current_user)) -> dict:
     try:
         dags = await run_in_threadpool(list_dags)
-        return {"dags": dags}
+        return {
+            "source": "airflow_executor",
+            "executor_type": "airflow",
+            "runtime_authoritative": False,
+            "dags": dags,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

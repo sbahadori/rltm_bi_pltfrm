@@ -5,7 +5,10 @@ Airflow API adapter.
 
 Single responsibility:
 - Own Airflow authentication and HTTP interaction.
-- Expose small dashboard-oriented Airflow operations.
+- Expose small dashboard-oriented Airflow executor operations.
+
+Returned DAG/task state is executor metadata only. It must not be used by
+runtime_resolver.py or runtime_api.py as platform runtime truth.
 
 No FastAPI routes, no Control DB calls, and no catalog parsing belongs here.
 """
@@ -31,6 +34,9 @@ settings = get_settings()
 AIRFLOW_API_BASE = settings.airflow_api_base
 AIRFLOW_USER = settings.airflow_user
 AIRFLOW_PASSWORD = settings.airflow_password
+EXECUTOR_TYPE = "airflow"
+EXECUTOR_METADATA_SOURCE = "airflow_executor"
+RUNTIME_AUTHORITATIVE = False
 
 _token_lock = threading.Lock()
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
@@ -108,6 +114,9 @@ def trigger_dag(dag_id: str, conf: dict[str, Any] | None = None, logical_date: s
     result = airflow_post(f"/api/v2/dags/{quoted_dag}/dagRuns", body=payload)
 
     return {
+        "source": EXECUTOR_METADATA_SOURCE,
+        "executor_type": EXECUTOR_TYPE,
+        "runtime_authoritative": RUNTIME_AUTHORITATIVE,
         "dag_id": dag_id,
         "dag_run_id": result.get("dag_run_id") or result.get("run_id"),
         "state": result.get("state"),
@@ -118,7 +127,13 @@ def trigger_dag(dag_id: str, conf: dict[str, Any] | None = None, logical_date: s
 def pause_dag(dag_id: str, paused: bool) -> dict[str, Any]:
     quoted_dag = urllib.parse.quote(dag_id, safe="")
     result = airflow_patch(f"/api/v2/dags/{quoted_dag}", body={"is_paused": paused})
-    return {"dag_id": dag_id, "is_paused": result.get("is_paused", paused)}
+    return {
+        "source": EXECUTOR_METADATA_SOURCE,
+        "executor_type": EXECUTOR_TYPE,
+        "runtime_authoritative": RUNTIME_AUTHORITATIVE,
+        "dag_id": dag_id,
+        "is_paused": result.get("is_paused", paused),
+    }
 
 
 def cancel_dag_run(dag_id: str, run_id: str) -> dict[str, Any]:
@@ -128,7 +143,14 @@ def cancel_dag_run(dag_id: str, run_id: str) -> dict[str, Any]:
         f"/api/v2/dags/{quoted_dag}/dagRuns/{quoted_run}",
         body={"state": "failed"},
     )
-    return {"dag_id": dag_id, "run_id": run_id, "state": result.get("state")}
+    return {
+        "source": EXECUTOR_METADATA_SOURCE,
+        "executor_type": EXECUTOR_TYPE,
+        "runtime_authoritative": RUNTIME_AUTHORITATIVE,
+        "dag_id": dag_id,
+        "run_id": run_id,
+        "state": result.get("state"),
+    }
 
 
 def get_dag_runs(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -138,6 +160,9 @@ def get_dag_runs(dag_id: str, limit: int = 10) -> list[dict[str, Any]]:
 
     return [
         {
+            "source": EXECUTOR_METADATA_SOURCE,
+            "executor_type": EXECUTOR_TYPE,
+            "runtime_authoritative": RUNTIME_AUTHORITATIVE,
             "dag_run_id": run.get("dag_run_id"),
             "state": run.get("state"),
             "logical_date": run.get("logical_date"),
@@ -154,6 +179,9 @@ def list_dags() -> list[dict[str, Any]]:
 
     return [
         {
+            "source": EXECUTOR_METADATA_SOURCE,
+            "executor_type": EXECUTOR_TYPE,
+            "runtime_authoritative": RUNTIME_AUTHORITATIVE,
             "dag_id": dag.get("dag_id"),
             "is_paused": dag.get("is_paused"),
             "is_active": dag.get("is_active"),
@@ -175,6 +203,9 @@ def get_dag_run(dag_id: str, dag_run_id: str) -> dict[str, Any]:
     ended_at = run.get("end_date")
 
     return {
+        "source": EXECUTOR_METADATA_SOURCE,
+        "executor_type": EXECUTOR_TYPE,
+        "runtime_authoritative": RUNTIME_AUTHORITATIVE,
         "dag_id": dag_id,
         "dag_run_id": run.get("dag_run_id") or dag_run_id,
         "state": normalize_state(run.get("state")),

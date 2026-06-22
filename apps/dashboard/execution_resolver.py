@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Resolve dashboard job-run requests to executor submissions.
+
+This module returns Airflow executor submission metadata only. Final job runtime
+status, counters, output paths, and run history remain Control DB runtime truth.
+"""
+
 from typing import Any
 
 try:
@@ -58,6 +65,8 @@ def execute_job(
     return {
         "ok": True,
         "status": "submitted",
+        "source": "airflow_executor",
+        "runtime_authoritative": False,
         "job_id": job_id_of(job),
         "job_name": job_name_of(job),
         "pipeline_id": pipeline_id_of(job),
@@ -66,4 +75,8 @@ def execute_job(
         "executor_id": dag_id,
         "executor_run_id": executor_run_id,
         "executor_result": result,
+        "status_reason": (
+            "Submitted to the Airflow executor. Platform runtime state is "
+            "resolved from Control DB runtime rows, not Airflow metadata."
+        ),
     }

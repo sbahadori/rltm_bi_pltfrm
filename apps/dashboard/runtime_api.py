@@ -9,6 +9,9 @@ Owns only read-only runtime/config endpoints:
 - /api/runtime/runs/{job_id}
 - /api/runtime/mounts
 - /api/runtime/streams/status
+
+This router must not read Airflow. Airflow action endpoints expose executor
+metadata only; batch runtime truth comes from Control DB runtime rows.
 """
 
 from fastapi import APIRouter, Query

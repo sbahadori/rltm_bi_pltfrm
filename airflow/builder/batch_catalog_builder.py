@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""
+Build Airflow executor tasks from materialized catalog/control-plane specs.
+
+Airflow owns orchestration and executor correlation only. Runtime truth is
+written by runners to Control DB runtime tables and read by dashboard runtime
+APIs from those tables.
+"""
+
 import os
 import sys
 from datetime import timedelta

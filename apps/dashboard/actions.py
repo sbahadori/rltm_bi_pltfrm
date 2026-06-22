@@ -5,7 +5,7 @@ Backward-compatibility facade for legacy imports.
 
 Do not add implementation logic here.
 
-Source of truth:
+Implementation owners:
 - Airflow HTTP/auth/action logic: apps.dashboard.airflow_client
 - Stream control/status logic: apps.dashboard.stream_runtime
 """

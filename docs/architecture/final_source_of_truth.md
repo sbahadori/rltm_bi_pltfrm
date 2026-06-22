@@ -138,6 +138,15 @@ Forbidden active runtime sources:
 - local JSONL runtime registries for batch jobs
 - Airflow task/DAG state as platform batch runtime truth or fallback
 
+## Airflow Executor Boundary
+
+Dashboard action endpoints may return Airflow DAG/task details as
+`source=airflow_executor` with `runtime_authoritative=false`. Those responses
+are trigger/executor metadata only. `runtime_resolver.py` and `runtime_api.py`
+must not use Airflow responses to derive batch job status, counters, output
+paths, or run history; those values must come from Control DB runtime rows and
+approved `ctl` runtime functions/views.
+
 ## Ownership by Component
 
 | Component | Owns | Must not own |

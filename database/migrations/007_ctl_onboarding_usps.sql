@@ -12,9 +12,12 @@
 --     ctl.usp_get_active_job_metadata(...)
 --
 -- Important:
+--   - Catalog JSON is the design-time source of truth for job definitions.
 --   - meta.pipeline.raw_config stores the full pipeline JSON object.
---   - meta.job.config stores the executable job spec.
+--   - meta.job.config stores the onboarding-materialized executable job spec.
 --   - meta.job.job_code and meta.job.job_key must match CONTROL_JOB_CODE/KEY.
+--   - Production runners must execute this materialized Control DB projection,
+--     not an unpublished design-time JSON draft.
 -- -----------------------------------------------------------------------------
 
 DROP FUNCTION IF EXISTS ctl.usp_list_active_pipeline_specs();
@@ -195,6 +198,19 @@ BEGIN
     IF p_pipeline_name IS NULL OR trim(p_pipeline_name) = '' THEN
         RAISE EXCEPTION 'p_pipeline_name is required for job_code=%', p_job_code;
     END IF;
+
+    -- If an older onboarding run used a stale layer/job-code convention for the
+    -- same logical job, retire that row before inserting the canonical code.
+    UPDATE meta.job
+    SET
+        is_active = FALSE,
+        active_flag = FALSE,
+        effective_end_date = COALESCE(effective_end_date, now()),
+        updated_at = now()
+    WHERE pipeline_name = p_pipeline_name
+      AND job_name = p_job_name
+      AND job_code <> p_job_code
+      AND (is_active IS TRUE OR active_flag IS TRUE);
 
     INSERT INTO meta.job (
         job_code,

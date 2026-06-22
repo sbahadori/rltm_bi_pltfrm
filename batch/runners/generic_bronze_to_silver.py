@@ -32,7 +32,10 @@ from batch.writers.delta_writer import (  # noqa: E402
     merge_to_target,
     validate_partition_columns,
 )
-from shared.control.job_spec_store import load_current_job_spec  # noqa: E402
+from shared.control.job_spec_store import (  # noqa: E402
+    design_time_catalog_fallback_enabled,
+    load_current_job_spec,
+)
 from shared.core.spark import create_spark  # noqa: E402
 from shared.runtime.control_run_context import (  # noqa: E402
     build_runtime_context,
@@ -59,14 +62,23 @@ def build_spark() -> SparkSession:
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
     """
     Primary source: PostgreSQL meta.job.config through CONTROL_JOB_CODE / CONTROL_JOB_KEY.
-    Fallback: design-time JSON catalog for local/dev compatibility.
+    Fallback: design-time JSON catalog only when Control DB is disabled or an
+    explicit local/dev override is enabled.
     """
     try:
         return load_current_job_spec()
     except Exception as exc:
+        if not design_time_catalog_fallback_enabled():
+            raise RuntimeError(
+                "Could not load job spec from meta.job.config while Control DB "
+                "execution is enabled. Publish the catalog and run onboarding "
+                "before executing this job, or set "
+                "ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true only for local/dev."
+            ) from exc
+
         print(
             f"[WARN] Could not load job spec from meta.job.config; "
-            f"falling back to JSON catalog. error={exc}",
+            f"using explicit local/dev JSON catalog fallback. error={exc}",
             flush=True,
         )
 

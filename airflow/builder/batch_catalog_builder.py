@@ -9,6 +9,15 @@ from typing import Any
 from airflow.providers.standard.operators.bash import BashOperator
 from batch.utils.jdbc_manifest_loader import get_enabled_tables, load_jdbc_manifest
 
+AIRFLOW_EFFECTIVE_START_TEMPLATE = (
+    "{{ data_interval_start.isoformat() "
+    "if data_interval_start is defined and data_interval_start else '' }}"
+)
+AIRFLOW_EFFECTIVE_END_TEMPLATE = (
+    "{{ data_interval_end.isoformat() "
+    "if data_interval_end is defined and data_interval_end else '' }}"
+)
+
 
 def _target_path_from_job(job: dict) -> str:
     spec = job.get("spec") or {}
@@ -96,8 +105,8 @@ def build_control_env_for_regular_job(
             "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
             "AIRFLOW_TASK_ID": "{{ task.task_id }}",
             "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
-            "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
-            "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+            "EFFECTIVE_START_DATE": AIRFLOW_EFFECTIVE_START_TEMPLATE,
+            "EFFECTIVE_END_DATE": AIRFLOW_EFFECTIVE_END_TEMPLATE,
         }
     )
 
@@ -159,8 +168,8 @@ def build_airflow_tasks_from_job(
                 "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
                 "AIRFLOW_TASK_ID": "{{ task.task_id }}",
                 "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
-                "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
-                "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+                "EFFECTIVE_START_DATE": AIRFLOW_EFFECTIVE_START_TEMPLATE,
+                "EFFECTIVE_END_DATE": AIRFLOW_EFFECTIVE_END_TEMPLATE,
             }
         )
 
@@ -223,8 +232,8 @@ def build_airflow_tasks_from_job(
                     "AIRFLOW_DAG_RUN_ID": "{{ run_id }}",
                     "AIRFLOW_TASK_ID": "{{ task.task_id }}",
                     "AIRFLOW_TRY_NUMBER": "{{ ti.try_number }}",
-                    "EFFECTIVE_START_DATE": "{{ data_interval_start.isoformat() }}",
-                    "EFFECTIVE_END_DATE": "{{ data_interval_end.isoformat() }}",
+                    "EFFECTIVE_START_DATE": AIRFLOW_EFFECTIVE_START_TEMPLATE,
+                    "EFFECTIVE_END_DATE": AIRFLOW_EFFECTIVE_END_TEMPLATE,
                 }
             )
 

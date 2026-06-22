@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import socket
 import sys
 import time
 import urllib.error
@@ -39,6 +40,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 from shared.control.job_spec_store import (  # noqa: E402
+    design_time_catalog_fallback_enabled,
     load_current_job_metadata,
     load_current_job_spec,
 )
@@ -76,14 +78,23 @@ def build_spark() -> SparkSession:
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
     """
     Primary source: PostgreSQL meta.job.config through CONTROL_JOB_CODE / CONTROL_JOB_KEY.
-    Fallback: design-time JSON catalog for local/dev compatibility.
+    Fallback: design-time JSON catalog only when Control DB is disabled or an
+    explicit local/dev override is enabled.
     """
     try:
         return load_current_job_spec()
     except Exception as exc:
+        if not design_time_catalog_fallback_enabled():
+            raise RuntimeError(
+                "Could not load job spec from meta.job.config while Control DB "
+                "execution is enabled. Publish the catalog and run onboarding "
+                "before executing this job, or set "
+                "ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true only for local/dev."
+            ) from exc
+
         print(
             f"[WARN] Could not load job spec from meta.job.config; "
-            f"falling back to JSON catalog. error={exc}",
+            f"using explicit local/dev JSON catalog fallback. error={exc}",
             flush=True,
         )
 
@@ -461,6 +472,14 @@ def execute_api_request(source: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         ) from exc
 
     except urllib.error.URLError as exc:
+        host = urllib.parse.urlparse(url).hostname or ""
+        if isinstance(exc.reason, socket.gaierror):
+            raise RuntimeError(
+                "API DNS resolution failed from the runner container. "
+                f"host={host}, url={url}, error={exc.reason}. "
+                "Check Docker/container DNS and outbound internet access."
+            ) from exc
+
         raise RuntimeError(f"API URL error: url={url}, error={exc}") from exc
 
 

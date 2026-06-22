@@ -47,6 +47,7 @@ PIPELINE_REPO_ROOT = settings.pipeline_repo_root
 BATCH_CATALOG_PATH = settings.batch_catalog_path
 CATALOG_BACKUP_DIR = settings.catalog_backup_dir
 ONBOARDING_DAG_ID = settings.control_onboarding_dag_id
+CATALOG_PUBLISH_CONTRACT = "docs/architecture/final_source_of_truth.md#catalog-publish-and-approval-contract"
 
 KNOWN_JOB_TYPES = {
     "generic_api_to_bronze",
@@ -775,12 +776,9 @@ def _log_catalog_change(
     Optional audit log. If migration is not applied yet, dashboard must not fail.
     """
     try:
-        try:
-            from apps.dashboard.db import call_usp_void
-        except ImportError:  # pragma: no cover
-            from .db import call_usp_void
+        import app as _app
 
-        call_usp_void(
+        _app.call_usp_void(
             "usp_insert_catalog_change_log",
             (
                 user.get("sub", "unknown"),
@@ -949,6 +947,8 @@ async def apply_catalog_job(
         return {
             "ok": True,
             "dry_run": True,
+            "publish_state": "validated_only",
+            "materialization_state": "not_requested",
             "change_type": merged["change_type"],
             "pipeline_name": merged["pipeline_name"],
             "job_name": merged["job_name"],
@@ -965,6 +965,9 @@ async def apply_catalog_job(
         result = {
             "ok": True,
             "applied": True,
+            "publish_state": "catalog_published",
+            "materialization_state": "pending_onboarding",
+            "publish_contract": CATALOG_PUBLISH_CONTRACT,
             "catalog_path": str(BATCH_CATALOG_PATH),
             "backup_path": str(backup_path),
             "change_type": merged["change_type"],
@@ -1014,7 +1017,8 @@ async def apply_and_onboard_catalog_job(
         conf: dict[str, Any] = {
             "catalog_path": "configs/batch/pipeline_catalog.json",
             "pipeline_name": apply_result["pipeline_name"],
-            "job_name": apply_result["job_name"],
+            "changed_job_name": apply_result["job_name"],
+            "materialize_scope": "pipeline",
             "dry_run": req.onboarding_dry_run,
         }
 
@@ -1024,6 +1028,10 @@ async def apply_and_onboard_catalog_job(
             "ok": True,
             "applied": True,
             "onboarding_triggered": True,
+            "publish_state": "catalog_published",
+            "materialization_scope": "pipeline",
+            "materialization_state": "onboarding_dry_run" if req.onboarding_dry_run else "pipeline_onboarding_triggered",
+            "publish_contract": CATALOG_PUBLISH_CONTRACT,
             "apply": apply_result,
             "onboarding": onboarding_result,
         }
@@ -1052,7 +1060,7 @@ async def apply_and_onboard_catalog_job(
             error_message=str(exc),
         )
         raise HTTPException(status_code=500, detail=f"Catalog applied, but onboarding failed: {exc}") from exc
-    
+
 
 @router.post("/pipelines/preview")
 async def preview_catalog_pipeline(
@@ -1083,6 +1091,8 @@ async def apply_catalog_pipeline(
         return {
             "ok": True,
             "dry_run": True,
+            "publish_state": "validated_only",
+            "materialization_state": "not_requested",
             "change_type": merged["change_type"],
             "pipeline_name": merged["pipeline_name"],
             "job_count": merged["job_count"],
@@ -1099,6 +1109,9 @@ async def apply_catalog_pipeline(
         result = {
             "ok": True,
             "applied": True,
+            "publish_state": "catalog_published",
+            "materialization_state": "pending_onboarding",
+            "publish_contract": CATALOG_PUBLISH_CONTRACT,
             "catalog_path": str(BATCH_CATALOG_PATH),
             "backup_path": str(backup_path),
             "change_type": merged["change_type"],
@@ -1157,6 +1170,10 @@ async def apply_and_onboard_catalog_pipeline(
             "ok": True,
             "applied": True,
             "onboarding_triggered": True,
+            "publish_state": "catalog_published",
+            "materialization_scope": "pipeline",
+            "materialization_state": "onboarding_dry_run" if req.onboarding_dry_run else "pipeline_onboarding_triggered",
+            "publish_contract": CATALOG_PUBLISH_CONTRACT,
             "apply": apply_result,
             "onboarding": onboarding_result,
         }
@@ -1185,4 +1202,3 @@ async def apply_and_onboard_catalog_pipeline(
             error_message=str(exc),
         )
         raise HTTPException(status_code=500, detail=f"Catalog applied, but onboarding failed: {exc}") from exc
-    

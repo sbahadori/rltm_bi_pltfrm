@@ -19,6 +19,7 @@ if str(AIRFLOW_APP_ROOT) not in sys.path:
 from builder.batch_catalog_builder import build_tasks_from_pipeline_spec, load_enabled_pipeline_specs  # noqa: E402
 from batch.specs.control_catalog_utils import load_enabled_pipeline_specs_from_control_db  # noqa: E402
 from shared.control.postgres import control_db_enabled  # noqa: E402
+from shared.control.job_spec_store import design_time_catalog_fallback_enabled  # noqa: E402
 
 CATALOG_PATH = "configs/batch/pipeline_catalog.json"
 
@@ -37,10 +38,19 @@ def _load_pipeline_specs():
             if specs:
                 print("[batch_catalog_dags] Loaded pipeline specs from PostgreSQL control plane")
                 return specs
+            print("[batch_catalog_dags] Control DB returned no active pipeline specs")
         except Exception as exc:
-            print(f"[batch_catalog_dags] Failed to load from control DB, falling back to JSON: {exc}")
+            print(f"[batch_catalog_dags] Failed to load from control DB: {exc}")
 
-    print("[batch_catalog_dags] Loaded pipeline specs from JSON catalog")
+        if not design_time_catalog_fallback_enabled():
+            raise RuntimeError(
+                "CONTROL_DB_ENABLED=true but no active pipeline specs could be "
+                "loaded from the Control DB. Publish the catalog and run "
+                "control-plane onboarding before building DAGs, or set "
+                "ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true only for local/dev."
+            )
+
+    print("[batch_catalog_dags] Loaded pipeline specs from JSON catalog local/dev fallback")
     return load_enabled_pipeline_specs(CATALOG_PATH)
 
 

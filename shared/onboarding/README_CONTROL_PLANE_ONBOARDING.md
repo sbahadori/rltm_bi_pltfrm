@@ -590,6 +590,10 @@ database/migrations/007_ctl_onboarding_usps.sql
 
 Check `CONTROL_DB_ENABLED=true` in `.env`.
 
+When `CONTROL_DB_ENABLED=true`, Airflow must load materialized specs from the
+Control DB. It should not fall back to design-time JSON unless you explicitly
+set `ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true` for local/dev debugging.
+
 Check:
 
 ```sql
@@ -597,6 +601,12 @@ SELECT * FROM ctl.usp_list_active_pipeline_specs();
 ```
 
 If it returns no rows, run onboarding.
+
+For the formal publish/materialize contract, see:
+
+```text
+docs/architecture/final_source_of_truth.md#catalog-publish-and-approval-contract
+```
 
 ### Runner cannot find active job
 

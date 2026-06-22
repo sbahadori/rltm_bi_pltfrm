@@ -66,6 +66,30 @@ Control DB metadata
                   +--> Prometheus/Grafana metrics and dashboards
 ```
 
+## Catalog Publish and Approval Contract
+
+Catalog JSON is the canonical design-time source for batch pipeline and job
+definitions. A job becomes executable through an explicit publish/materialize
+flow:
+
+| State | Meaning | Allowed source | Runtime behavior |
+|---|---|---|---|
+| Draft/proposal | User or API is preparing a catalog change | Dashboard/API request body | Not executable |
+| Validated | Payload passes catalog schema/contract checks | Preview/validate endpoint | Not executable |
+| Catalog published | Change is atomically written to `configs/batch/pipeline_catalog.json` and audited in `meta.catalog_change_log` | Catalog JSON | Not enough for production execution |
+| Runtime materialized | Onboarding writes `meta.pipeline.raw_config` and `meta.job.config` from the published catalog | Control DB projection of Catalog | Executable by Airflow and runners |
+| Runtime observed | Runners emit job events and state | Control DB runtime tables | Visible to dashboard and analytics sinks |
+
+Production execution must use the runtime-materialized Control DB projection.
+Direct execution from design-time JSON is allowed only for local/dev bootstrap
+when `CONTROL_DB_ENABLED=false`, or when
+`ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true` is explicitly set for local debugging.
+That fallback must never be treated as published runtime state.
+
+Dashboard publish flows materialize the whole changed pipeline, even when the
+user edited one job. This keeps `meta.pipeline.raw_config`, Airflow task
+generation, and every `meta.job.config` row in the same projection version.
+
 ## Rules
 
 1. Catalog files are the design-time source of truth for batch job definitions.

@@ -308,9 +308,11 @@ async def action_onboard(req: OnboardRequest, user: dict = Depends(require_role(
     if req.pipeline_name:
         conf["pipeline_name"] = req.pipeline_name
     if req.job_name:
-        conf["job_name"] = req.job_name
+        conf["changed_job_name"] = req.job_name
+        conf["materialize_scope"] = "pipeline"
     if req.table_id:
-        conf["table_id"] = req.table_id
+        conf["changed_table_id"] = req.table_id
+        conf["materialize_scope"] = "pipeline"
 
     try:
         result = trigger_dag("control_plane_onboarding", conf=conf)

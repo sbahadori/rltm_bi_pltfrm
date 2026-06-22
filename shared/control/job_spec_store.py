@@ -3,7 +3,25 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from shared.control.postgres import call_usp_one
+from shared.control.postgres import call_usp_one, control_db_enabled
+
+
+def _env_true(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def design_time_catalog_fallback_enabled() -> bool:
+    """
+    Allow direct JSON catalog execution only for local/dev bootstrap.
+
+    In the published control-plane path, runners must execute the materialized
+    catalog projection from meta.job.config. Falling back to JSON while the
+    Control DB is enabled would bypass onboarding/publish approval.
+    """
+    if _env_true("ALLOW_DESIGN_TIME_CATALOG_FALLBACK"):
+        return True
+
+    return not control_db_enabled()
 
 
 def _normalize_json_object(

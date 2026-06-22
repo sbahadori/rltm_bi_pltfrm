@@ -590,9 +590,10 @@ database/migrations/007_ctl_onboarding_usps.sql
 
 Check `CONTROL_DB_ENABLED=true` in `.env`.
 
-When `CONTROL_DB_ENABLED=true`, Airflow must load materialized specs from the
-Control DB. It should not fall back to design-time JSON unless you explicitly
-set `ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true` for local/dev debugging.
+When `CONTROL_DB_ENABLED=true`, Airflow should load materialized specs from the
+Control DB for DAG discovery. `ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true` is only
+a local/dev discovery escape hatch; batch runners still require
+`meta.job.config` and must not execute directly from design-time JSON.
 
 Check:
 

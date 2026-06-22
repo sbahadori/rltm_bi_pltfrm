@@ -81,10 +81,10 @@ flow:
 | Runtime observed | Runners emit job events and state | Control DB runtime tables | Visible to dashboard and analytics sinks |
 
 Production execution must use the runtime-materialized Control DB projection.
-Direct execution from design-time JSON is allowed only for local/dev bootstrap
-when `CONTROL_DB_ENABLED=false`, or when
-`ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true` is explicitly set for local debugging.
-That fallback must never be treated as published runtime state.
+Batch runners must load job specs from `meta.job.config`; they must not execute
+from design-time Catalog JSON. Local/dev JSON fallback is allowed only for
+Airflow DAG discovery/bootstrap when the Control DB is not ready, and it must
+never be treated as runtime state.
 
 Dashboard publish flows materialize the whole changed pipeline, even when the
 user edited one job. This keeps `meta.pipeline.raw_config`, Airflow task

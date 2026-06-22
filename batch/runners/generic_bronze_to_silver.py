@@ -20,7 +20,6 @@ REPO_ROOT = Path(os.getenv("PIPELINE_REPO_ROOT", "/workspace/rltm_bi_pltfrm")).r
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from batch.specs.batch_catalog_utils import get_job_by_name  # noqa: E402
 from batch.transforms.rules import (  # noqa: E402
     apply_dedupe,
     apply_derived_fields,
@@ -32,10 +31,7 @@ from batch.writers.delta_writer import (  # noqa: E402
     merge_to_target,
     validate_partition_columns,
 )
-from shared.control.job_spec_store import (  # noqa: E402
-    design_time_catalog_fallback_enabled,
-    load_current_job_spec,
-)
+from shared.control.job_spec_store import load_current_job_spec  # noqa: E402
 from shared.core.spark import create_spark  # noqa: E402
 from shared.runtime.control_run_context import (  # noqa: E402
     build_runtime_context,
@@ -61,35 +57,20 @@ def build_spark() -> SparkSession:
 
 def load_job_spec(catalog_path: str, pipeline_name: str, job_name: str) -> dict[str, Any]:
     """
-    Primary source: PostgreSQL meta.job.config through CONTROL_JOB_CODE / CONTROL_JOB_KEY.
-    Fallback: design-time JSON catalog only when Control DB is disabled or an
-    explicit local/dev override is enabled.
+    Runtime source: PostgreSQL meta.job.config through CONTROL_JOB_CODE / CONTROL_JOB_KEY.
+
+    Catalog JSON is design-time input only. Runtime runners must execute the
+    onboarding-materialized projection in meta.job.config.
     """
     try:
         return load_current_job_spec()
     except Exception as exc:
-        if not design_time_catalog_fallback_enabled():
-            raise RuntimeError(
-                "Could not load job spec from meta.job.config while Control DB "
-                "execution is enabled. Publish the catalog and run onboarding "
-                "before executing this job, or set "
-                "ALLOW_DESIGN_TIME_CATALOG_FALLBACK=true only for local/dev."
-            ) from exc
-
-        print(
-            f"[WARN] Could not load job spec from meta.job.config; "
-            f"using explicit local/dev JSON catalog fallback. error={exc}",
-            flush=True,
-        )
-
-    job = get_job_by_name(catalog_path, pipeline_name, job_name)
-
-    if job["job_type"] != "generic_bronze_to_silver":
-        raise ValueError(
-            f"Job '{job_name}' is not generic_bronze_to_silver; got '{job['job_type']}'"
-        )
-
-    return job["spec"]
+        raise RuntimeError(
+            "Could not load runtime job spec from meta.job.config. "
+            f"pipeline={pipeline_name}, job={job_name}, catalog_path={catalog_path}. "
+            "Publish the Catalog and run control-plane onboarding before executing "
+            "this job."
+        ) from exc
 
 
 # -----------------------------------------------------------------------------

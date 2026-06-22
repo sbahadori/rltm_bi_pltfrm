@@ -24,10 +24,17 @@ apps/dashboard/
 
 ## Runtime source precedence
 
-1. Control DB
-2. Airflow
-3. Catalog/onboarded metadata
-4. Unknown/unavailable
+Batch:
+
+1. Control DB runtime rows
+2. Control DB metadata/no-runtime-row explanation
+3. Catalog-defined/unknown
+
+Stream:
+
+1. Control DB stream runtime tables
+2. Stream supervisor status file as labelled local/debug fallback
+3. Catalog-defined/unknown
 
 ## Important guardrail
 

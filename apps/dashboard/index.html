@@ -907,9 +907,12 @@ function runtimeSourceTag(obj){
   if(source === 'control_db'){
     cls = 'success';
     label = 'control db';
-  }else if(source === 'airflow'){
+  }else if(source === 'control_db_metadata'){
+    cls = '';
+    label = 'control db metadata';
+  }else if(source === 'control_db_missing'){
     cls = 'warning';
-    label = 'airflow fallback';
+    label = 'control db gap';
   }else if(source === 'stream_runtime_db'){
     cls = 'success';
     label = 'stream db';

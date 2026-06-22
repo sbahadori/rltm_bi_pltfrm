@@ -4,7 +4,9 @@ Status: Accepted
 
 ## Purpose
 
-Every runtime job must emit a consistent execution event so that the dashboard, control DB, job registry, and future analytical stores can observe jobs without relying on Airflow-only metadata.
+Every runtime job must emit a consistent execution event so that the dashboard,
+Control DB, and future analytical stores can observe jobs without relying on
+Airflow-only metadata.
 
 ## Required fields
 
@@ -47,11 +49,12 @@ If a counter is truly zero, it must be emitted as `0`, not omitted and not `null
 The dashboard must resolve runtime state in this order:
 
 1. Control DB runtime rows
-2. Local job run registry
-3. Stream runtime heartbeat/status
-4. Airflow fallback
+2. Control DB stream runtime tables
+3. Explicitly labelled local/debug stream supervisor fallback
+4. Defined/onboarded metadata only as a no-runtime-row explanation
 
-Airflow is an orchestration fallback, not the source of truth for job-level record counters.
+Airflow is an executor/orchestrator. It must not be used as a platform runtime
+fallback for batch job status, run history, record counters, or output paths.
 
 ## Stream Runtime Correlation
 

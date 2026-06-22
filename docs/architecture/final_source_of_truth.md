@@ -121,10 +121,10 @@ generation, and every `meta.job.config` row in the same projection version.
 Batch dashboard runtime data:
 
 1. Control DB runtime rows and `ctl` runtime functions/views.
-2. Explicitly labelled executor/debug metadata from Airflow, only when shown as
-   non-authoritative fallback while a Control DB runtime gap is being fixed.
-3. Catalog/onboarded metadata only to explain that a job is defined but has no
+2. Control DB metadata only to explain that a job is onboarded but has no
    runtime rows yet.
+3. Catalog-defined state only to explain that no Control DB projection exists
+   yet; it must not be shown as runtime state.
 
 Stream dashboard runtime data:
 
@@ -136,7 +136,7 @@ Forbidden active runtime sources:
 - `job_run_registry`
 - UI dynamic job registry tables/procedures
 - local JSONL runtime registries for batch jobs
-- unlabelled Airflow task/DAG state as platform runtime truth
+- Airflow task/DAG state as platform batch runtime truth or fallback
 
 ## Ownership by Component
 

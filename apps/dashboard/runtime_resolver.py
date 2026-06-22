@@ -12,15 +12,14 @@ Single responsibility:
 Ownership contract:
 - This is the only module allowed to decide final job current_status.
 - stream_runtime.py provides stream facts only.
-- airflow_client.py provides Airflow facts only.
+- airflow_client.py provides executor actions only; it is not a runtime source.
 - config_loader.py provides catalog/config facts only.
 - runtime_api.py only exposes the resolved response.
 
 Approved source precedence for batch jobs:
 1. Control DB runtime rows
-2. Airflow fallback
-3. Catalog metadata
-4. Catalog-defined / unknown
+2. Control DB metadata/no-runtime-row explanation
+3. Catalog-defined / unknown
 
 Approved source precedence for stream jobs:
 1. Stream runtime DB current row
@@ -32,9 +31,7 @@ Do not split final state decision logic across modules.
 
 import json
 from typing import Any
-import time
 try:
-    from apps.dashboard.airflow_client import latest_airflow_task
     from apps.dashboard.db import call_usp_rows, catalog_metadata_for_job
     from apps.dashboard.runtime_models import (
         TERMINAL_STATES,
@@ -52,7 +49,6 @@ try:
     )
     from apps.dashboard.stream_runtime import find_stream_unit, load_stream_status, stream_current_from_db
 except ImportError:  # pragma: no cover
-    from .airflow_client import latest_airflow_task
     from .db import call_usp_rows, catalog_metadata_for_job
     from .runtime_models import (
         TERMINAL_STATES,
@@ -73,7 +69,6 @@ except ImportError:  # pragma: no cover
 try:
     from apps.dashboard.domain_contracts import (
         canonical_job,
-        job_id_of,
         job_name_of,
         job_mode_of,
         pipeline_id_of,
@@ -81,97 +76,9 @@ try:
 except ImportError:  # pragma: no cover
     from .domain_contracts import (
         canonical_job,
-        job_id_of,
         job_name_of,
         job_mode_of,
         pipeline_id_of,
-    )
-
-AIRFLOW_UNAVAILABLE_GRACE_SECONDS = 180
-_AIRFLOW_UNAVAILABLE_FIRST_SEEN: dict[str, float] = {}
-
-
-def apply_airflow_unavailable_grace(
-    *,
-    airflow: dict[str, Any],
-    dag_id: str,
-    task_id: str,
-) -> dict[str, Any]:
-    """Suppress noisy Airflow-unavailable alerts during short Airflow restarts.
-
-    Airflow may briefly disappear during container restart, scheduler/webserver restart,
-    or network hiccups. During the grace window we keep the job in catalog-defined
-    state and mark the Airflow outage as suppressed. After the grace window expires,
-    the real airflow_unavailable status is allowed through.
-    """
-
-    if airflow.get("current_status") != "airflow_unavailable":
-        _AIRFLOW_UNAVAILABLE_FIRST_SEEN.pop(f"{dag_id}.{task_id}", None)
-        return airflow
-
-    key = f"{dag_id}.{task_id}"
-    now = time.time()
-    first_seen = _AIRFLOW_UNAVAILABLE_FIRST_SEEN.setdefault(key, now)
-    age_seconds = now - first_seen
-
-    if age_seconds < AIRFLOW_UNAVAILABLE_GRACE_SECONDS:
-        return {
-            **airflow,
-            "current_status": "defined",
-            "airflow_unavailable": True,
-            "airflow_unavailable_grace_active": True,
-            "airflow_unavailable_age_seconds": int(age_seconds),
-            "alert_suppressed": True,
-            "status_reason": (
-                "Airflow is temporarily unavailable, but this is still inside the "
-                f"{AIRFLOW_UNAVAILABLE_GRACE_SECONDS}s grace period. "
-                "Suppressing dashboard alert to avoid noise during Airflow restart."
-            ),
-        }
-
-    return {
-        **airflow,
-        "airflow_unavailable": True,
-        "airflow_unavailable_grace_active": False,
-        "airflow_unavailable_age_seconds": int(age_seconds),
-        "alert_suppressed": False,
-    }
-
-def control_row_matches_job(row: dict[str, Any], job: dict[str, Any]) -> bool:
-    job = canonical_job(job)
-    pipeline = pipeline_id_of(job)
-    job_name = job_name_of(job)
-    job_id = job_id_of(job)
-    job_code = str(job.get("job_code") or job.get("metadata_job_code") or "")
-
-    row_pipeline = str(first_present(row, "pipeline_name", "pipeline", "airflow_dag_id", default="") or "")
-    if row_pipeline and pipeline and row_pipeline != pipeline:
-        return False
-
-    row_names = {
-        str(first_present(row, "job_name", default="") or ""),
-        str(first_present(row, "base_job_name", default="") or ""),
-        str(first_present(row, "airflow_task_id", default="") or ""),
-        str(first_present(row, "task_id", default="") or ""),
-        str(first_present(row, "entity_name", default="") or ""),
-    }
-    row_codes = {
-        str(first_present(row, "job_code", default="") or ""),
-        str(first_present(row, "job_key", default="") or ""),
-        str(first_present(row, "resolved_job_code", default="") or ""),
-        str(first_present(row, "resolved_job_key", default="") or ""),
-    }
-
-    expected_entity = f"{pipeline}.{job_name}"
-    expected_code_suffix = f".{pipeline}.{job_name}"
-
-    return (
-        job_name in row_names
-        or job_id in row_names
-        or expected_entity in row_names
-        or bool(job_code and job_code in row_codes)
-        or any(code.endswith(expected_code_suffix) for code in row_codes if code)
-        or any(code.endswith(f".{job_name}") for code in row_codes if code)
     )
 
 def normalize_runtime_run_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -273,26 +180,85 @@ def collapse_run_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def control_run_rows_for_job(job: dict[str, Any], limit: int = 10) -> list[dict[str, Any]]:
+def _control_run_params_for_job(job: dict[str, Any], limit: int) -> tuple[Any, ...]:
+    job_code = str(job.get("job_code") or job.get("metadata_job_code") or "").strip() or None
+    source_id = str(job.get("source_id") or "").strip() or None
+    table_id = str(job.get("table_id") or "").strip() or None
+    pipeline_name = pipeline_id_of(job) or None
+    job_name = job_name_of(job) or None
+    return (job_code, source_id, table_id, pipeline_name, job_name, limit)
+
+
+def control_run_rows_for_job(
+    job: dict[str, Any],
+    limit: int = 10,
+    *,
+    raise_on_error: bool = False,
+) -> list[dict[str, Any]]:
     job = canonical_job(job)
 
     try:
-        rows = call_usp_rows("usp_list_runtime_job_runs", (max(200, limit * 30),))
+        rows = call_usp_rows("usp_list_batch_runs_for_job", _control_run_params_for_job(job, limit))
     except Exception as exc:
-        print(f"[WARN] Could not load runtime job runs from control DB: {exc}", flush=True)
+        message = f"Could not load batch runtime rows from Control DB: {exc}"
+        print(f"[WARN] {message}", flush=True)
+        if raise_on_error:
+            raise RuntimeError(message) from exc
         return []
 
-    matched = [
-        normalize_runtime_run_row(row)
-        for row in rows
-        if control_row_matches_job(row, job)
-    ]
-
     return sorted(
-        matched,
+        [normalize_runtime_run_row(row) for row in rows],
         key=lambda row: str(row.get("ended_at") or row.get("started_at") or ""),
         reverse=True,
     )[:limit]
+
+
+def apply_batch_control_gap(runtime_job: dict[str, Any], job: dict[str, Any]) -> None:
+    """Explain missing batch runtime rows without using Airflow as fallback state."""
+    metadata = catalog_metadata_for_job(job)
+    if metadata:
+        runtime_job.update(
+            {
+                "current_status": "no_runs",
+                "runtime_source": "control_db_metadata",
+                "runtime_source_rank": 1,
+                "runtime_available": False,
+                "metadata_available": True,
+                "runtime_gap": True,
+                "is_fallback": False,
+                "fallback_reason": None,
+                "metadata_job_id": metadata.get("job_id"),
+                "metadata_job_code": metadata.get("job_code"),
+                "metadata_pipeline_id": metadata.get("pipeline_id"),
+                "metadata_airflow_dag_id": metadata.get("airflow_dag_id"),
+                "source_type": metadata.get("source_type") or runtime_job.get("source_type"),
+                "target_path": metadata.get("target_path") or runtime_job.get("target_path"),
+                "status_reason": (
+                    "No batch runtime rows were found in Control DB for this job. "
+                    "Airflow task state is executor metadata and is not used as "
+                    "platform runtime fallback."
+                ),
+            }
+        )
+        return
+
+    runtime_job.update(
+        {
+            "current_status": "defined",
+            "runtime_source": "control_db_missing",
+            "runtime_source_rank": 1,
+            "runtime_available": False,
+            "metadata_available": False,
+            "runtime_gap": True,
+            "is_fallback": False,
+            "fallback_reason": None,
+            "status_reason": (
+                "No active Control DB metadata or batch runtime rows were found "
+                "for this job. Publish the Catalog and run onboarding before "
+                "using runtime dashboard state."
+            ),
+        }
+    )
 
 
 def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -314,7 +280,24 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
             "runtime_available": False,
         }
 
-        control_runs = control_run_rows_for_job(job, limit=1)
+        try:
+            control_runs = control_run_rows_for_job(job, limit=1, raise_on_error=True)
+        except Exception as exc:
+            control_runs = []
+            if job_mode_of(job) == "batch":
+                runtime_job.update(
+                    {
+                        "current_status": "control_db_unavailable",
+                        "runtime_source": "control_db",
+                        "runtime_source_rank": 1,
+                        "runtime_available": False,
+                        "runtime_error": True,
+                        "is_fallback": False,
+                        "fallback_reason": None,
+                        "status_reason": str(exc),
+                    }
+                )
+
         if control_runs:
             control = control_runs[0]
             runtime_job.update(
@@ -348,47 +331,8 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
 
         else:
             if job_mode_of(job) == "batch":
-                dag_id = pipeline_id_of(job)
-                task_id = job_name_of(job)
-
-                airflow = latest_airflow_task(dag_id, task_id)
-                airflow = apply_airflow_unavailable_grace(
-                    airflow=airflow,
-                    dag_id=dag_id,
-                    task_id=task_id,
-                )
-
-                runtime_source = "catalog" if airflow.get("missing_airflow_dag") else "airflow"
-
-                runtime_job.update(
-                    {
-                        **airflow,
-                        "runtime_source": runtime_source,
-                        "runtime_available": airflow.get("airflow_available", False),
-                    }
-                )
-
-                if airflow.get("missing_airflow_dag"):
-                    metadata = catalog_metadata_for_job(job)
-                    if metadata:
-                        runtime_job.update(
-                            {
-                                "current_status": "onboarded",
-                                "runtime_source": "catalog_metadata",
-                                "runtime_available": False,
-                                "metadata_available": True,
-                                "metadata_job_id": metadata.get("job_id"),
-                                "metadata_job_code": metadata.get("job_code"),
-                                "metadata_pipeline_id": metadata.get("pipeline_id"),
-                                "metadata_airflow_dag_id": metadata.get("airflow_dag_id"),
-                                "source_type": metadata.get("source_type") or runtime_job.get("source_type"),
-                                "target_path": metadata.get("target_path") or runtime_job.get("target_path"),
-                                "status_reason": (
-                                    "Job is onboarded in the control DB, but no executable Airflow DAG exists yet. "
-                                    "Create a dispatcher DAG or bind this pipeline to an existing DAG to execute it."
-                                ),
-                            }
-                        )
+                if not runtime_job.get("runtime_error"):
+                    apply_batch_control_gap(runtime_job, job)
 
             elif job_mode_of(job) == "dynamic":
                 runtime_job.update(
@@ -471,5 +415,3 @@ def enrich_jobs(config_jobs: list[dict[str, Any]]) -> dict[str, Any]:
         enriched.append(runtime_job)
 
     return {"jobs": enriched, "stream_status": stream_status}
-
-

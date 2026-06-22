@@ -15,7 +15,6 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 try:
-    from apps.dashboard.airflow_client import dag_run_rows_for_job
     from apps.dashboard.config_loader import (
         AIRFLOW_LOG_DIR,
         
@@ -26,11 +25,11 @@ try:
         job_from_config,
         path_state,
     )
+    from apps.dashboard.db import catalog_metadata_for_job
     from apps.dashboard.runtime_models import now_iso
     from apps.dashboard.runtime_resolver import control_run_rows_for_job, enrich_jobs
     from apps.dashboard.stream_runtime import load_stream_status
 except ImportError:  # pragma: no cover
-    from .airflow_client import dag_run_rows_for_job
     from .config_loader import (
         AIRFLOW_LOG_DIR,
         
@@ -41,13 +40,10 @@ except ImportError:  # pragma: no cover
         job_from_config,
         path_state,
     )
+    from .db import catalog_metadata_for_job
     from .runtime_models import now_iso
     from .runtime_resolver import control_run_rows_for_job, enrich_jobs
     from .stream_runtime import load_stream_status
-
-from apps.dashboard.execution_resolver import executor_id_for_job
-
-
 
 router = APIRouter()
 
@@ -103,7 +99,25 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
             status_code=404,
         )
 
-    control_runs = control_run_rows_for_job(job, limit=limit)
+    try:
+        control_runs = control_run_rows_for_job(job, limit=limit, raise_on_error=True)
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "available": False,
+                "source": "control_db",
+                "source_rank": 1,
+                "is_fallback": False,
+                "fallback_reason": None,
+                "runtime_error": True,
+                "job_id": job_id,
+                "error": str(exc),
+                "runs": [],
+                "count": 0,
+            },
+            status_code=503,
+        )
+
     if control_runs:
         return JSONResponse(
             {
@@ -118,54 +132,37 @@ async def get_runs(job_id: str, limit: int = Query(default=10, ge=1, le=50)) -> 
             }
         )
 
-
     if job.get("type") == "batch":
-        try:
-            dag_id = executor_id_for_job(job)
-            if not dag_id:
-                return JSONResponse(
-                    {
-                        "available": False,
-                        "source": "airflow",
-                        "source_rank": 3,
-                        "is_fallback": True,
-                        "fallback_reason": "No Airflow DAG ID could be resolved for this batch job.",
-                        "job_id": job_id,
-                        "runs": [],
-                        "count": 0,
-                    }
-                )
-
-            runs = dag_run_rows_for_job(dag_id, limit=limit)
-            return JSONResponse(
-                {
-                    "available": True,
-                    "source": "airflow",
-                    "source_rank": 3,
-                    "is_fallback": True,
-                    "fallback_reason": "Control DB had no matching runtime rows; using Airflow DAG runs as executor fallback.; using Airflow DAG runs as executor fallback.",
-                    "job_id": job_id,
-                    "dag_id": dag_id,
-                    "runs": runs,
-                    "count": len(runs),
-                }
-            )
-        except Exception as exc:
-            return JSONResponse(
-                {
-                    "available": False,
-                    "source": "airflow",
-                    "job_id": job_id,
-                    "error": str(exc),
-                    "runs": [],
-                    "count": 0,
-                }
-            )
+        metadata = catalog_metadata_for_job(job)
+        return JSONResponse(
+            {
+                "available": False,
+                "source": "control_db_metadata" if metadata else "control_db_missing",
+                "source_rank": 1,
+                "is_fallback": False,
+                "fallback_reason": None,
+                "metadata_available": bool(metadata),
+                "runtime_gap": True,
+                "job_id": job_id,
+                "metadata_job_id": metadata.get("job_id") if metadata else None,
+                "metadata_job_code": metadata.get("job_code") if metadata else None,
+                "runs": [],
+                "count": 0,
+                "status_reason": (
+                    "No batch runtime rows were found in Control DB for this job. "
+                    "Airflow DAG runs are executor metadata and are not used as "
+                    "platform runtime history fallback."
+                ),
+            }
+        )
 
     return JSONResponse(
         {
             "available": False,
-            "source": "unknown",
+            "source": "control_db",
+            "source_rank": 1,
+            "is_fallback": False,
+            "fallback_reason": None,
             "job_id": job_id,
             "runs": [],
             "count": 0,

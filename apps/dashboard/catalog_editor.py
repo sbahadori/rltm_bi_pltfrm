@@ -14,8 +14,10 @@ Endpoints:
     GET  /api/catalog/backups
     POST /api/catalog/jobs/validate
     POST /api/catalog/jobs/preview
-    POST /api/catalog/jobs/apply
-    POST /api/catalog/jobs/apply-and-onboard
+    POST /api/catalog/jobs/propose
+    POST /api/catalog/pipelines/propose
+    POST /api/catalog/proposals/{proposal_id}/approve
+    POST /api/catalog/proposals/{proposal_id}/reject
 """
 
 import copy
@@ -28,14 +30,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import hashlib
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 try:
     from apps.dashboard.auth import get_current_user, require_role
+    from apps.dashboard.db import call_usp_one, call_usp_rows
     from apps.dashboard.settings import get_settings
 except ImportError:  # pragma: no cover
     from .auth import get_current_user, require_role
+    from .db import call_usp_one, call_usp_rows
     from .settings import get_settings
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
@@ -94,7 +98,7 @@ class CatalogOnboardRequest(CatalogJobApplyRequest):
 class CatalogPipelineApplyRequest(BaseModel):
     pipeline_name: str
     pipeline: CatalogPipelineInput | None = None
-    jobs: list[dict[str, Any]]
+    jobs: list[Any]
 
     create_pipeline_if_missing: bool = True
     overwrite_existing_jobs: bool = True
@@ -103,6 +107,12 @@ class CatalogPipelineApplyRequest(BaseModel):
     base_job_hashes: dict[str, str] | None = None
 
 class CatalogPipelineOnboardRequest(CatalogPipelineApplyRequest):
+    onboarding_dry_run: bool = False
+
+
+class CatalogProposalDecisionRequest(BaseModel):
+    reviewer_note: str | None = None
+    trigger_onboarding: bool = False
     onboarding_dry_run: bool = False
 
 
@@ -540,6 +550,41 @@ def _find_pipeline(catalog: dict[str, Any], pipeline_name: str) -> tuple[int | N
     return None, None
 
 
+def _resolve_catalog_job_payload(
+    catalog: dict[str, Any],
+    pipeline_name: str,
+    job_payload: Any,
+) -> dict[str, Any]:
+    if isinstance(job_payload, dict):
+        return copy.deepcopy(job_payload)
+
+    if isinstance(job_payload, str):
+        _, pipeline = _find_pipeline(catalog, pipeline_name)
+
+        if pipeline is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pipeline not found for job reference: {pipeline_name}",
+            )
+
+        for job in pipeline.get("jobs", []):
+            if isinstance(job, dict) and job.get("name") == job_payload:
+                return copy.deepcopy(job)
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job reference not found in catalog: {pipeline_name}.{job_payload}",
+        )
+
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "message": "Each pipeline jobs item must be either a job object or a job name string.",
+            "invalid_item": job_payload,
+        },
+    )
+
+
 def _build_new_pipeline(req: CatalogJobApplyRequest) -> dict[str, Any]:
     raw_pipeline = req.pipeline.model_dump(exclude_none=True) if req.pipeline else {}
     return _normalize_pipeline_for_catalog(
@@ -637,6 +682,8 @@ def _merge_job_into_catalog(req: CatalogJobApplyRequest) -> dict[str, Any]:
         "job_name": job.get("name"),
         "target_path": _target_from_job_spec(job),
         "validation": validation,
+        "base_catalog_hash": _catalog_hash(catalog),
+        "proposal_hash": _catalog_hash(new_catalog),
         "catalog": new_catalog,
     }
 
@@ -650,7 +697,8 @@ def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[
     validation_results: list[dict[str, Any]] = []
     normalized_jobs: list[dict[str, Any]] = []
 
-    for job in req.jobs:
+    for raw_job in req.jobs:
+        job = _resolve_catalog_job_payload(catalog, req.pipeline_name, raw_job)
         validation = validate_catalog_job_payload(req.pipeline_name, copy.deepcopy(job))
         validation_results.append(validation)
 
@@ -659,7 +707,7 @@ def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[
                 status_code=422,
                 detail={
                     "message": "Invalid job in pipeline payload.",
-                    "job_name": job.get("name"),
+                    "job_name": job.get("name") if isinstance(job, dict) else str(raw_job),
                     "errors": validation["errors"],
                     "warnings": validation["warnings"],
                 },
@@ -757,6 +805,8 @@ def _merge_pipeline_jobs_into_catalog(req: CatalogPipelineApplyRequest) -> dict[
         "job_count": len(applied_jobs),
         "jobs": applied_jobs,
         "validation": validation_results,
+        "base_catalog_hash": _catalog_hash(catalog),
+        "proposal_hash": _catalog_hash(new_catalog),
         "catalog": new_catalog,
     }
 
@@ -793,6 +843,126 @@ def _log_catalog_change(
         )
     except Exception as exc:
         print(f"[WARN] Failed to write catalog change log: {exc}", flush=True)
+
+
+def _user_name(user: dict[str, Any]) -> str:
+    return str(user.get("sub") or user.get("username") or user.get("email") or "unknown")
+
+
+def _proposal_db_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail=(
+            "Catalog proposal workflow is not available. "
+            "Apply database/migrations/021_catalog_proposal_workflow.sql, then retry. "
+            f"DB error: {exc}"
+        ),
+    )
+
+
+def _proposal_materialization_state(request_onboarding: bool, onboarding_dry_run: bool = False) -> str:
+    if not request_onboarding:
+        return "not_requested"
+    return "onboarding_dry_run_requested" if onboarding_dry_run else "onboarding_requested"
+
+
+def _create_catalog_proposal(
+    *,
+    user: dict[str, Any],
+    proposal_type: str,
+    pipeline_name: str,
+    job_name: str | None,
+    action_type: str,
+    request_payload: dict[str, Any],
+    proposed_catalog: dict[str, Any],
+    validation_result: Any,
+    base_catalog_hash: str,
+    proposal_hash: str,
+    materialization_state: str,
+) -> dict[str, Any]:
+    try:
+        row = call_usp_one(
+            "usp_create_catalog_proposal",
+            (
+                _user_name(user),
+                proposal_type,
+                pipeline_name,
+                job_name,
+                action_type,
+                json.dumps(request_payload, ensure_ascii=False),
+                json.dumps(proposed_catalog, ensure_ascii=False),
+                json.dumps(validation_result, ensure_ascii=False),
+                base_catalog_hash,
+                proposal_hash,
+                materialization_state,
+            ),
+        )
+    except Exception as exc:
+        raise _proposal_db_unavailable(exc) from exc
+
+    if not row:
+        raise HTTPException(status_code=500, detail="Catalog proposal was not created.")
+
+    return row
+
+
+def _get_catalog_proposal(proposal_id: int) -> dict[str, Any]:
+    try:
+        row = call_usp_one("usp_get_catalog_proposal", (proposal_id,))
+    except Exception as exc:
+        raise _proposal_db_unavailable(exc) from exc
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Catalog proposal not found: {proposal_id}")
+
+    return row
+
+
+def _set_catalog_proposal_state(
+    *,
+    proposal_id: int,
+    proposal_state: str,
+    user: dict[str, Any],
+    reviewer_note: str | None = None,
+    publish_state: str | None = None,
+    materialization_state: str | None = None,
+    backup_path: str | None = None,
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    try:
+        row = call_usp_one(
+            "usp_set_catalog_proposal_state",
+            (
+                proposal_id,
+                proposal_state,
+                _user_name(user),
+                reviewer_note,
+                publish_state,
+                materialization_state,
+                backup_path,
+                error_message,
+            ),
+        )
+    except Exception as exc:
+        raise _proposal_db_unavailable(exc) from exc
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Catalog proposal not found: {proposal_id}")
+
+    return row
+
+
+def _json_object(value: Any, field_name: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"{field_name} is not valid JSON: {exc}") from exc
+        if isinstance(parsed, dict):
+            return parsed
+    raise HTTPException(status_code=500, detail=f"{field_name} must be a JSON object.")
 
 
 @router.post("/pipelines/validate")
@@ -848,6 +1018,220 @@ async def catalog_backups(user: dict = Depends(get_current_user)) -> dict[str, A
         )
 
     return {"items": items, "count": len(items)}
+
+
+@router.get("/proposals")
+async def list_catalog_proposals(
+    proposal_state: str | None = Query(default="pending_approval"),
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        rows = call_usp_rows("usp_list_catalog_proposals", (proposal_state or "", limit))
+    except Exception as exc:
+        raise _proposal_db_unavailable(exc) from exc
+
+    return {
+        "items": rows,
+        "count": len(rows),
+        "proposal_state": proposal_state,
+    }
+
+
+@router.get("/proposals/{proposal_id}")
+async def get_catalog_proposal(
+    proposal_id: int,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    return {"proposal": _get_catalog_proposal(proposal_id)}
+
+
+@router.post("/proposals/{proposal_id}/approve", dependencies=[Depends(require_role("admin", "operator"))])
+async def approve_catalog_proposal(
+    proposal_id: int,
+    req: CatalogProposalDecisionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    proposal = _get_catalog_proposal(proposal_id)
+
+    if proposal.get("proposal_state") != "pending_approval":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Catalog proposal is not pending approval: {proposal.get('proposal_state')}",
+        )
+
+    current_catalog = _load_catalog()
+    current_hash = _catalog_hash(current_catalog)
+    expected_hash = proposal.get("base_catalog_hash")
+
+    if expected_hash and expected_hash != current_hash:
+        updated = _set_catalog_proposal_state(
+            proposal_id=proposal_id,
+            proposal_state="stale",
+            user=user,
+            reviewer_note=req.reviewer_note,
+            publish_state="not_published",
+            materialization_state="not_requested",
+            error_message="Catalog changed after this proposal was created.",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Catalog changed after this proposal was created. Re-submit the proposal from the latest catalog.",
+                "expected_catalog_hash": expected_hash,
+                "current_catalog_hash": current_hash,
+                "proposal": updated,
+            },
+        )
+
+    proposed_catalog = _json_object(proposal.get("proposed_catalog"), "proposed_catalog")
+    _raise_catalog_global_errors(proposed_catalog)
+
+    backup_path: Path | None = None
+    onboarding_result: dict[str, Any] | None = None
+    requested_materialization = str(proposal.get("materialization_state") or "not_requested")
+    requested_onboarding = requested_materialization in {
+        "onboarding_requested",
+        "onboarding_dry_run_requested",
+    }
+    should_trigger_onboarding = req.trigger_onboarding or requested_onboarding
+    onboarding_dry_run = req.onboarding_dry_run or requested_materialization == "onboarding_dry_run_requested"
+
+    try:
+        backup_path = _backup_catalog()
+        _atomic_write_json(BATCH_CATALOG_PATH, proposed_catalog)
+
+        materialization_state = "not_requested"
+
+        if should_trigger_onboarding:
+            from actions import trigger_dag
+
+            conf: dict[str, Any] = {
+                "catalog_path": "configs/batch/pipeline_catalog.json",
+                "pipeline_name": proposal["pipeline_name"],
+                "dry_run": onboarding_dry_run,
+            }
+
+            if proposal.get("proposal_type") == "job" and proposal.get("job_name"):
+                conf["changed_job_name"] = proposal["job_name"]
+                conf["materialize_scope"] = "pipeline"
+
+            onboarding_result = trigger_dag(ONBOARDING_DAG_ID, conf=conf)
+            materialization_state = (
+                "onboarding_dry_run"
+                if onboarding_dry_run
+                else "pipeline_onboarding_triggered"
+            )
+
+        updated = _set_catalog_proposal_state(
+            proposal_id=proposal_id,
+            proposal_state="approved",
+            user=user,
+            reviewer_note=req.reviewer_note,
+            publish_state="catalog_published",
+            materialization_state=materialization_state,
+            backup_path=str(backup_path),
+        )
+
+        result = {
+            "ok": True,
+            "approved": True,
+            "publish_state": "catalog_published",
+            "materialization_state": materialization_state,
+            "publish_contract": CATALOG_PUBLISH_CONTRACT,
+            "catalog_path": str(BATCH_CATALOG_PATH),
+            "backup_path": str(backup_path),
+            "onboarding_triggered": onboarding_result is not None,
+            "onboarding": onboarding_result,
+            "proposal": updated,
+        }
+
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_proposal_approved_publish",
+            pipeline_name=proposal["pipeline_name"],
+            job_name=proposal.get("job_name"),
+            status="success",
+            payload=result,
+            backup_path=str(backup_path),
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        publish_state = "catalog_published" if backup_path else "not_published"
+        materialization_state = "onboarding_failed" if backup_path else requested_materialization
+
+        try:
+            _set_catalog_proposal_state(
+                proposal_id=proposal_id,
+                proposal_state="failed",
+                user=user,
+                reviewer_note=req.reviewer_note,
+                publish_state=publish_state,
+                materialization_state=materialization_state,
+                backup_path=str(backup_path) if backup_path else None,
+                error_message=str(exc),
+            )
+        except Exception:
+            pass
+
+        _log_catalog_change(
+            user=user,
+            action_type="catalog_proposal_approved_publish",
+            pipeline_name=proposal["pipeline_name"],
+            job_name=proposal.get("job_name"),
+            status="failed",
+            payload={"proposal_id": proposal_id, "publish_state": publish_state},
+            backup_path=str(backup_path) if backup_path else None,
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/proposals/{proposal_id}/reject", dependencies=[Depends(require_role("admin", "operator"))])
+async def reject_catalog_proposal(
+    proposal_id: int,
+    req: CatalogProposalDecisionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    proposal = _get_catalog_proposal(proposal_id)
+
+    if proposal.get("proposal_state") != "pending_approval":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Catalog proposal is not pending approval: {proposal.get('proposal_state')}",
+        )
+
+    updated = _set_catalog_proposal_state(
+        proposal_id=proposal_id,
+        proposal_state="rejected",
+        user=user,
+        reviewer_note=req.reviewer_note,
+        publish_state="not_published",
+        materialization_state="not_requested",
+    )
+
+    result = {
+        "ok": True,
+        "rejected": True,
+        "publish_state": "not_published",
+        "proposal": updated,
+    }
+
+    _log_catalog_change(
+        user=user,
+        action_type="catalog_proposal_rejected",
+        pipeline_name=proposal["pipeline_name"],
+        job_name=proposal.get("job_name"),
+        status="success",
+        payload=result,
+    )
+
+    return result
+
 
 @router.get("/pipelines/{pipeline_name}")
 async def get_catalog_pipeline(
@@ -934,6 +1318,60 @@ async def preview_catalog_job(
         "validation": merged["validation"],
         "catalog": merged["catalog"],
     }
+
+
+@router.post("/jobs/propose")
+async def propose_catalog_job(
+    req: CatalogOnboardRequest,
+    request_onboarding: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Create a draft catalog proposal. This endpoint does not write Catalog JSON.
+    """
+    merged = _merge_job_into_catalog(req)
+    materialization_state = _proposal_materialization_state(
+        request_onboarding,
+        req.onboarding_dry_run,
+    )
+    proposal = _create_catalog_proposal(
+        user=user,
+        proposal_type="job",
+        pipeline_name=merged["pipeline_name"],
+        job_name=merged["job_name"],
+        action_type="catalog_job_proposal",
+        request_payload=req.model_dump(),
+        proposed_catalog=merged["catalog"],
+        validation_result=merged["validation"],
+        base_catalog_hash=merged["base_catalog_hash"],
+        proposal_hash=merged["proposal_hash"],
+        materialization_state=materialization_state,
+    )
+
+    result = {
+        "ok": True,
+        "proposal_state": "pending_approval",
+        "publish_state": "proposal_only",
+        "materialization_state": materialization_state,
+        "publish_contract": CATALOG_PUBLISH_CONTRACT,
+        "change_type": merged["change_type"],
+        "pipeline_name": merged["pipeline_name"],
+        "job_name": merged["job_name"],
+        "target_path": merged["target_path"],
+        "validation": merged["validation"],
+        "proposal": proposal,
+    }
+
+    _log_catalog_change(
+        user=user,
+        action_type="catalog_job_proposed",
+        pipeline_name=merged["pipeline_name"],
+        job_name=merged["job_name"],
+        status="success",
+        payload=result,
+    )
+
+    return result
 
 
 @router.post("/jobs/apply", dependencies=[Depends(require_role("admin", "operator"))])
@@ -1078,6 +1516,60 @@ async def preview_catalog_pipeline(
         "validation": merged["validation"],
         "catalog": merged["catalog"],
     }
+
+
+@router.post("/pipelines/propose")
+async def propose_catalog_pipeline(
+    req: CatalogPipelineOnboardRequest,
+    request_onboarding: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Create a draft catalog proposal. This endpoint does not write Catalog JSON.
+    """
+    merged = _merge_pipeline_jobs_into_catalog(req)
+    materialization_state = _proposal_materialization_state(
+        request_onboarding,
+        req.onboarding_dry_run,
+    )
+    proposal = _create_catalog_proposal(
+        user=user,
+        proposal_type="pipeline",
+        pipeline_name=merged["pipeline_name"],
+        job_name=None,
+        action_type="catalog_pipeline_proposal",
+        request_payload=req.model_dump(),
+        proposed_catalog=merged["catalog"],
+        validation_result=merged["validation"],
+        base_catalog_hash=merged["base_catalog_hash"],
+        proposal_hash=merged["proposal_hash"],
+        materialization_state=materialization_state,
+    )
+
+    result = {
+        "ok": True,
+        "proposal_state": "pending_approval",
+        "publish_state": "proposal_only",
+        "materialization_state": materialization_state,
+        "publish_contract": CATALOG_PUBLISH_CONTRACT,
+        "change_type": merged["change_type"],
+        "pipeline_name": merged["pipeline_name"],
+        "job_count": merged["job_count"],
+        "jobs": merged["jobs"],
+        "validation": merged["validation"],
+        "proposal": proposal,
+    }
+
+    _log_catalog_change(
+        user=user,
+        action_type="catalog_pipeline_proposed",
+        pipeline_name=merged["pipeline_name"],
+        job_name=None,
+        status="success",
+        payload=result,
+    )
+
+    return result
 
 
 @router.post("/pipelines/apply", dependencies=[Depends(require_role("admin", "operator"))])

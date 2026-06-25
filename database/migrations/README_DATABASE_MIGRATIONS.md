@@ -54,6 +54,7 @@ database/migrations/
   018_ctl_batch_run_dashboard_usps.sql
   019_ctl_lineage_usps.sql
   020_enforce_guid_run_ids.sql
+  021_catalog_proposal_workflow.sql
 ```
 
 Run the files in ascending order.
@@ -287,6 +288,21 @@ dq.quality_result.run_id
 lineage.dataset_lineage.run_id
 ```
 
+### `021_catalog_proposal_workflow.sql`
+
+Creates the dashboard catalog proposal approval workflow:
+
+```text
+meta.catalog_proposal
+ctl.usp_create_catalog_proposal
+ctl.usp_get_catalog_proposal
+ctl.usp_list_catalog_proposals
+ctl.usp_set_catalog_proposal_state
+```
+
+`meta.catalog_proposal` is a draft/approval queue only. It is not an executable
+job registry and must not be used by runners as runtime state.
+
 ## Execution prerequisites
 
 Make sure the database container is running:
@@ -309,43 +325,31 @@ CONTROL_DB_SSLMODE=disable
 
 Adjust database, user, and password names to your local environment.
 
-## Run all migrations
+## Rebuild a clean local database
+
+For a disposable local database, use the reset/rebuild script. This drops the
+platform schemas and recreates them by running every numbered `.sql` migration
+in order:
+
+```powershell
+.\scripts\dev\rebuild_control_db.ps1 -Reset -IUnderstandThisDeletesData
+```
+
+The script ignores `.legacy` files, fails if two active migrations share the
+same numeric prefix, and stops on the first SQL error.
+
+To preview the ordered migration list without touching the database:
+
+```powershell
+.\scripts\dev\rebuild_control_db.ps1 -PlanOnly
+```
+
+## Run all migrations without reset
 
 From the repository root:
 
 ```powershell
-$files = @(
-  "001_schemas.sql",
-  "002_meta_tables.sql",
-  "003_runtime_batch_tables.sql",
-  "004_dq_lineage_tables.sql",
-  "005_ctl_core_usps.sql",
-  "006_control_plane_usp.sql",
-  "007_ctl_onboarding_usps.sql",
-  "008_ctl_watermark_usps.sql",
-  "009_ctl_quality_usps.sql",
-  "010_runtime_stream_tables.sql",
-  "011_runtime_stream_usps.sql",
-  "012_runtime_dashboard_views.sql",
-  "013_auth_and_actions.sql",
-  "014_dynamic_job_registry.sql",
-  "015_catalog_change_log.sql",
-  "016_drop_ui_job_registry.sql",
-  "017_dashboard_auth_schema.sql",
-  "018_ctl_batch_run_dashboard_usps.sql",
-  "019_ctl_lineage_usps.sql",
-  "020_enforce_guid_run_ids.sql"
-)
-
-foreach ($f in $files) {
-  docker cp ".\database\migrations\$f" "postgres-warehouse:/tmp/$f"
-
-  docker exec postgres-warehouse psql `
-    -U warehouse `
-    -d warehouse `
-    -v ON_ERROR_STOP=1 `
-    -f "/tmp/$f"
-}
+.\scripts\dev\rebuild_control_db.ps1
 ```
 
 ## Run one migration
@@ -396,6 +400,9 @@ Expected core tables:
 meta.dataset
 meta.job
 meta.job_dependency
+meta.catalog_change_log
+meta.catalog_proposal
+meta.dashboard_user
 meta.pipeline
 meta.source_system
 ```
@@ -467,6 +474,10 @@ usp_insert_action_log
 usp_get_dashboard_user
 usp_insert_quality_result
 usp_insert_dataset_lineage
+usp_create_catalog_proposal
+usp_get_catalog_proposal
+usp_list_catalog_proposals
+usp_set_catalog_proposal_state
 ```
 
 ## Validate dashboard views

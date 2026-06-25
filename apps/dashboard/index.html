@@ -622,7 +622,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div>
             <h3>Pipeline Catalog Editor</h3>
             <div style="color:var(--muted);font-size:12px;margin-top:4px">
-              Add or update a job by writing JSON into configs/batch/pipeline_catalog.json, then run onboarding.
+              Create a draft proposal. Approval publishes configs/batch/pipeline_catalog.json and optional onboarding materializes it.
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -643,9 +643,14 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button class="btn" onclick="validateCatalogJob()">Validate</button>
           <button class="btn" onclick="previewCatalogJob()">Preview</button>
-          <button class="btn primary" onclick="applyCatalogJob(false)">Apply to Catalog</button>
-          <button class="btn success" onclick="applyCatalogJob(true)">Apply + Onboard</button>
+          <button class="btn primary" onclick="submitCatalogProposal(false)">Submit Proposal</button>
+          <button class="btn success" onclick="submitCatalogProposal(true)">Submit Proposal + Onboarding Request</button>
+          <button class="btn" onclick="loadCatalogProposals()">Load Proposals</button>
           <span id="catalogEditorResult" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+
+        <div id="catalogProposalList" class="alert-box" style="font-size:12px;color:var(--muted);margin-top:12px">
+          Pending proposals have not been loaded.
         </div>
       </div>
 
@@ -1000,24 +1005,42 @@ async function doLogin(){
     localStorage.setItem('rltm_user', JSON.stringify(S.user));
     showApp();
   }catch(e){
-    document.getElementById('loginErr').textContent = 'Invalid credentials';
+    clearStoredAuth();
+    document.getElementById('loginErr').textContent = e.message || 'Login failed';
   }
 }
 
-function doLogout(){
+function clearStoredAuth(){
   S.token=null; S.user=null;
   localStorage.removeItem('rltm_token');
   localStorage.removeItem('rltm_user');
+}
+
+function doLogout(){
+  clearStoredAuth();
   clearInterval(refreshTimer);
   document.getElementById('appPage').style.display='none';
   document.getElementById('loginPage').style.display='grid';
 }
 
-function tryAutoLogin(){
+async function tryAutoLogin(){
   const t = localStorage.getItem('rltm_token');
   const u = localStorage.getItem('rltm_user');
-  if(t && u){ S.token=t; S.user=JSON.parse(u); showApp(); }
-  else { document.getElementById('loginPage').style.display='grid'; }
+  if(t && u){
+    try{
+      S.token=t;
+      S.user=JSON.parse(u);
+      const me = await api('GET','/auth/me');
+      S.user = {username: me.username, role: me.role};
+      localStorage.setItem('rltm_user', JSON.stringify(S.user));
+      showApp();
+      return;
+    }catch(e){
+      clearStoredAuth();
+      document.getElementById('loginErr').textContent = 'Saved session expired. Please log in again.';
+    }
+  }
+  document.getElementById('loginPage').style.display='grid';
 }
 
 function showApp(){
@@ -1649,7 +1672,10 @@ function showSection(id){
   if(id==='history') loadHistory();
   if(id==='builder') loadBuilderJobs();
   if(id==='builderPipeline') loadBuilderPipelines();
-  if(id === 'catalogEditor') loadCatalogInfo();
+  if(id === 'catalogEditor'){
+    loadCatalogInfo();
+    loadCatalogProposals();
+  }
 }
 
 function activateTab(id){
@@ -2153,6 +2179,66 @@ function readCatalogPayload(){
   return JSON.parse(raw);
 }
 
+function catalogPipelineEntryToRequest(pipeline){
+  if(!pipeline || typeof pipeline !== "object" || Array.isArray(pipeline)){
+    throw new Error("Catalog pipeline payload must be a JSON object.");
+  }
+
+  const pipeline_name = pipeline.pipeline_name || pipeline.name;
+
+  if(!pipeline_name){
+    throw new Error("Pipeline payload must include name or pipeline_name.");
+  }
+
+  if(!Array.isArray(pipeline.jobs)){
+    throw new Error(`Pipeline ${pipeline_name} must include a jobs array.`);
+  }
+
+  const pipelineMeta = {...pipeline};
+  delete pipelineMeta.jobs;
+
+  return {
+    pipeline_name,
+    pipeline: pipelineMeta,
+    jobs: pipeline.jobs,
+    create_pipeline_if_missing: pipeline.create_pipeline_if_missing ?? true,
+    overwrite_existing_jobs: pipeline.overwrite_existing_jobs ?? true,
+    dry_run: pipeline.dry_run ?? false
+  };
+}
+
+function catalogEditorRequests(payload){
+  if(payload && Array.isArray(payload.pipelines)){
+    if(!payload.pipelines.length){
+      throw new Error("Catalog payload contains no pipelines.");
+    }
+
+    return payload.pipelines.map(pipeline=>({
+      label: pipeline.name || pipeline.pipeline_name || "pipeline",
+      payload: catalogPipelineEntryToRequest(pipeline),
+      isPipelinePayload: true
+    }));
+  }
+
+  if(payload && Array.isArray(payload.jobs)){
+    const normalized = payload.pipeline_name
+      ? payload
+      : catalogPipelineEntryToRequest(payload);
+
+    return [{
+      label: normalized.pipeline_name || "pipeline",
+      payload: normalized,
+      isPipelinePayload: true
+    }];
+  }
+
+  return [{
+    label: payload?.job?.name || payload?.pipeline_name || "job",
+    payload,
+    isPipelinePayload: false
+  }];
+}
+
 function setCatalogResult(message, ok=true){
   const el = document.getElementById("catalogEditorResult");
   el.textContent = message;
@@ -2187,28 +2273,32 @@ async function loadCatalogInfo(){
 async function validateCatalogJob(){
   try{
     const payload = readCatalogPayload();
+    const requests = catalogEditorRequests(payload);
+    const results = [];
 
-    const isPipelinePayload = Array.isArray(payload.jobs);
+    for(const item of requests){
+      const endpoint = item.isPipelinePayload
+        ? "/api/catalog/pipelines/validate"
+        : "/api/catalog/jobs/validate";
 
-    const endpoint = isPipelinePayload
-      ? "/api/catalog/pipelines/validate"
-      : "/api/catalog/jobs/validate";
+      results.push({
+        label: item.label,
+        result: await api("POST", endpoint, item.payload)
+      });
+    }
 
-    const data = await api("POST", endpoint, payload);
+    const data = requests.length === 1
+      ? results[0].result
+      : {ok:true, request_count:requests.length, results};
 
     setCatalogPreview(data);
-
-    if(data.ok){
-      const msg = isPipelinePayload
-        ? `Valid pipeline payload: ${data.job_count || 0} job(s)`
-        : "Valid catalog job JSON.";
-
-      setCatalogResult(msg, true);
-      toast("Catalog JSON is valid", "success");
-    }else{
-      setCatalogResult("Validation failed.", false);
-      toast("Validation failed", "error");
-    }
+    setCatalogResult(
+      requests.length === 1
+        ? "Catalog JSON is valid."
+        : `Valid catalog payload: ${requests.length} pipeline proposal(s)`,
+      true
+    );
+    toast("Catalog JSON is valid", "success");
   }catch(e){
     setCatalogResult(e.message, false);
     toast(e.message, "error", 5000);
@@ -2218,16 +2308,31 @@ async function validateCatalogJob(){
 async function previewCatalogJob(){
   try{
     const payload = readCatalogPayload();
+    const requests = catalogEditorRequests(payload);
+    const results = [];
 
-    const isPipelinePayload = Array.isArray(payload.jobs);
+    for(const item of requests){
+      const endpoint = item.isPipelinePayload
+        ? "/api/catalog/pipelines/preview"
+        : "/api/catalog/jobs/preview";
 
-    const endpoint = isPipelinePayload
-      ? "/api/catalog/pipelines/preview"
-      : "/api/catalog/jobs/preview";
+      results.push({
+        label: item.label,
+        result: await api("POST", endpoint, item.payload)
+      });
+    }
 
-    const data = await api("POST", endpoint, payload);
+    const data = requests.length === 1
+      ? results[0].result
+      : {ok:true, dry_run:true, request_count:requests.length, results};
+
     setCatalogPreview(data);
-    setCatalogResult(`Preview OK: ${data.change_type}`, true);
+    setCatalogResult(
+      requests.length === 1
+        ? `Preview OK: ${data.change_type}`
+        : `Preview OK: ${requests.length} pipeline proposal(s)`,
+      true
+    );
     toast("Catalog preview generated", "info");
   }catch(e){
     setCatalogResult(e.message, false);
@@ -2236,37 +2341,135 @@ async function previewCatalogJob(){
 }
 
 
-async function applyCatalogJob(withOnboarding){
+async function loadCatalogProposals(){
+  const el = document.getElementById("catalogProposalList");
+  if(!el) return;
+
+  el.textContent = "Loading pending proposals...";
+
   try{
-    const payload = readCatalogPayload();
-    
+    const data = await api("GET", "/api/catalog/proposals?proposal_state=pending_approval&limit=20");
+    const items = data.items || [];
+    const canApprove = ["admin", "operator"].includes(S.user?.role);
 
-    const isPipelinePayload = Array.isArray(payload.jobs);
-
-    let endpoint;
-
-    if(isPipelinePayload){
-      endpoint = withOnboarding
-        ? "/api/catalog/pipelines/apply-and-onboard"
-        : "/api/catalog/pipelines/apply";
-    }else{
-      endpoint = withOnboarding
-        ? "/api/catalog/jobs/apply-and-onboard"
-        : "/api/catalog/jobs/apply";
+    if(!items.length){
+      el.textContent = "No pending catalog proposals.";
+      return;
     }
 
-    const data = await api("POST", endpoint, payload);
+    el.innerHTML = `
+      <div style="display:grid;gap:8px">
+        ${items.map(p=>{
+          const id = Number(p.proposal_id || 0);
+          const label = [p.proposal_type, p.pipeline_name, p.job_name].filter(Boolean).join(" / ");
+          return `
+            <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
+              <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+                <div>
+                  <span class="tag warning">${esc(p.proposal_state || "pending")}</span>
+                  <span class="mono">#${esc(String(id))}</span>
+                  <span>${esc(label)}</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  ${canApprove ? `<button class="btn sm success" onclick="approveCatalogProposal(${id}, false)">Approve</button>` : ""}
+                  ${canApprove ? `<button class="btn sm success" onclick="approveCatalogProposal(${id}, true)">Approve + Onboard</button>` : ""}
+                  ${canApprove ? `<button class="btn sm danger" onclick="rejectCatalogProposal(${id})">Reject</button>` : ""}
+                </div>
+              </div>
+              <div style="color:var(--muted)">
+                Materialization: ${esc(p.materialization_state || "-")} | Requested by: ${esc(p.requested_by || "-")} | Created: ${esc(fmtDate(p.created_at))}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }catch(e){
+    el.textContent = e.message;
+    setCatalogResult(e.message, false);
+  }
+}
+
+async function submitCatalogProposal(withOnboarding){
+  try{
+    const payload = readCatalogPayload();
+    const requests = catalogEditorRequests(payload);
+    const results = [];
+
+    for(const item of requests){
+      const endpoint = item.isPipelinePayload
+        ? `/api/catalog/pipelines/propose?request_onboarding=${withOnboarding ? "true" : "false"}`
+        : `/api/catalog/jobs/propose?request_onboarding=${withOnboarding ? "true" : "false"}`;
+
+      results.push({
+        label: item.label,
+        result: await api("POST", endpoint, item.payload)
+      });
+    }
+
+    const data = requests.length === 1
+      ? results[0].result
+      : {ok:true, proposal_count:requests.length, results};
+
     setCatalogPreview(data);
 
     if(withOnboarding){
-      setCatalogResult("Catalog applied and onboarding triggered.", true);
-      toast("Applied + onboarding triggered", "success");
+      setCatalogResult(
+        requests.length === 1
+          ? "Proposal submitted with onboarding request."
+          : `${requests.length} proposals submitted with onboarding request.`,
+        true
+      );
+      toast("Proposal submitted with onboarding request", "success");
     }else{
-      setCatalogResult("Catalog applied.", true);
-      toast("Catalog applied", "success");
+      setCatalogResult(
+        requests.length === 1
+          ? "Proposal submitted for approval."
+          : `${requests.length} proposals submitted for approval.`,
+        true
+      );
+      toast("Proposal submitted", "success");
     }
 
+    loadCatalogProposals();
+  }catch(e){
+    setCatalogResult(e.message, false);
+    toast(e.message, "error", 7000);
+  }
+}
+
+async function approveCatalogProposal(proposalId, triggerOnboarding){
+  try{
+    const data = await api(
+      "POST",
+      `/api/catalog/proposals/${proposalId}/approve`,
+      {trigger_onboarding: !!triggerOnboarding}
+    );
+    setCatalogPreview(data);
+    setCatalogResult(triggerOnboarding ? "Proposal approved and onboarding requested." : "Proposal approved.", true);
+    toast(triggerOnboarding ? "Proposal approved + onboarding requested" : "Proposal approved", "success");
+    loadCatalogProposals();
     setTimeout(refresh, 1500);
+  }catch(e){
+    setCatalogResult(e.message, false);
+    toast(e.message, "error", 7000);
+  }
+}
+
+async function rejectCatalogProposal(proposalId){
+  const reviewer_note = prompt("Reject note");
+  if(reviewer_note === null) return;
+
+  try{
+    const data = await api(
+      "POST",
+      `/api/catalog/proposals/${proposalId}/reject`,
+      {reviewer_note: reviewer_note || ""}
+    );
+    setCatalogPreview(data);
+    setCatalogResult("Proposal rejected.", true);
+    toast("Proposal rejected", "info");
+    loadCatalogProposals();
   }catch(e){
     setCatalogResult(e.message, false);
     toast(e.message, "error", 7000);
